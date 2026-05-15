@@ -32,7 +32,16 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can run `cargo clippy --workspace` in CI and have it reject any `println!` / `eprintln!` outside the single findings sink and the logging adapter (`clippy::disallowed_macros`).
   4. User can verify `cargo tree -p miner-core` produces zero `tokio` / `async` transitive dependencies (CI-enforced gate).
   5. User can override the cache root, derived-bar-cache root, and output destination via CLI flag, then env var, then config file, with a clear error message when none resolve and zero hardcoded paths in the library.
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Workspace skeleton: virtual manifest, rust-toolchain, 6 member crates + xtask, build.rs for code_revision injection
+- [ ] 01-02-PLAN.md — Wave 0 spikes: schemars 1.x base64-with-shape pattern + figment+clap CLI-wins precedence
+- [ ] 01-03-PLAN.md — Finding envelope types (5 variants, RawArray, Base64Bytes, RunId, error_code enums), FindingSink trait, MinerConfig schema
+- [ ] 01-04-PLAN.md — StdoutSink + stderr_emit writer modules + workspace clippy.toml disallowed-macros gate
+- [ ] 01-05-PLAN.md — miner-core::config figment builder + miner-cli clap+tracing wiring + emit-fixture subcommand
+- [ ] 01-06-PLAN.md — xtask gen-schema subcommand + committed schemas/findings-v1.schema.json + GitHub Actions CI with 4 mandatory gates
+- [ ] 01-07-PLAN.md — Integration tests (schema_roundtrip, config_precedence, cli_streams) + README Quickstart + Phase 1 sign-off ritual
 **UI hint**: No
 
 ### Phase 2: Reader, Aggregator & Derived-Bar Cache
@@ -123,7 +132,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations & Contracts | 0/TBD | Not started | - |
+| 1. Foundations & Contracts | 0/7 | Planned | - |
 | 2. Reader, Aggregator & Derived-Bar Cache | 0/TBD | Not started | - |
 | 3. Scan Engine, Facade & CLI | 0/TBD | Not started | - |
 | 4. Scan Catalogue (ANOM, CROSS, SEAS) | 0/TBD | Not started | - |
