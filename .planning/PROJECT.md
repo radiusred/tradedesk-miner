@@ -112,6 +112,7 @@ It expects findings as `effect statistics + raw arrays` so it can re-test indepe
 | Aggregated bars cached semi-permanently | Aggregation is expensive; recomputation is wasteful when scans iterate parameter grids | — Pending |
 | PyO3 bindings deferred to post-v1 | Speeds v1; binary distribution covers MCP/HTTP/CLI use cases; bindings land when a concrete tradedesk integration demands them | — Pending |
 | `tradedesk-miner` + Apache 2.0 | Discoverable in the RadiusRed family; license matches siblings | — Pending |
+| No silent scans over gapped data; caller picks `strict` or `continuous_only` policy per run | Dukascopy caches legitimately have gaps (weekends, outages, partial downloads); silent scans over holes are the textbook way to publish nonsense findings. Detection happens at the reader/aggregator boundary; policy is selected per scan invocation | — Pending |
 
 ## Evolution
 
