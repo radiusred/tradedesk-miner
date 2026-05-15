@@ -133,24 +133,70 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ## Traceability
 
-Filled during roadmap creation.
+Every v1 requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01..05 | TBD | Pending |
-| CACHE-01..08 | TBD | Pending |
-| OP-01..08 | TBD | Pending |
-| ANOM-01..11 | TBD | Pending |
-| CROSS-01..05 | TBD | Pending |
-| SEAS-01..06 | TBD | Pending |
-| HYG-01..05 | TBD | Pending |
-| OUT-01..04 | TBD | Pending |
+| FOUND-01 | Phase 1 | Pending |
+| FOUND-02 | Phase 1 | Pending |
+| FOUND-03 | Phase 1 | Pending |
+| FOUND-04 | Phase 1 | Pending |
+| FOUND-05 | Phase 1 | Pending |
+| CACHE-01 | Phase 2 | Pending |
+| CACHE-02 | Phase 2 | Pending |
+| CACHE-03 | Phase 2 | Pending |
+| CACHE-04 | Phase 2 | Pending |
+| CACHE-05 | Phase 2 | Pending |
+| CACHE-06 | Phase 2 | Pending |
+| CACHE-07 | Phase 2 | Pending |
+| CACHE-08 | Phase 2 | Pending |
+| OP-01 | Phase 3 | Pending |
+| OP-02 | Phase 6 | Pending |
+| OP-03 | Phase 6 | Pending |
+| OP-04 | Phase 5 | Pending |
+| OP-05 | Phase 3 | Pending |
+| OP-06 | Phase 3 | Pending |
+| OP-07 | Phase 3 | Pending |
+| OP-08 | Phase 3 | Pending |
+| ANOM-01 | Phase 4 | Pending |
+| ANOM-02 | Phase 4 | Pending |
+| ANOM-03 | Phase 4 | Pending |
+| ANOM-04 | Phase 4 | Pending |
+| ANOM-05 | Phase 4 | Pending |
+| ANOM-06 | Phase 4 | Pending |
+| ANOM-07 | Phase 4 | Pending |
+| ANOM-08 | Phase 4 | Pending |
+| ANOM-09 | Phase 4 | Pending |
+| ANOM-10 | Phase 4 | Pending |
+| ANOM-11 | Phase 4 | Pending |
+| CROSS-01 | Phase 4 | Pending |
+| CROSS-02 | Phase 4 | Pending |
+| CROSS-03 | Phase 4 | Pending |
+| CROSS-04 | Phase 4 | Pending |
+| CROSS-05 | Phase 4 | Pending |
+| SEAS-01 | Phase 4 | Pending |
+| SEAS-02 | Phase 4 | Pending |
+| SEAS-03 | Phase 4 | Pending |
+| SEAS-04 | Phase 4 | Pending |
+| SEAS-05 | Phase 4 | Pending |
+| SEAS-06 | Phase 4 | Pending |
+| HYG-01 | Phase 5 | Pending |
+| HYG-02 | Phase 5 | Pending |
+| HYG-03 | Phase 5 | Pending |
+| HYG-04 | Phase 5 | Pending |
+| HYG-05 | Phase 5 | Pending |
+| OUT-01 | Phase 1 | Pending |
+| OUT-02 | Phase 1 | Pending |
+| OUT-03 | Phase 1 | Pending |
+| OUT-04 | Phase 3 | Pending |
+
+**Phase 7 (Hardening, Benchmarks & Reproducibility)** carries no new v1 REQ-IDs; it closes verification debt for FOUND-02, FOUND-03, FOUND-04, CACHE-04, OUT-03, HYG-02, and HYG-05 via golden-file regression tests, noise-replay sweep test, flamegraph profiling, the `miner-bench` + hyperfine bench harness, `cargo audit` / `cargo deny` clean runs, and the README data-source caveats section.
 
 **Coverage:**
 - v1 requirements: 52 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 52 ⚠️
+- Mapped to phases: 52 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-15*
-*Last updated: 2026-05-15 after initial definition*
+*Last updated: 2026-05-15 after roadmap creation (traceability filled in)*

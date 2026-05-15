@@ -1,0 +1,72 @@
+# Project State
+
+## Project Reference
+
+See: .planning/PROJECT.md (updated 2026-05-15)
+
+**Core value:** Surface raw statistical candidates from years of OHLCV data fast enough that a quant agent can run wide sweeps and targeted queries interactively, without waiting on Python data pipelines.
+**Current focus:** Phase 1 — Foundations & Contracts
+
+## Current Position
+
+Phase: 1 of 7 (Foundations & Contracts)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-05-15 — Roadmap created with 7 phases covering 52 v1 requirements (100% coverage)
+
+Progress: [░░░░░░░░░░] 0%
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 0
+- Average duration: -
+- Total execution time: -
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| - | - | - | - |
+
+**Recent Trend:**
+- Last 5 plans: -
+- Trend: -
+
+*Updated after each plan completion*
+
+## Accumulated Context
+
+### Decisions
+
+Decisions are logged in PROJECT.md Key Decisions table.
+Recent decisions affecting current work:
+
+- Roadmap structure: Horizontal-layers build order (workspace → reader/aggregator → engine/facade/CLI → catalogue → hygiene/sweep → wrappers → hardening) per ARCHITECTURE.md and SUMMARY.md.
+- Phase 1 locks the `Finding` envelope JSON schema with `schema_version`, `scan@version`, `param_hash`, `code_revision`, `data_slice`, and reserved-but-null DSR + FDR-q fields — schema-version retrofitting is painful and is treated as non-negotiable from day one.
+- `miner-core` is sync + rayon only; tokio enters only via `spawn_blocking` inside `miner-mcp` and `miner-http`. Enforced by CI checking `cargo tree -p miner-core` for tokio/async.
+- Stdout = findings, stderr = logs. Enforced in CI via `clippy::disallowed_macros` banning `println!` / `eprintln!` outside the findings sink and logging adapter.
+
+### Pending Todos
+
+None yet.
+
+### Blockers/Concerns
+
+- **Phase 6 (MCP & HTTP wrappers):** `rmcp` is the highest-risk dependency in the stack. Plan-phase must re-run `gsd-research` on rmcp (crate name, version, stdio + streamable-HTTP transport, streaming tool-result chunks, tokio compatibility) before kickoff. Fallback is a hand-rolled JSON-RPC-over-stdio (~500 LOC against `serde_json`) which does not affect the HTTP wrapper.
+- **Phase 2 open question:** Arrow IPC vs bincode+zstd for the derived-bar cache format. Recommendation per SUMMARY.md is Arrow IPC given PROJECT.md's future Python interop goal (`tradedesk` aggregator reuse). Decide during Phase 2 planning.
+- **Phase 4 implementation risk:** ADF, KPSS, Engle-Granger, block bootstrap, BH-FDR, and DSR are not covered by any comprehensive Rust stats crate. Plan time for hand-rolled implementations validated against scipy/statsmodels golden outputs.
+
+## Deferred Items
+
+Items acknowledged and carried forward from previous milestone close:
+
+| Category | Item | Status | Deferred At |
+|----------|------|--------|-------------|
+| *(none)* | | | |
+
+## Session Continuity
+
+Last session: 2026-05-15 11:53
+Stopped at: Roadmap + traceability complete; ready for `/gsd:plan-phase 1`
+Resume file: None
