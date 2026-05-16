@@ -15,7 +15,7 @@
 //! tracing-subscriber initialised in each binary's `main()`).
 //!
 //! Per RESEARCH §"Stdout/Stderr Enforcement Mechanics" point 2 and the D-15
-//! surgical reinterpretation in the plan must_haves: this module uses
+//! surgical reinterpretation in the plan `must_haves`: this module uses
 //! `io::Write` directly (never `eprintln!`), so no
 //! `#[allow(clippy::disallowed_macros)]` attribute is applied — adding one
 //! would mask future regressions if a contributor slipped in a banned macro.
@@ -34,7 +34,7 @@ use crate::error::WireError;
 /// [`crate::findings::sink::StdoutSink`]).
 ///
 /// # Errors
-/// Returns [`io::Error`] if `serde_json` fails to serialise the WireError or
+/// Returns [`io::Error`] if `serde_json` fails to serialise the `WireError` or
 /// if the underlying writer's `write_all` / `flush` calls fail. The
 /// serialisation error is wrapped via [`io::Error::other`].
 pub fn write_preflight_error<W: Write>(out: &mut W, err: &WireError) -> io::Result<()> {
@@ -62,6 +62,10 @@ pub fn emit_to_stderr(err: &WireError) -> io::Result<()> {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(
+    clippy::naive_bytecount,
+    reason = "filter().count() over a small in-memory buffer is fine in tests; pulling in the `bytecount` crate just for this would add dep surface for negligible test-only gain"
+)]
 mod tests {
     use super::*;
     use crate::error::PreflightCode;
@@ -93,8 +97,8 @@ mod tests {
         assert_eq!(parsed["message"], "bad param");
     }
 
-    /// Test 2 — confirms the emitted JSON contains the snake_case wire form
-    /// for [`PreflightCode::InvalidParameter`] (per RESEARCH §"error_code
+    /// Test 2 — confirms the emitted JSON contains the `snake_case` wire form
+    /// for [`PreflightCode::InvalidParameter`] (per RESEARCH §"`error_code`
     /// Vocabulary").
     #[test]
     fn error_code_uses_snake_case() {
@@ -111,7 +115,7 @@ mod tests {
     }
 
     /// Test 3 — adds three context entries with keys "z", "a", "m"; the
-    /// serialised JSON lists them in alphabetical order (BTreeMap key
+    /// serialised JSON lists them in alphabetical order (`BTreeMap` key
     /// ordering — OUT-03 groundwork).
     #[test]
     fn context_preserves_btreemap_ordering() {

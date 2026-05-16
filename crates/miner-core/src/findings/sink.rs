@@ -63,9 +63,9 @@ pub trait FindingSink: Send {
 /// `eprintln!`, `eprint!`, `dbg!`) so contributors cannot accidentally bypass
 /// this sink.
 ///
-/// The implementation never invokes a banned macro — it uses `serde_json::to_writer`
-/// + `Write::write_all` + `Write::flush` directly. No `#[allow]` attribute is
-/// applied or needed here.
+/// The implementation never invokes a banned macro — it uses
+/// `serde_json::to_writer`, `Write::write_all`, and `Write::flush` directly.
+/// No `#[allow]` attribute is applied or needed here.
 pub struct StdoutSink {
     writer: BufWriter<Stdout>,
 }
@@ -115,8 +115,16 @@ pub struct VecSink(pub Vec<u8>);
 
 #[cfg(test)]
 impl VecSink {
+    #[must_use]
     pub fn new() -> Self {
         Self(Vec::new())
+    }
+}
+
+#[cfg(test)]
+impl Default for VecSink {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -138,6 +146,10 @@ impl FindingSink for VecSink {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(
+    clippy::naive_bytecount,
+    reason = "filter().count() over small in-memory test buffers is fine; pulling in the `bytecount` crate just for tests would add dep surface for negligible gain"
+)]
 mod tests {
     use super::*;
     use crate::findings::{RunEnd, RunId, RunStart, RunSummary};
@@ -202,8 +214,8 @@ mod tests {
 
     /// `Write` impl that records how many times `flush` was called against it.
     /// Wrapped in `Arc<Mutex>` so the test can read the count after the sink is
-    /// dropped (BufWriter only forwards `flush()` calls to the inner writer when
-    /// the buffer is non-empty AND the call is explicit, which is the
+    /// dropped (`BufWriter` only forwards `flush()` calls to the inner writer
+    /// when the buffer is non-empty AND the call is explicit, which is the
     /// per-envelope semantics we need to verify).
     struct FlushCounter {
         inner: Vec<u8>,
@@ -250,8 +262,8 @@ mod tests {
         );
     }
 
-    /// Test 2 — writes a RunStart + RunEnd; bytes contain exactly two `\n` and
-    /// split-on-newline yields two valid JSON objects.
+    /// Test 2 — writes a `RunStart` + `RunEnd`; bytes contain exactly two `\n`
+    /// and split-on-newline yields two valid JSON objects.
     #[test]
     fn stdoutsink_writes_multiple_envelopes_separated_by_newline() {
         let buf: Vec<u8> = Vec::new();

@@ -2,7 +2,7 @@
 //!
 //! Phase 1 (Plan 03) lands the locked `Finding` envelope types, the error code
 //! vocabulary, the `FindingSink` trait interface, and the config schema types.
-//! Plans 04 (sink + stderr_emit implementations) and 05 (figment builder) build
+//! Plans 04 (sink + `stderr_emit` implementations) and 05 (figment builder) build
 //! on top.
 
 pub mod config;
