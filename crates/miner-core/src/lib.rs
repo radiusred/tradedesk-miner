@@ -10,3 +10,8 @@
 /// Wired into every `Finding` envelope's `code_revision` field starting in Plan 03; mitigates
 /// threat T-01-04 (a deployed binary cannot lie about which source revision built it).
 pub const CODE_REVISION: &str = env!("MINER_CODE_REVISION");
+
+// Spike modules — Plan 01-02. These exist solely to validate two patterns before the
+// production code in Plans 03 and 05 commits to them. Plan 03 will DELETE
+// `spike_base64`; Plan 05 will DELETE `spike_figment`.
+pub mod spike_base64;
