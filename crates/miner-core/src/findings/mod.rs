@@ -44,11 +44,11 @@ use serde::{Deserialize, Serialize};
 
 pub mod base64_bytes;
 pub mod run_id;
-// `pub mod sink;` is added in Task 2 of Plan 03 (sink.rs has cross-dependencies on
-// `crate::error::MinerError` which is defined in that same task).
+pub mod sink;
 
 pub use base64_bytes::{Base64Bytes, Dtype};
 pub use run_id::RunId;
+pub use sink::FindingSink;
 
 // ---------------------------------------------------------------------------
 // Common types — used by multiple variants

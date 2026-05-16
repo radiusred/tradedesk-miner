@@ -1,11 +1,12 @@
 //! tradedesk-miner core library.
 //!
-//! Phase 1 (this plan, Wave 3) lands the locked `Finding` envelope types: a tagged enum
-//! with five variants, the seven locked common fields, `RawArray`/`Base64Bytes`/`RunId`
-//! supporting types, `RunStart`/`RunEnd` framing payloads. Task 2 of Plan 03 adds the
-//! error vocabulary, the `FindingSink` trait, and the config schema types — the lib.rs
-//! `pub use` block is extended to the FROZEN public surface in that task.
+//! Phase 1 (Plan 03) lands the locked `Finding` envelope types, the error code
+//! vocabulary, the `FindingSink` trait interface, and the config schema types.
+//! Plans 04 (sink + stderr_emit implementations) and 05 (figment builder) build
+//! on top.
 
+pub mod config;
+pub mod error;
 pub mod findings;
 
 /// Git SHA of the source revision that produced this build; `dirty-<sha>` when the tree
@@ -16,14 +17,18 @@ pub mod findings;
 pub const CODE_REVISION: &str = env!("MINER_CODE_REVISION");
 
 // =============================================================================
-// Public re-exports — extended to the FROZEN public surface in Task 2 of Plan 03.
+// FROZEN public surface — every downstream plan (05, 06, 07) imports from here.
 //
 // Adding a name to this list is a backwards-compatible change; removing one is a
-// Phase 1 contract break.
+// Phase 1 contract break. Re-ordering for readability is fine.
 // =============================================================================
 
 pub use findings::{
-    Base64Bytes, DataSlice, Dtype, Effect, Finding, GapAbortedFinding, PerScanCounts, Raw,
-    RawArray, ResultFinding, RunEnd, RunId, RunStart, RunSummary, ScanErrorFinding, Source,
-    TimeRange,
+    Base64Bytes, DataSlice, Dtype, Effect, Finding, FindingSink, GapAbortedFinding,
+    PerScanCounts, Raw, RawArray, ResultFinding, RunEnd, RunId, RunStart, RunSummary,
+    ScanErrorFinding, Source, TimeRange,
 };
+
+pub use error::{MinerError, PreflightCode, ScanErrorCode, WireError};
+
+pub use config::{MinerConfig, OutputDest};
