@@ -15,3 +15,4 @@ pub const CODE_REVISION: &str = env!("MINER_CODE_REVISION");
 // production code in Plans 03 and 05 commits to them. Plan 03 will DELETE
 // `spike_base64`; Plan 05 will DELETE `spike_figment`.
 pub mod spike_base64;
+pub mod spike_figment;
