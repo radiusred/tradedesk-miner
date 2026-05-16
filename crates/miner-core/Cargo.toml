@@ -31,9 +31,23 @@ tracing.workspace    = true
 ulid.workspace       = true
 blake3.workspace     = true
 base64.workspace     = true
+# Spike-only (Plan 01-02). Plan 05 will move figment into the production `config`
+# module; Plan 03 will delete the spike_figment module. Kept here (not dev-deps)
+# because the spike module lives in `src/`, not `tests/`.
+figment.workspace    = true
 
 [dev-dependencies]
 jsonschema.workspace = true
+# Spike-only (Plan 01-02). clap is intentionally NEVER a non-dev dep of miner-core
+# per D-16 — wrappers carry clap, miner-core does not. The spike uses it only to
+# construct a CliOverrides shape mirroring the Plan 05 production pattern.
+clap.workspace       = true
+# Spike-only (Plan 01-02). figment::Jail (the canonical figment testing helper)
+# lives behind the `test` feature and provides serialised, scope-cleaned env-var
+# mutation — the alternative would be `unsafe { std::env::set_var(..) }` which
+# the workspace `unsafe_code = "forbid"` lint correctly rejects. Plan 05 will
+# either retain this dev-dep or migrate to figment's `Provider` test fixtures.
+figment              = { version = "0.10", features = ["toml", "env", "test"] }
 
 [lints]
 workspace = true
