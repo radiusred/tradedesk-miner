@@ -1,0 +1,23 @@
+# miner-mcp: MCP server wrapper.
+#
+# Phase 6 wires the MCP SDK + an async runtime; Phase 1 ships ZERO non-tracing dependencies
+# (per 01-RESEARCH §"Open Risks" Risk 4) so the workspace stays runtime-free at the
+# miner-core boundary until Phase 6 is ready. See 01-PLAN Task 2 and Phase 6 plans for
+# the specific SDK crate name.
+
+[package]
+name = "miner-mcp"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "miner-mcp"
+path = "src/main.rs"
+
+[dependencies]
+tracing.workspace           = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,39 @@
+# miner-core: the library crate. THE ONE PLACE every later Phase compiles against.
+#
+# CRITICAL — Phase 1 invariants enforced here:
+#   * No tokio, no async-std, no smol, no async-trait, no futures-runtime deps. miner-core
+#     is sync + rayon only (FOUND-04, D-20). Adding any of these breaks the CI gate
+#     `cargo tree -p miner-core` and the agent contract that the engine is purely synchronous.
+#   * No workspace-internal deps. miner-core is the foundation; readers, wrappers, and
+#     xtask all point at it (one-way arrow, ARCHITECTURE.md §2).
+#   * schemars is a real (non-optional) dep because derive impls live on production types
+#     and xtask calls `schemars::schema_for!(Finding)` against the same compiled artifact
+#     CI validates (Plan 06).
+#
+# Plan 03 fills in `findings`, `config`, `error` modules; Plan 04 lands the FindingSink trait;
+# Plan 06 wires the xtask schema regen.
+
+[package]
+name = "miner-core"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+
+[dependencies]
+serde.workspace      = true
+serde_json.workspace = true
+schemars.workspace   = true
+chrono.workspace     = true
+thiserror.workspace  = true
+tracing.workspace    = true
+ulid.workspace       = true
+blake3.workspace     = true
+base64.workspace     = true
+
+[dev-dependencies]
+jsonschema.workspace = true
+
+[lints]
+workspace = true

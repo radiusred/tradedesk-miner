@@ -1,0 +1,17 @@
+# miner-reader-dukascopy: zstd-CSV reader for the tradedesk-dukascopy cache layout.
+# Phase 1 ships an empty scaffold. The reader implementation lands in Phase 2 along with
+# the gap-policy machinery and the aggregator.
+
+[package]
+name = "miner-reader-dukascopy"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+
+[dependencies]
+miner-core = { path = "../miner-core" }
+
+[lints]
+workspace = true
