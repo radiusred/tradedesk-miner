@@ -36,7 +36,7 @@ license = "Apache-2.0"
 # Core (locked stack per CLAUDE.md / 01-RESEARCH §"Standard Stack")
 serde              = { version = "1", features = ["derive"] }
 serde_json         = "1"  # NO features list — see determinism note above
-schemars           = "1"
+schemars           = { version = "1", features = ["chrono04"] }
 chrono             = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 thiserror          = "1"
 anyhow             = "1"

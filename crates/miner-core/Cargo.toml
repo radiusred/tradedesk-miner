@@ -10,8 +10,10 @@
 #     and xtask calls `schemars::schema_for!(Finding)` against the same compiled artifact
 #     CI validates (Plan 06).
 #
-# Plan 03 fills in `findings`, `config`, `error` modules; Plan 04 lands the FindingSink trait;
-# Plan 06 wires the xtask schema regen.
+# Plan 03 (this plan) landed the locked Finding envelope types in `findings`, the error
+# vocabulary in `error`, the config schema types in `config`, and the FindingSink trait
+# interface. Plan 04 will land the StdoutSink + stderr_emit implementations; Plan 05 will
+# implement the figment-based MinerConfig builder; Plan 06 will wire xtask schema regen.
 
 [package]
 name = "miner-core"
@@ -31,22 +33,16 @@ tracing.workspace    = true
 ulid.workspace       = true
 blake3.workspace     = true
 base64.workspace     = true
-# Spike-only (Plan 01-02). Plan 05 will move figment into the production `config`
-# module; Plan 03 will delete the spike_figment module. Kept here (not dev-deps)
-# because the spike module lives in `src/`, not `tests/`.
+# Required by `MinerError::Config(#[from] figment::Error)` in error/mod.rs; Plan 05 will
+# also use it for the production `build_figment` factory in config/mod.rs.
 figment.workspace    = true
 
 [dev-dependencies]
 jsonschema.workspace = true
-# Spike-only (Plan 01-02). clap is intentionally NEVER a non-dev dep of miner-core
-# per D-16 — wrappers carry clap, miner-core does not. The spike uses it only to
-# construct a CliOverrides shape mirroring the Plan 05 production pattern.
-clap.workspace       = true
-# Spike-only (Plan 01-02). figment::Jail (the canonical figment testing helper)
-# lives behind the `test` feature and provides serialised, scope-cleaned env-var
-# mutation — the alternative would be `unsafe { std::env::set_var(..) }` which
-# the workspace `unsafe_code = "forbid"` lint correctly rejects. Plan 05 will
-# either retain this dev-dep or migrate to figment's `Provider` test fixtures.
+# Plan 05 will use `figment::Jail` (gated behind the `test` feature) for config-precedence
+# tests — the canonical figment testing helper that serialises env-var access process-wide
+# and scope-cleans on drop. The workspace inheritance only enables ["toml", "env"]; the
+# `test` feature is opt-in per-crate.
 figment              = { version = "0.10", features = ["toml", "env", "test"] }
 
 [lints]
