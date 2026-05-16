@@ -35,7 +35,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 7 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Workspace skeleton: virtual manifest, rust-toolchain, 6 member crates + xtask, build.rs for code_revision injection
+- [x] 01-01-PLAN.md — Workspace skeleton: virtual manifest, rust-toolchain, 6 member crates + xtask, build.rs for code_revision injection
 - [ ] 01-02-PLAN.md — Wave 0 spikes: schemars 1.x base64-with-shape pattern + figment+clap CLI-wins precedence
 - [ ] 01-03-PLAN.md — Finding envelope types (5 variants, RawArray, Base64Bytes, RunId, error_code enums), FindingSink trait, MinerConfig schema
 - [ ] 01-04-PLAN.md — StdoutSink + stderr_emit writer modules + workspace clippy.toml disallowed-macros gate
