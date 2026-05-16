@@ -1,0 +1,21 @@
+# miner-bench: scan-recipe benchmark harness. Phase 7 lands the real criterion + hyperfine
+# harness; Phase 1 ships an empty crate per D-23 with only tracing for the placeholder
+# main(). NO println! anywhere — that is what the disallowed-macros lint (Plan 04) will
+# catch in CI.
+
+[package]
+name = "miner-bench"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "miner-bench"
+path = "src/main.rs"
+
+[dependencies]
+tracing.workspace           = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

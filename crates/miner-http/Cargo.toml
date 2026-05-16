@@ -1,0 +1,23 @@
+# miner-http: HTTP server wrapper.
+#
+# Phase 6 wires the HTTP framework + async runtime + tower middleware; Phase 1 ships
+# ZERO non-tracing dependencies so the workspace stays runtime-free at the miner-core
+# boundary until Phase 6 is ready (FOUND-04 invariant). See 01-PLAN Task 2 and Phase 6
+# plans for the specific crate names.
+
+[package]
+name = "miner-http"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "miner-http"
+path = "src/main.rs"
+
+[dependencies]
+tracing.workspace           = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

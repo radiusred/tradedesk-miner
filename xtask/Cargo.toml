@@ -1,0 +1,26 @@
+# xtask: dev-only command runner (matklad's xtask pattern). Workspace member so it can
+# `path = "../crates/miner-core"` against the same compiled artifact CI validates, but
+# not a "product" binary — gated behind the `cargo xtask <cmd>` alias in
+# `.cargo/config.toml`. Plan 06 lands the first real subcommand (`gen-schema`); Phase 1
+# ships only the stub binary so the alias resolves to something compilable.
+
+[package]
+name = "xtask"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+
+[dependencies]
+miner-core   = { path = "../crates/miner-core" }
+clap.workspace        = true
+anyhow.workspace      = true
+serde_json.workspace  = true
+schemars.workspace    = true
+
+[lints]
+workspace = true

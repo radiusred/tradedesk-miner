@@ -1,0 +1,29 @@
+# miner-cli: thin CLI wrapper around miner-core. Phase 5 wires the clap parser and the
+# emit-fixture / scan / sweep subcommands; Phase 1 ships only a stub `main` that initialises
+# tracing-to-stderr so the binary compiles and demonstrates the stdout/stderr discipline
+# (D-15, D-19) before any scan code exists.
+
+[package]
+name = "miner-cli"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "miner"
+path = "src/main.rs"
+
+[dependencies]
+miner-core              = { path = "../miner-core" }
+miner-reader-dukascopy  = { path = "../miner-reader-dukascopy" }
+clap.workspace              = true
+anyhow.workspace            = true
+tracing.workspace           = true
+tracing-subscriber.workspace = true
+figment.workspace           = true
+serde.workspace             = true
+serde_json.workspace        = true
+directories.workspace       = true
+
+[lints]
+workspace = true
