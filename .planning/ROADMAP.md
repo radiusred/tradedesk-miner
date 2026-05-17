@@ -54,7 +54,15 @@ Plans:
   3. User can re-run any aggregation and have miner serve bars from the on-disk derived-bar cache keyed by `(source_id, symbol, side, timeframe)` with `aggregator_version` plus per-day source fingerprint invalidation.
   4. User can request a gap report for any `(symbol, side, range)` and receive a structured gap manifest enumerating `(start, end, reason)` tuples for missing daily files, zero-byte/corrupt files, and intra-day bar holes against the instrument's trading calendar.
   5. User can run aggregator edge-case fixture tests (DST spring-forward, DST fall-back, weekend gap, holiday, instrument first/last cache day, partial-bar session open) and observe byte-identical re-run determinism.
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Workspace deps + Reader trait + DukascopyReader + path_layout + synthetic fixtures (CACHE-01, CACHE-02, CACHE-05)
+- [ ] 02-02-PLAN.md — Calendar + Aggregator kernel + aggregator unit/determinism tests (CACHE-03, CACHE-04)
+- [ ] 02-03-PLAN.md — DST spring/fall fixtures + aggregator edge cases (weekend/holiday/first-day/last-day/partial-session-open) (CACHE-04)
+- [ ] 02-04-PLAN.md — GapDetector + GapManifest tagged-enum + insta snapshot + sorted/dedup proptest (CACHE-07, CACHE-08)
+- [ ] 02-05-PLAN.md — Derived-bar cache: Arrow IPC writer + fingerprint sidecar + day-splice + cache_smoke + schema snapshot (CACHE-06)
+- [ ] 02-06-PLAN.md — End-to-end full_determinism + public-surface audit + reader dyn-compat regression + VALIDATION.md sealing (CACHE-04, CACHE-06)
 **UI hint**: No
 
 ### Phase 3: Scan Engine, Facade & CLI
@@ -133,7 +141,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 0/7 | Planned | - |
-| 2. Reader, Aggregator & Derived-Bar Cache | 0/TBD | Not started | - |
+| 2. Reader, Aggregator & Derived-Bar Cache | 0/6 | Planned | - |
 | 3. Scan Engine, Facade & CLI | 0/TBD | Not started | - |
 | 4. Scan Catalogue (ANOM, CROSS, SEAS) | 0/TBD | Not started | - |
 | 5. Statistical Hygiene & Sweep Runner | 0/TBD | Not started | - |
