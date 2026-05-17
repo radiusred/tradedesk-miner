@@ -1,6 +1,14 @@
 # miner-reader-dukascopy: zstd-CSV reader for the tradedesk-dukascopy cache layout.
-# Phase 1 ships an empty scaffold. The reader implementation lands in Phase 2 along with
-# the gap-policy machinery and the aggregator.
+#
+# Phase 2 implementation of the `miner_core::reader::Reader` trait. Reads
+# `<root>/<SYMBOL>/<YYYY>/<MM 00-indexed>/<DD>_<bid|ask>.csv.zst` files and streams
+# 1-minute OHLCV bars to the aggregator.
+#
+# Dep discipline (see CLAUDE.md §"Technology Stack"):
+# - `.workspace = true` for every dep — no inline versions (mirrors miner-core)
+# - NO async runtime (FOUND-04 / D-20): no tokio, no async-std, no async-trait
+# - NO `unsafe`: BufReader<File> only (no memmap2). The workspace lint
+#   `unsafe_code = "forbid"` enforces this — RESEARCH §"Memory-mapped reads".
 
 [package]
 name = "miner-reader-dukascopy"
@@ -12,6 +20,19 @@ license.workspace = true
 
 [dependencies]
 miner-core = { path = "../miner-core" }
+# Phase 2 workspace-inherited deps:
+csv.workspace        = true
+zstd.workspace       = true
+walkdir.workspace    = true
+chrono.workspace     = true
+blake3.workspace     = true
+thiserror.workspace  = true
+tracing.workspace    = true
+serde.workspace      = true
+
+[dev-dependencies]
+tempfile.workspace   = true
+proptest             = "1.11"
 
 [lints]
 workspace = true

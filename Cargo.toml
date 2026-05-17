@@ -49,6 +49,18 @@ jsonschema         = "0.46"
 blake3             = "1"
 directories        = "5"
 base64             = "0.22"
+# Phase 2 additions — per amended D2-01 (arrow at latest stable, parquet pinned to the same
+# major for the lockstep contract documented in CLAUDE.md §"Version Compatibility"). The
+# specific majors (`arrow = "58"`, `parquet = "58"`) reflect the latest stable releases as of
+# 2026-05; `cargo add` resolution may drift to a newer major in a single bump — if it does,
+# bump BOTH pins together to honour the lockstep invariant.
+arrow              = "58"
+parquet            = "58"
+csv                = "1.4"
+zstd               = "0.13"
+walkdir            = "2.5"
+tempfile           = "3"
+serial_test        = "3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

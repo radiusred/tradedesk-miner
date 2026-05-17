@@ -36,6 +36,11 @@ base64.workspace     = true
 # Required by `MinerError::Config(#[from] figment::Error)` in error/mod.rs; Plan 05 will
 # also use it for the production `build_figment` factory in config/mod.rs.
 figment.workspace    = true
+# Phase 2 additions:
+arrow.workspace      = true   # CACHE-06 cache format (Plan 02-05 uses; declared here so
+                              # the workspace dep graph lands in one PR — Plan 02-01 scope)
+tempfile.workspace   = true   # atomic NamedTempFile::persist (Plan 02-05); ahead-declare
+                              # so downstream plans inherit through this crate
 
 [dev-dependencies]
 jsonschema.workspace = true
@@ -52,6 +57,11 @@ figment              = { version = "0.10", features = ["toml", "env", "test"] }
 # workspace `forbid(unsafe_code)` lint blocks that pattern in Rust 2024 — Jail is the
 # documented alternative and uses no `tempfile`, so the dev-dep is omitted.
 serial_test          = "3"
+# Phase 2 Wave 0 dev-deps:
+# `proptest` — aggregator / path-layout property tests (path_round_trip_proptest etc.)
+# `insta`    — gap-manifest + Arrow IPC schema snapshot tests
+proptest             = "1.11"
+insta                = "1.47"
 
 [lints]
 workspace = true
