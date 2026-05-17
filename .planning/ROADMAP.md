@@ -12,7 +12,7 @@
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundations & Contracts** - Workspace, types, locked findings envelope, stdout/stderr discipline, config precedence
+- [x] **Phase 1: Foundations & Contracts** - Workspace, types, locked findings envelope, stdout/stderr discipline, config precedence (completed 2026-05-17)
 - [ ] **Phase 2: Reader, Aggregator & Derived-Bar Cache** - Dukascopy reader, deterministic aggregator, derived-bar cache, gap manifest
 - [ ] **Phase 3: Scan Engine, Facade & CLI** - Scan trait/registry, facade, look-ahead-safe windowing, gap-policy enforcement, CLI wrapper
 - [ ] **Phase 4: Scan Catalogue (ANOM, CROSS, SEAS)** - All v1 statistical, cross-instrument, and seasonality scans
