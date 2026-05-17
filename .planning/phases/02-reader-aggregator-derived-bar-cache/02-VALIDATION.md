@@ -6,6 +6,7 @@ nyquist_compliant: true
 wave_0_complete: false
 created: 2026-05-17
 plan_phase_completed: 2026-05-17
+revision_pass: 1
 ---
 
 # Phase 02 — Validation Strategy
@@ -38,7 +39,7 @@ plan_phase_completed: 2026-05-17
 
 ## Per-Task Verification Map
 
-> Populated by `gsd-planner` during plan-phase. Each task in every `*-PLAN.md` MUST appear as a row here with an `<automated>` verify or an explicit Wave 0 dependency. Rows below are the contract from RESEARCH.md §"Phase Requirements → Test Map".
+> Populated by `gsd-planner` during plan-phase. Each task in every `*-PLAN.md` MUST appear as a row here with an `<automated>` verify or an explicit Wave 0 dependency. Rows below are the contract from RESEARCH.md §"Phase Requirements → Test Map". Revision pass 1 confirms all `aggregator::tests::*` paths match the renamed module from Plan 02-02 (file `crates/miner-core/src/aggregator.rs`, `pub mod aggregator;`).
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
@@ -62,7 +63,8 @@ plan_phase_completed: 2026-05-17
 | 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-14 | Cache hit serves bars without re-reading source CSV | integration | `cargo test -p miner-core --test cache_smoke cache_hit_skips_reader` | ⬜ Wave 0 | ⬜ pending |
 | 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-14 | `aggregator_version` bump triggers full rebuild | integration | `cargo test -p miner-core --test cache_smoke aggregator_version_bump_rebuilds` | ⬜ Wave 0 | ⬜ pending |
 | 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-14 | Per-day fingerprint mismatch triggers day-splice only | integration | `cargo test -p miner-core --test cache_smoke day_fingerprint_bump_splices` | ⬜ Wave 0 | ⬜ pending |
-| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-15 | Atomic write: crash mid-write leaves existing Arrow file intact | integration | `cargo test -p miner-core --test cache_smoke atomic_write_crash_safety` | ⬜ Wave 0 | ⬜ pending |
+| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-15 | Atomic write: tempfile dropped without persist leaves existing Arrow file byte-unchanged AND no stale `*.tmp*` files in parent dir | integration | `cargo test -p miner-core --test cache_smoke atomic_write_crash_safety` | ⬜ Wave 0 | ⬜ pending |
+| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-16 | Arrow IPC bytes are deterministic under shuffled-metadata construction (BTreeMap-source proptest) | property | `cargo test -p miner-core --test cache_smoke arrow_bytes_deterministic_under_shuffled_construction` | ⬜ Wave 0 | ⬜ pending |
 | 02-04-T2 | 02-04 | 1 | CACHE-07 | T-02-12 | GapDetector emits `MissingSourceFile` for a missing day file | unit | `cargo test -p miner-core gap::tests::missing_file_emits_correct_reason` | ⬜ Wave 0 | ⬜ pending |
 | 02-04-T2 | 02-04 | 1 | CACHE-07 | T-02-12 | GapDetector emits `CorruptSourceFile` for a zero-byte source file | unit | `cargo test -p miner-core gap::tests::zero_byte_emits_corrupt` | ⬜ Wave 0 | ⬜ pending |
 | 02-04-T2 | 02-04 | 1 | CACHE-07 | T-02-12 | GapDetector emits `IntraDayGap` for sub-minute holes during open hours | unit | `cargo test -p miner-core gap::tests::intra_day_hole_during_open_hours` | ⬜ Wave 0 | ⬜ pending |
@@ -71,12 +73,13 @@ plan_phase_completed: 2026-05-17
 | 02-04-T3 | 02-04 | 1 | CACHE-07 | T-02-12 | Gaps in the manifest are sorted by `start_utc` ascending (proptest) | property | `cargo test -p miner-core gap::tests::gaps_sorted_proptest` | ⬜ Wave 0 | ⬜ pending |
 | 02-04-T1 | 02-04 | 1 | CACHE-08 | — | `GapManifest` derives `JsonSchema` and round-trips via serde_json | unit | `cargo test -p miner-core gap::tests::gap_manifest_schemars_roundtrip` | ⬜ Wave 0 | ⬜ pending |
 | 02-05-T3 | 02-05 | 2 | ALL (schema) | T-02-16, T-02-18 | Arrow IPC schema bytes pinned by insta snapshot | snapshot | `cargo test -p miner-core --test arrow_schema_snapshot` | ⬜ Wave 0 | ⬜ pending |
+| 02-05-T3 | 02-05 | 2 | ALL (schema) | T-02-16 | Arrow schema metadata keys iterate in sorted order (BTreeMap-source gate) | unit | `cargo test -p miner-core --test arrow_schema_snapshot schema_metadata_keys_sorted` | ⬜ Wave 0 | ⬜ pending |
 | 02-06-T1 | 02-06 | 3 | ALL (determinism) | T-02-19 | Two full runs of aggregator + cache produce byte-identical `.arrow` + `.fingerprints.json` | integration | `cargo test -p miner-core --test full_determinism two_runs_byte_identical` | ⬜ Wave 0 | ⬜ pending |
 | 02-06-T2 | 02-06 | 3 | ALL (surface) | T-02-20 | Phase 2 FROZEN public surface complete: every Phase 2 type reachable via `use miner_core::*` | integration | `cargo test -p miner-core --test public_surface_audit phase_2_public_surface_present` | ⬜ Wave 0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
-> All `TBD | TBD` rows have been replaced with real `{plan-id}-T{task-num}` task IDs. The map is locked for execution-phase.
+> All `TBD | TBD` rows have been replaced with real `{plan-id}-T{task-num}` task IDs. The map is locked for execution-phase. Revision pass 1 added two rows from the B4 fix (`arrow_bytes_deterministic_under_shuffled_construction` proptest and `schema_metadata_keys_sorted` ancillary gate) and uses `aggregator::tests::*` paths throughout (file `crates/miner-core/src/aggregator.rs`).
 
 ---
 
@@ -94,8 +97,9 @@ Test infrastructure that MUST land in Wave 0 (before any Wave 1 task can be veri
 - [ ] `crates/miner-core/tests/gap_manifest_snapshot.rs` — insta snapshot of manifest JSON — **OWNED BY: Plan 02-04 Task 3**
 - [ ] `crates/miner-core/tests/arrow_schema_snapshot.rs` — insta snapshot of Arrow IPC schema bytes — **OWNED BY: Plan 02-05 Task 3**
 - [ ] `crates/miner-core/tests/full_determinism.rs` — end-to-end two-runs-byte-identical — **OWNED BY: Plan 02-06 Task 1**
-- [ ] `crates/miner-core/tests/snapshots/` directory — created on first `cargo insta accept` — **OWNED BY: Plan 02-04 Task 3** (creates .gitkeep)
+- [ ] `crates/miner-core/tests/snapshots/.gitkeep` directory — created on first `cargo insta accept`; the `.gitkeep` is staged + git-tracked from Wave 0 so the snapshots dir is committed before any `.snap` files arrive — **OWNED BY: Plan 02-04 Task 3** (creates and git-tracks .gitkeep)
 - [ ] Workspace dev-deps added: `proptest`, `insta`, `tempfile`, `serial_test` — **OWNED BY: Plan 02-01 Task 1**
+- [ ] Workspace runtime deps lockstep: `arrow` and `parquet` at the same major (per amended D2-01: latest stable, floor 53+) — **OWNED BY: Plan 02-01 Task 1**
 - [ ] Workspace lints: keep `unsafe_code = "forbid"` for Phase 2 (no mmap; defer to a later optimisation plan) — **VERIFIED: workspace Cargo.toml unchanged from Phase 1**
 
 ---
@@ -116,8 +120,9 @@ Test infrastructure that MUST land in Wave 0 (before any Wave 1 task can be veri
 - [x] No watch-mode flags (`cargo test` only — no `cargo watch` in commands)
 - [x] Feedback latency < 30s (per-crate quick run) and < 90s (full suite)
 - [x] `nyquist_compliant: true` set in frontmatter — all rows bound to plan task IDs
+- [x] Revision pass 1 applied: aggregator module renamed; arrow/parquet major lockstep documented; atomic write surface split into write_arrow_to_tempfile + persist_arrow_tempfile; .gitkeep git-tracked; gap-tests enumerated explicitly; arrow metadata determinism enforced via BTreeMap-sourced sorted Vec to the IPC encoder.
 
-**Approval:** approved by Plan 02-06 (planner-phase completion).
+**Approval:** approved by Plan 02-06 (planner-phase completion, revision pass 1).
 
 ---
 
@@ -130,7 +135,7 @@ Test infrastructure that MUST land in Wave 0 (before any Wave 1 task can be veri
 | CACHE-03 | 02-02 (Task 2) | CLOSED |
 | CACHE-04 | 02-02 (kernel + byte-identity Tasks 2+3), 02-03 (DST + edge cases all 3 tasks), 02-06 (end-to-end Task 1) | CLOSED |
 | CACHE-05 | 02-01 (Tasks 3 path_layout + 4 reader.tick_volume) | CLOSED |
-| CACHE-06 | 02-05 (cache Tasks 1+2+3), 02-06 (end-to-end determinism Task 1) | CLOSED |
+| CACHE-06 | 02-05 (cache Tasks 1+2+3 including atomic_write_crash_safety + arrow_bytes_deterministic_under_shuffled_construction), 02-06 (end-to-end determinism Task 1) | CLOSED |
 | CACHE-07 | 02-04 (Tasks 1+2+3) | CLOSED |
 | CACHE-08 | 02-04 (Task 1 — data shape ships; Phase 3 owns enforcement) | CLOSED for Phase 2 scope |
 
@@ -142,11 +147,11 @@ Test infrastructure that MUST land in Wave 0 (before any Wave 1 task can be veri
 
 | Plan | Wave | Depends On | Files Modified (high-level) |
 |------|------|------------|----------------------------|
-| 02-01 | 0 | (none) | Workspace deps; `miner-core::reader`; `miner-reader-dukascopy` crate full impl |
-| 02-02 | 1 | 02-01 | `miner-core::calendar`; `miner-core::aggregate`; aggregator_fixtures + determinism integration test |
-| 02-03 | 1 | 02-01 (compiles after 02-02 Task 2 lands aggregator_fixtures.rs) | `tests/dst_spring_forward.rs`, `tests/dst_fall_back.rs`, `tests/aggregator_edge_cases.rs` |
-| 02-04 | 1 | 02-01 (parallel with 02-02/02-03) | `miner-core::gap`; gap_manifest_snapshot integration test |
-| 02-05 | 2 | 02-02 (needs BarFrame + AGGREGATOR_VERSION) | `miner-core::cache`; cache_smoke + arrow_schema_snapshot tests |
+| 02-01 | 0 | (none) | Workspace deps (arrow + parquet at same major per amended D2-01); `miner-core::reader`; `miner-reader-dukascopy` crate full impl |
+| 02-02 | 1 | 02-01 | `miner-core::calendar`; `miner-core::aggregator` (file `aggregator.rs`, NOT `aggregate.rs` — revision pass 1 rename); aggregator_fixtures + determinism integration test |
+| 02-03 | 1 | 02-01, 02-02 (intra-wave dependency — Plan 03 compiles against `crates/miner-core/tests/aggregator_fixtures.rs` from Plan 02-02 Task 2; execute-phase serialises 02-02 → 02-03 inside Wave 1) | `tests/dst_spring_forward.rs`, `tests/dst_fall_back.rs`, `tests/aggregator_edge_cases.rs` |
+| 02-04 | 1 | 02-01 (parallel with 02-02/02-03) | `miner-core::gap`; gap_manifest_snapshot integration test; `tests/snapshots/.gitkeep` (git-tracked) |
+| 02-05 | 2 | 02-02 (needs BarFrame + AGGREGATOR_VERSION + `aggregator` module name) | `miner-core::cache` (two-step write_arrow_to_tempfile / persist_arrow_tempfile API; BTreeMap-sourced metadata to IPC encoder for byte-determinism); cache_smoke + arrow_schema_snapshot tests |
 | 02-06 | 3 | 02-05 (needs BarCache), 02-04 (parallel-tolerant), 02-03 | `tests/full_determinism.rs`; `tests/public_surface_audit.rs`; `tests/reader_trait_object_safety.rs`; VALIDATION.md finalisation |
 
-**Wave 1 execution detail:** Plans 02-02 and 02-03 both touch `crates/miner-core/tests/`. Execute 02-02 BEFORE 02-03 within Wave 1. Plan 02-04 touches `crates/miner-core/src/gap.rs` exclusively and can run in parallel with 02-02/02-03 — but writes to `crates/miner-core/src/lib.rs` which is shared; sequence the lib.rs touches.
+**Wave 1 execution detail (revision pass 1):** Plans 02-02 and 02-03 both touch `crates/miner-core/tests/`. Plan 02-03 declares `02-02` in its `depends_on` so `gsd-executor` serialises 02-02 → 02-03 inside Wave 1 (intra-wave dependency edges are honoured regardless of wave number). Plan 02-04 touches `crates/miner-core/src/gap.rs` exclusively and can run in true parallel with 02-02/02-03 — but writes to `crates/miner-core/src/lib.rs` which is shared; sequence the lib.rs touches.
