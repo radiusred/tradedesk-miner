@@ -49,8 +49,8 @@ impl Calendar {
     /// 24-hour day. The `.expect` is a compile-time guarantee in disguise.
     #[must_use]
     pub fn fx_major() -> Self {
-        let twenty_two_hundred = NaiveTime::from_hms_opt(22, 0, 0)
-            .expect("22:00:00 is a valid NaiveTime");
+        let twenty_two_hundred =
+            NaiveTime::from_hms_opt(22, 0, 0).expect("22:00:00 is a valid NaiveTime");
         Self {
             weekly_open_utc: (Weekday::Sun, twenty_two_hundred),
             weekly_close_utc: (Weekday::Fri, twenty_two_hundred),
@@ -121,9 +121,15 @@ mod tests {
     fn fx_major_shape_matches_d2_07() {
         let c = Calendar::fx_major();
         assert_eq!(c.weekly_open_utc.0, Weekday::Sun);
-        assert_eq!(c.weekly_open_utc.1, NaiveTime::from_hms_opt(22, 0, 0).unwrap());
+        assert_eq!(
+            c.weekly_open_utc.1,
+            NaiveTime::from_hms_opt(22, 0, 0).unwrap()
+        );
         assert_eq!(c.weekly_close_utc.0, Weekday::Fri);
-        assert_eq!(c.weekly_close_utc.1, NaiveTime::from_hms_opt(22, 0, 0).unwrap());
+        assert_eq!(
+            c.weekly_close_utc.1,
+            NaiveTime::from_hms_opt(22, 0, 0).unwrap()
+        );
         assert_eq!(c.yearly_holidays, vec![(12, 25), (1, 1)]);
     }
 

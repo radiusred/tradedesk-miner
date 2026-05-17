@@ -5,6 +5,7 @@
 //! Plans 04 (sink + `stderr_emit` implementations) and 05 (figment builder) build
 //! on top.
 
+pub mod aggregator;
 pub mod calendar;
 pub mod config;
 pub mod error;
@@ -38,3 +39,8 @@ pub use config::{CliOverrides, MinerConfig, OutputDest, build_figment};
 // Phase 2 (Plan 02-01) extensions:
 pub use calendar::Calendar;
 pub use reader::{Blake3Hex, ClosedRangeUtc, RawBar, Reader, Side};
+
+// Phase 2 (Plan 02-02) extensions:
+pub use aggregator::{
+    AGGREGATOR_VERSION, AggParams, AggregateError, BarFrame, Timeframe, aggregate,
+};

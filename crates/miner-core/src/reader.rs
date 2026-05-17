@@ -38,7 +38,13 @@ use crate::calendar::Calendar;
 
 /// Bid or ask side. `#[serde(rename_all = "lowercase")]` so wire form matches the
 /// Dukascopy filename suffix (`<DD>_bid.csv.zst` / `<DD>_ask.csv.zst`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+// `Ord` / `PartialOrd` derive added in Plan 02-02 so `Side` can serve as a key
+// component in `BTreeMap<(String, Side, NaiveDate), _>` (the integration
+// MockReader). The discriminant order is `Bid < Ask`; nothing in the codebase
+// relies on the absolute ordering, only on its existence and stability.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Side {
     Bid,
