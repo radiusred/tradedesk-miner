@@ -358,6 +358,89 @@ fn mask_emit_fixture_stdout(raw: &str) -> Vec<String> {
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// Test 8 — emit_fixture_writes_to_file_when_miner_output_is_a_path (CR-01 closure)
+//
+// Regression gate for CR-01: setting `MINER_OUTPUT=<file>` must dispatch through
+// `FileSink` and write the envelopes to the file — NOT silently fall through to
+// stdout. Pre-fix, the CLI bound the resolved config to `_cfg` and constructed
+// `StdoutSink::new()` unconditionally, so this test would FAIL (stdout would
+// carry the envelopes, the file would not exist).
+// ---------------------------------------------------------------------------
+
+#[test]
+#[serial_test::serial]
+fn emit_fixture_writes_to_file_when_miner_output_is_a_path() {
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    let out_path = tmp.path().join("findings.jsonl");
+
+    let mut cmd = assert_cmd::Command::cargo_bin("miner").expect("cargo_bin miner");
+    cmd.env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("MINER_CACHE_ROOT", "/tmp/cache")
+        .env("MINER_BAR_CACHE_ROOT", "/tmp/bar")
+        .env("MINER_OUTPUT", &out_path)
+        // CWD set to the tempdir so any leaked `./miner.toml` in the workspace
+        // root cannot perturb the test (also documented in WR-05; out of scope
+        // for this fix, but applying the discipline opportunistically here).
+        .current_dir(tmp.path())
+        .env("XDG_CONFIG_HOME", tmp.path())
+        .env("HOME", tmp.path())
+        .arg("emit-fixture");
+    let out = cmd.output().expect("spawn miner emit-fixture");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "exit code must be 0; stderr was: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The fix-under-test is that the bytes go to the FILE, not to stdout. Two
+    // assertions together pin the contract:
+    //   1. stdout is empty (the StdoutSink path was NOT taken).
+    //   2. the file contains the two newline-terminated JSON envelopes.
+    let stdout = String::from_utf8(out.stdout).expect("stdout utf-8");
+    assert!(
+        stdout.is_empty(),
+        "MINER_OUTPUT=<file> must NOT write findings to stdout; got: {stdout:?}"
+    );
+
+    let file_bytes = std::fs::read(&out_path)
+        .unwrap_or_else(|e| panic!("MINER_OUTPUT file {} must exist after run: {e}", out_path.display()));
+    let file_text = String::from_utf8(file_bytes).expect("output file must be utf-8");
+
+    let newlines = file_text.bytes().filter(|&b| b == b'\n').count();
+    assert_eq!(
+        newlines, 2,
+        "expected exactly 2 newlines in MINER_OUTPUT file; got {newlines}\nfile content: {file_text:?}"
+    );
+
+    let lines = parse_stdout_lines(&file_text);
+    assert_eq!(lines.len(), 2, "expected 2 JSON envelopes in MINER_OUTPUT file");
+    assert_eq!(
+        lines[0]["kind"], "run_start",
+        "first envelope in file must be kind=run_start; got {}",
+        lines[0]
+    );
+    assert_eq!(
+        lines[1]["kind"], "run_end",
+        "second envelope in file must be kind=run_end; got {}",
+        lines[1]
+    );
+
+    // Schema validation — same gate as Test 4, but against the file-sink path.
+    let validator = load_validator();
+    for (i, line) in lines.iter().enumerate() {
+        assert!(
+            validator.is_valid(line),
+            "file-sink envelope {i} (kind={}) failed schema validation: {}",
+            line["kind"],
+            serde_json::to_string_pretty(line).unwrap()
+        );
+    }
+}
+
 #[test]
 #[serial_test::serial]
 fn emit_fixture_byte_identical_when_volatile_fields_masked() {

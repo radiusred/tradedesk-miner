@@ -13,15 +13,17 @@
 //!    `PreflightCode::MissingRequiredConfig` and everything else →
 //!    `PreflightCode::InvalidConfig`. `emit_to_stderr` writes a single `WireError`
 //!    JSON line to stderr and we `std::process::exit(1)` (D-06, D-07).
-//! 6. On success, the `EmitFixture` handler creates one `RunStart` + one `RunEnd`,
-//!    sharing the same `RunId` (relies on `Copy` derive from Plan 03), and writes
-//!    them via `StdoutSink`. Exit code 0.
+//! 6. On success, `make_sink(&cfg.output)` dispatches on the resolved `OutputDest`:
+//!    `Stdout` → `StdoutSink`, `File(path)` → `FileSink` (opened `create + append`).
+//!    The `EmitFixture` handler creates one `RunStart` + one `RunEnd`, sharing
+//!    the same `RunId` (relies on `Copy` derive from Plan 03), and writes them
+//!    via the resolved sink. Exit code 0.
 
 use clap::Parser;
-use miner_core::config::MinerConfig;
+use miner_core::config::{MinerConfig, OutputDest};
 use miner_core::error::stderr_emit::emit_to_stderr;
 use miner_core::error::{PreflightCode, WireError};
-use miner_core::findings::sink::StdoutSink;
+use miner_core::findings::sink::{FileSink, StdoutSink};
 use miner_core::findings::{Finding, FindingSink, RunEnd, RunId, RunStart, RunSummary};
 use tracing_subscriber::EnvFilter;
 
@@ -47,7 +49,7 @@ fn main() -> anyhow::Result<()> {
 
     // Build figment + extract MinerConfig; on failure, emit structured WireError
     // to stderr with the correctly-classified PreflightCode and exit 1 (D-06).
-    let _cfg: MinerConfig = match MinerConfig::resolve(toml_path.as_deref(), parsed.overrides()) {
+    let cfg: MinerConfig = match MinerConfig::resolve(toml_path.as_deref(), parsed.overrides()) {
         Ok(c) => c,
         Err(e) => {
             let code = classify_figment_error(&e);
@@ -58,11 +60,39 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
+    // Construct the resolved sink from `cfg.output`. Failure to open a file sink
+    // is a runtime IO error, not a preflight config error — we surface it via the
+    // anyhow chain so the operator gets a non-zero exit and a readable stderr line
+    // (tracing layer captures it).
+    let mut sink: Box<dyn FindingSink> = make_sink(&cfg.output)?;
+
     match parsed.command {
-        Command::EmitFixture => emit_fixture()?,
+        Command::EmitFixture => emit_fixture(&mut *sink)?,
     }
 
     Ok(())
+}
+
+/// Dispatch on the resolved [`OutputDest`] to construct the production sink.
+///
+/// `OutputDest::Stdout` → [`StdoutSink`] (the v1 default; D-19 single sanctioned
+/// stdout writer). `OutputDest::File(path)` → [`FileSink`] opened in
+/// `create + append` mode at `path`. Both implementations share JSONL framing
+/// and per-envelope flush semantics so the wire output is byte-identical across
+/// destinations (modulo the volatile `run_id` / timestamp fields).
+///
+/// # Errors
+/// Returns [`anyhow::Error`] wrapping the underlying IO failure if the file path
+/// cannot be opened (missing parent directory, permission denied, etc.).
+fn make_sink(dest: &OutputDest) -> anyhow::Result<Box<dyn FindingSink>> {
+    match dest {
+        OutputDest::Stdout => Ok(Box::new(StdoutSink::new())),
+        OutputDest::File(path) => {
+            let sink = FileSink::create(path)
+                .map_err(|e| anyhow::anyhow!("opening output file {}: {e}", path.display()))?;
+            Ok(Box::new(sink))
+        }
+    }
 }
 
 /// Inspect a `figment::Error` and return the appropriate [`PreflightCode`].
@@ -99,11 +129,16 @@ fn classify_figment_error(err: &figment::Error) -> PreflightCode {
     }
 }
 
-/// `emit-fixture` subcommand: one `RunStart` + one `RunEnd` to stdout via
-/// `StdoutSink`. Both records share the same `RunId` (relies on `Copy`).
-fn emit_fixture() -> anyhow::Result<()> {
+/// `emit-fixture` subcommand: one `RunStart` + one `RunEnd` written through the
+/// resolved sink (constructed by [`make_sink`] from the post-precedence
+/// `MinerConfig::output`). Both records share the same `RunId` (relies on `Copy`).
+///
+/// The sink is passed by `&mut dyn FindingSink` so the same code path handles
+/// `StdoutSink` and `FileSink` (and any future sink) identically — the JSONL
+/// framing + per-envelope flush guarantees come from the sink implementation, not
+/// from this function.
+fn emit_fixture(sink: &mut dyn FindingSink) -> anyhow::Result<()> {
     tracing::info!("emitting fixture");
-    let mut sink = StdoutSink::new();
     let run_id = RunId::new();
     let started = chrono::Utc::now();
 

@@ -16,7 +16,9 @@
 //! Enforcement Mechanics" point 2, NO `#[allow(clippy::disallowed_macros)]`
 //! attribute is needed (and adding one would mask future regressions).
 
+use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Stdout, Write};
+use std::path::Path;
 
 use crate::error::MinerError;
 use crate::findings::Finding;
@@ -92,6 +94,78 @@ impl FindingSink for StdoutSink {
         self.writer.write_all(b"\n").map_err(MinerError::Io)?;
         // Per-envelope flush — closes PITFALLS #4. A panic mid-sweep loses at most
         // the in-flight finding; the consumer never sees a torn JSON value.
+        self.writer.flush().map_err(MinerError::Io)?;
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<(), MinerError> {
+        self.writer.flush().map_err(MinerError::Io)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FileSink — production sink for `OutputDest::File(<path>)`.
+//
+// Mirrors `StdoutSink` byte-for-byte (BufWriter + per-envelope flush) so the
+// `MINER_OUTPUT=<path>` agent contract produces identical JSONL framing to the
+// stdout path. The stdout/stderr split discipline (D-19, T-01-03) is preserved:
+// `FileSink` writes ONLY to the user-specified file handle — never to stdout,
+// never to stderr.
+//
+// Open mode is `create + append`: re-running with the same path appends new
+// envelopes rather than truncating, which matches the JSONL streaming model
+// (a finder may run multiple times in a sweep and accumulate findings).
+// ---------------------------------------------------------------------------
+
+/// Sink that writes envelopes to a file handle, JSONL-framed, with per-envelope
+/// flush. Used when [`OutputDest::File`](crate::config::OutputDest::File) is the
+/// resolved output destination.
+///
+/// Construction:
+/// - [`FileSink::create`] — open the path with `create(true).append(true)`. Use
+///   this in the CLI / MCP / HTTP wrappers when dispatching on a resolved
+///   `OutputDest::File`.
+/// - [`FileSink::from_file`] — wrap an already-open `File`. Use this in tests
+///   that have already constructed the file handle.
+///
+/// Framing semantics match `StdoutSink` exactly: one JSON object per
+/// `write_envelope` call followed by `\n`, with an explicit per-envelope flush
+/// (PITFALLS #4 — a panic mid-sweep loses at most the in-flight finding).
+pub struct FileSink {
+    writer: BufWriter<File>,
+}
+
+impl FileSink {
+    /// Open `path` in `create + append` mode and wrap it in a buffered sink.
+    ///
+    /// # Errors
+    /// Returns [`MinerError::Io`] if the file cannot be opened (e.g., parent
+    /// directory missing, permission denied).
+    pub fn create<P: AsRef<Path>>(path: P) -> Result<Self, MinerError> {
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(MinerError::Io)?;
+        Ok(Self::from_file(file))
+    }
+
+    /// Wrap an already-open `File` handle in a buffered sink.
+    #[must_use]
+    pub fn from_file(file: File) -> Self {
+        Self {
+            writer: BufWriter::new(file),
+        }
+    }
+}
+
+impl FindingSink for FileSink {
+    fn write_envelope(&mut self, finding: &Finding) -> Result<(), MinerError> {
+        serde_json::to_writer(&mut self.writer, finding).map_err(MinerError::Serialize)?;
+        self.writer.write_all(b"\n").map_err(MinerError::Io)?;
+        // Per-envelope flush — same PITFALLS #4 contract as StdoutSink. A panic
+        // mid-sweep loses at most the in-flight finding; the consumer never sees
+        // a torn JSON value.
         self.writer.flush().map_err(MinerError::Io)?;
         Ok(())
     }
