@@ -5,9 +5,11 @@
 //! Plans 04 (sink + `stderr_emit` implementations) and 05 (figment builder) build
 //! on top.
 
+pub mod calendar;
 pub mod config;
 pub mod error;
 pub mod findings;
+pub mod reader;
 
 /// Git SHA of the source revision that produced this build; `dirty-<sha>` when the tree
 /// had uncommitted changes; `"unknown"` when git was unavailable (e.g., tarball builds).
@@ -32,3 +34,7 @@ pub use findings::{
 pub use error::{MinerError, PreflightCode, ScanErrorCode, WireError};
 
 pub use config::{CliOverrides, MinerConfig, OutputDest, build_figment};
+
+// Phase 2 (Plan 02-01) extensions:
+pub use calendar::Calendar;
+pub use reader::{Blake3Hex, ClosedRangeUtc, RawBar, Reader, Side};
