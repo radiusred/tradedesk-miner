@@ -44,6 +44,16 @@ findings:
   info: 6
   total: 15
 status: issues_found
+critical_fixed: 2
+warnings_fixed: 0
+info_fixed: 0
+fixes:
+  - id: CR-01
+    status: fixed
+    commit: ba6ce97
+  - id: CR-02
+    status: fixed
+    commit: cf55f90
 ---
 
 # Phase 1: Code Review Report
@@ -656,3 +666,61 @@ No structural findings block was supplied with the review prompt; nothing to rec
 _Reviewed: 2026-05-17_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+
+---
+
+## Fixes Applied (2026-05-17)
+
+Both BLOCKERs from this review have been fixed in atomic commits. WARNINGs and
+INFOs are deferred for separate triage.
+
+| ID | Title | Status | Commit |
+|----|-------|--------|--------|
+| CR-01 | CLI silently ignores resolved `OutputDest`; `MINER_OUTPUT=<path>` is a no-op in v1 | fixed | `ba6ce97` |
+| CR-02 | `build.rs` dirty-tree detection misses staged changes — T-01-04 mitigation has a hole | fixed | `cf55f90` |
+
+### CR-01 — `fix(01): CR-01 honor resolved OutputDest in CLI (FileSink dispatch)`
+
+- Added `miner_core::findings::sink::FileSink` mirroring `StdoutSink` byte-for-byte
+  (BufWriter + per-envelope flush + identical JSONL framing). Opens with
+  `create(true).append(true)`.
+- `miner-cli::main` now binds the resolved `MinerConfig` (no `_cfg`) and dispatches
+  on `cfg.output` via a new `make_sink(&OutputDest) -> Box<dyn FindingSink>` factory.
+  `emit_fixture` takes `&mut dyn FindingSink` so a single code path drives both
+  destinations.
+- New integration test `emit_fixture_writes_to_file_when_miner_output_is_a_path`
+  in `crates/miner-cli/tests/cli_streams.rs` is the regression gate — it spawns the
+  binary with `MINER_OUTPUT=<tempfile>` and asserts stdout is empty AND the file
+  contains the two schema-valid envelopes.
+- D-19 single sanctioned-stdout-writer discipline preserved: `StdoutSink` remains
+  the only type that opens `io::stdout()`; `FileSink` writes only to the
+  user-specified file handle.
+
+### CR-02 — `fix(01): CR-02 detect staged-but-uncommitted changes in code_revision`
+
+- `crates/miner-core/build.rs`: changed `git diff --quiet` → `git diff --quiet HEAD`,
+  closing the T-01-04 staged-changes hole. The bare command compares
+  worktree-vs-index (missing staged changes); the `HEAD` form compares
+  worktree-vs-HEAD (catches both staged AND unstaged divergence).
+- Inline comment documents the rationale and the attack vector being closed.
+- Behavioral verification recorded in the commit message: with a modification
+  staged via `git add`, the OLD command returns exit 0 (clean — bug); the NEW
+  command returns exit 1 (dirty — correct).
+
+### Out of scope (deferred)
+
+WARNINGs WR-01 through WR-07 and all INFOs (IN-01 through IN-06) were NOT
+touched in this run. The operator will triage them separately.
+
+### Verification
+
+After both fixes:
+- `cargo build --workspace` — passes
+- `cargo clippy --workspace --all-targets -- -D warnings` — passes
+- `cargo test --workspace` — passes (8/8 cli_streams tests including the new
+  CR-01 regression gate, 29/29 miner-core unit tests, 4/4 config_precedence,
+  3/3 schema_roundtrip)
+
+_Fixes applied: 2026-05-17_
+_Fixer: Claude (gsd-code-fixer)_
+_Iteration: 1_
