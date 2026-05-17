@@ -1,0 +1,88 @@
+# tradedesk-miner CI workflow.
+#
+# Plan 01-06 (Wave 5) lands the FOUR MANDATORY GATES from CONTEXT.md D-21
+# plus general hygiene (fmt + test):
+#
+#   Gate 1 — `cargo build --workspace`             (compile health)
+#   Gate 2 — `cargo clippy ... -- -D warnings`     (stdout discipline via
+#                                                   clippy.toml disallowed-macros;
+#                                                   mitigates T-01-03)
+#   Gate 3 — tokio-tree grep against miner-core    (FOUND-04 — async-runtime-free
+#                                                   scan engine)
+#   Gate 4 — schema-sync diff                      (FOUND-03 — the schemars-derived
+#                                                   `schemas/findings-v1.schema.json`
+#                                                   IS the contract; mitigates
+#                                                   T-01-02 schema drift)
+#
+# Action pinning posture for Phase 1: major-version tags (`@v4`, `@stable`).
+# Phase 7 hardening pass will pin SHAs.
+
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (1.85 stable + clippy + rustfmt)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85"
+          components: clippy, rustfmt
+
+      # Gate 1 — build
+      - name: cargo build --workspace
+        run: cargo build --workspace --all-targets
+
+      # Gate 2 — clippy with -D warnings (catches stdout-discipline violations
+      # via the workspace clippy.toml disallowed-macros list from Plan 04).
+      - name: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # Additional hygiene — fmt
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      # cargo test (includes D-22 schema validation tests landed in Plan 07)
+      - name: cargo test --workspace
+        run: cargo test --workspace --no-fail-fast
+
+      # Gate 3 — tokio-free miner-core (FOUND-04).
+      #
+      # The PROHIBITED regex is the exact list from RESEARCH §Tokio-Free Gate:
+      # tokio, async-std, smol (any sub-crate), plus async-trait, async-io,
+      # async-channel, async-executor, async-task. `--edges normal,build`
+      # excludes dev-dependencies (tests are allowed to use a runtime to
+      # exercise the wrapper bridges).
+      - name: tokio-free miner-core
+        run: |
+          set -euo pipefail
+          PROHIBITED='^(tokio|tokio-[^ ]+|async-std|async-std-[^ ]+|smol|smol-[^ ]+|async-trait|async-io|async-channel|async-executor|async-task)$'
+          LEAKED=$(cargo tree -p miner-core --edges normal,build --prefix none \
+              | awk '{print $1}' | sort -u \
+              | grep -E "$PROHIBITED" || true)
+          if [ -n "$LEAKED" ]; then
+            echo "::error::async runtime crate(s) leaked into miner-core:"
+            echo "$LEAKED"
+            exit 1
+          fi
+          echo "ok: miner-core has zero async-runtime dependencies"
+
+      # Gate 4 — schema sync (FOUND-03, mitigates T-01-02).
+      #
+      # Regenerates `schemas/findings-v1.schema.json` from the schemars derives
+      # in miner-core and fails the build if the committed artifact has drifted
+      # from the Rust types. Robustness against runner-environment flakes is
+      # ensured by (a) Plan 01-01 pinning `serde_json` without `preserve_order`,
+      # (b) xtask's `to_value → to_string_pretty` normalisation, (c) Plan 01-06
+      # Task 1's twice-run byte-diff acceptance gate.
+      - name: schema sync
+        run: |
+          cargo run -p xtask -- gen-schema
+          if ! git diff --exit-code schemas/findings-v1.schema.json; then
+            echo "::error::schema drifted from Rust types — re-run \`cargo xtask gen-schema\` and commit"
+            exit 1
+          fi

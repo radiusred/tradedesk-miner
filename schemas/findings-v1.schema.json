@@ -1,0 +1,564 @@
+{
+  "$defs": {
+    "Base64Bytes": {
+      "contentEncoding": "base64",
+      "contentMediaType": "application/octet-stream",
+      "description": "Little-endian f64 bytes, base64-encoded",
+      "type": "string"
+    },
+    "DataSlice": {
+      "description": "The input range a scan actually consumed (post gap-partitioning).\n\n`gap_manifest_ref` is `None` in v1; Phase 3 populates it under the\n`continuous_only` gap policy (D-08).",
+      "properties": {
+        "gap_manifest_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "range": {
+          "$ref": "#/$defs/TimeRange"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "type": "object"
+    },
+    "Dtype": {
+      "description": "Dtype enum carried alongside a `RawArray`. Only `F64` is used in v1 (D-01: all raw\npayloads are little-endian f64 bytes). Adding additional dtypes is additive — a new\nvariant does not break consumers that only know about `f64`, because they will simply\nskip arrays they cannot decode.",
+      "enum": [
+        "f64"
+      ],
+      "type": "string"
+    },
+    "Effect": {
+      "description": "The `effect` block on a `Result` finding — the OUTPUTS the scan produced (D-04).\n\n`extra` carries scan-derived arrays (e.g., Ljung-Box `lags`/`acf`; OLS\n`residuals`). Same `{data, shape, dtype}` shape as `raw.series` entries. Uses\n`BTreeMap` for deterministic ordering — OUT-03.",
+      "properties": {
+        "ci95": {
+          "default": null,
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "extra": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RawArray"
+          },
+          "default": {},
+          "description": "`BTreeMap` (NEVER `HashMap`) for deterministic ordering — OUT-03.",
+          "type": "object"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "n": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "p_value": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "value": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "metric",
+        "value"
+      ],
+      "type": "object"
+    },
+    "GapAbortedFinding": {
+      "description": "A `gap_aborted` finding: emitted once per scan run under `--gap-policy=strict`\nwhen a gap manifest disallows the requested window (D-08).\n\nCarries the seven locked envelope fields plus per-variant additions. The\n`gap_manifest` shape is finalised in Phase 2 — v1 treats it as `serde_json::Value`.",
+      "properties": {
+        "code_revision": {
+          "type": "string"
+        },
+        "data_slice": {
+          "$ref": "#/$defs/DataSlice"
+        },
+        "dsr": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "fdr_q": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "gap_manifest": true,
+        "param_hash": {
+          "type": "string"
+        },
+        "produced_at_utc": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        },
+        "scan_id@version": {
+          "type": "string"
+        },
+        "schema_version": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        }
+      },
+      "required": [
+        "schema_version",
+        "scan_id@version",
+        "param_hash",
+        "code_revision",
+        "data_slice",
+        "run_id",
+        "produced_at_utc",
+        "source",
+        "gap_manifest"
+      ],
+      "type": "object"
+    },
+    "PerScanCounts": {
+      "description": "Per-scan counters embedded in [`RunSummary::per_scan`] (D-11).\n\n`Copy` is safe — three `u64`s, no allocations. `Default` produces zero counters.",
+      "properties": {
+        "errors": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "gap_aborted": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "results": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "results",
+        "errors",
+        "gap_aborted"
+      ],
+      "type": "object"
+    },
+    "Raw": {
+      "description": "The `raw` block on a `Result` finding — the INPUTS the scan consumed (D-04).\n\n`series` MUST contain a `timestamps_ms` key when `raw` is present (D-03). Use\n[`Raw::new`] to enforce this at construction time, or [`Raw::new_unchecked`] in\ntests that exercise other fields.",
+      "properties": {
+        "series": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RawArray"
+          },
+          "description": "`BTreeMap` (NEVER `HashMap`) for deterministic ordering — OUT-03.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "series"
+      ],
+      "type": "object"
+    },
+    "RawArray": {
+      "description": "A single raw array: base64-encoded LE f64 bytes plus its shape and dtype (D-02).",
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/Base64Bytes"
+        },
+        "dtype": {
+          "$ref": "#/$defs/Dtype"
+        },
+        "shape": {
+          "items": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "data",
+        "shape",
+        "dtype"
+      ],
+      "type": "object"
+    },
+    "ResultFinding": {
+      "description": "A `result` finding: the headline scan output (D-04).\n\nCarries the seven locked envelope fields plus per-variant additions. `dsr` and\n`fdr_q` MUST serialise as JSON `null` in v1 (NOT absent) — DO NOT add\n`#[serde(skip_serializing_if = \"Option::is_none\")]` to either field.",
+      "properties": {
+        "code_revision": {
+          "type": "string"
+        },
+        "data_slice": {
+          "$ref": "#/$defs/DataSlice"
+        },
+        "dsr": {
+          "description": "Reserved for Phase 5 (Deflated Sharpe Ratio). Serialises as `null` in v1.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "effect": {
+          "$ref": "#/$defs/Effect"
+        },
+        "fdr_q": {
+          "description": "Reserved for Phase 5 (BH-FDR adjusted q-value). Serialises as `null` in v1.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "param_hash": {
+          "type": "string"
+        },
+        "params": {
+          "description": "Resolved scan parameters (post-defaults)."
+        },
+        "produced_at_utc": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Raw"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional inputs the scan consumed (D-04 input/output split)."
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        },
+        "scan_id@version": {
+          "type": "string"
+        },
+        "schema_version": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        }
+      },
+      "required": [
+        "schema_version",
+        "scan_id@version",
+        "param_hash",
+        "code_revision",
+        "data_slice",
+        "run_id",
+        "produced_at_utc",
+        "source",
+        "params",
+        "effect"
+      ],
+      "type": "object"
+    },
+    "RunEnd": {
+      "description": "Payload for the closing framing record (D-09, D-11).\n\nDoes NOT carry the seven locked envelope fields — framing records are exempt.",
+      "properties": {
+        "ended_at_utc": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        },
+        "summary": {
+          "$ref": "#/$defs/RunSummary"
+        },
+        "wall_clock_ms": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run_id",
+        "ended_at_utc",
+        "wall_clock_ms",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "RunId": {
+      "description": "26-character Crockford-base32 ULID, time-prefixed and lexicographically sortable",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
+    },
+    "RunStart": {
+      "description": "Payload for the opening framing record (D-09, D-11).\n\nDoes NOT carry the seven locked envelope fields — framing records are exempt per\nthe closing note of CONTEXT D-09.",
+      "properties": {
+        "code_revision": {
+          "type": "string"
+        },
+        "miner_version": {
+          "type": "string"
+        },
+        "request": {
+          "description": "Fully-resolved invocation (`scan_id@version`, instrument(s), side, timeframe,\nwindow, params with defaults applied, `gap_policy`). `serde_json::Value` for v1\nsimplicity; the `RawValue` optimisation is deferred."
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        },
+        "started_at_utc": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "started_at_utc",
+        "miner_version",
+        "code_revision",
+        "request"
+      ],
+      "type": "object"
+    },
+    "RunSummary": {
+      "description": "Per-run aggregate counters (D-11).\n\n`Default::default()` produces zero counters and an empty `per_scan` map — this is\nthe contract Plan 05's `emit_fixture()` depends on.",
+      "properties": {
+        "gap_aborted": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "per_scan": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PerScanCounts"
+          },
+          "description": "Keyed by `\"scan_id@version\"`. `BTreeMap` for deterministic ordering — OUT-03.",
+          "type": "object"
+        },
+        "results_emitted": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scan_errors": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "results_emitted",
+        "scan_errors",
+        "gap_aborted",
+        "per_scan"
+      ],
+      "type": "object"
+    },
+    "ScanErrorFinding": {
+      "description": "A `scan_error` finding: mid-run scan failure (D-05).\n\nCarries the seven locked envelope fields plus per-variant additions.",
+      "properties": {
+        "code_revision": {
+          "type": "string"
+        },
+        "data_slice": {
+          "$ref": "#/$defs/DataSlice"
+        },
+        "dsr": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "error_code": {
+          "description": "Open-string `error_code` per RESEARCH §\"`error_code` Vocabulary\". Internally\nconstructed from a typed `ScanErrorCode`; on the wire the schema treats it as\n`string` so adding new codes is additive (non-breaking).",
+          "type": "string"
+        },
+        "fdr_q": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "param_hash": {
+          "type": "string"
+        },
+        "produced_at_utc": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "request_context": true,
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        },
+        "scan_id@version": {
+          "type": "string"
+        },
+        "schema_version": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "scan_id@version",
+        "param_hash",
+        "code_revision",
+        "data_slice",
+        "run_id",
+        "produced_at_utc",
+        "error_code",
+        "message",
+        "request_context"
+      ],
+      "type": "object"
+    },
+    "Source": {
+      "description": "The instrument / side / timeframe a finding pertains to.\n\nString-typed in Phase 1. Phase 2 introduces typed `Side` / `Symbol` / `Timeframe`\nenums and these field types will be tightened.",
+      "properties": {
+        "side": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "timeframe": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "symbol",
+        "side",
+        "timeframe"
+      ],
+      "type": "object"
+    },
+    "TimeRange": {
+      "description": "Half-open UTC time interval [`start_utc`, `end_utc`).",
+      "properties": {
+        "end_utc": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "start_utc": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_utc",
+        "end_utc"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The five-variant Finding envelope discriminated by the JSON `kind` field.\n\nPer RESEARCH §Anti-Patterns: do NOT use `#[serde(flatten)]` on a \"common-fields\"\nstruct. The seven locked envelope fields are inlined directly into each variant\npayload struct that carries them (Result, `ScanError`, `GapAborted`).",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/RunStart",
+      "properties": {
+        "kind": {
+          "const": "run_start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "$ref": "#/$defs/ResultFinding",
+      "properties": {
+        "kind": {
+          "const": "result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "$ref": "#/$defs/ScanErrorFinding",
+      "properties": {
+        "kind": {
+          "const": "scan_error",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "$ref": "#/$defs/GapAbortedFinding",
+      "properties": {
+        "kind": {
+          "const": "gap_aborted",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "$ref": "#/$defs/RunEnd",
+      "properties": {
+        "kind": {
+          "const": "run_end",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Finding"
+}

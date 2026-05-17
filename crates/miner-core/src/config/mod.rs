@@ -237,8 +237,11 @@ mod tests {
             )?;
             jail.set_env("MINER_CACHE_ROOT", "/env/cache");
 
-            let cfg = MinerConfig::resolve(Some(Path::new("config-fixture.toml")), CliOverrides::default())
-                .expect("resolve must succeed");
+            let cfg = MinerConfig::resolve(
+                Some(Path::new("config-fixture.toml")),
+                CliOverrides::default(),
+            )
+            .expect("resolve must succeed");
             assert_eq!(
                 cfg.cache_root,
                 PathBuf::from("/env/cache"),
@@ -264,8 +267,11 @@ mod tests {
                 "#,
             )?;
             // No MINER_* env vars set inside this Jail.
-            let cfg = MinerConfig::resolve(Some(Path::new("config-fixture.toml")), CliOverrides::default())
-                .expect("resolve must succeed from TOML alone");
+            let cfg = MinerConfig::resolve(
+                Some(Path::new("config-fixture.toml")),
+                CliOverrides::default(),
+            )
+            .expect("resolve must succeed from TOML alone");
             assert_eq!(cfg.cache_root, PathBuf::from("/file/cache"));
             assert_eq!(cfg.bar_cache_root, PathBuf::from("/file/bar"));
             assert_eq!(cfg.output, OutputDest::Stdout);

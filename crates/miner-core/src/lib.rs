@@ -24,9 +24,9 @@ pub const CODE_REVISION: &str = env!("MINER_CODE_REVISION");
 // =============================================================================
 
 pub use findings::{
-    Base64Bytes, DataSlice, Dtype, Effect, Finding, FindingSink, GapAbortedFinding,
-    PerScanCounts, Raw, RawArray, ResultFinding, RunEnd, RunId, RunStart, RunSummary,
-    ScanErrorFinding, Source, TimeRange,
+    Base64Bytes, DataSlice, Dtype, Effect, Finding, FindingSink, GapAbortedFinding, PerScanCounts,
+    Raw, RawArray, ResultFinding, RunEnd, RunId, RunStart, RunSummary, ScanErrorFinding, Source,
+    TimeRange,
 };
 
 pub use error::{MinerError, PreflightCode, ScanErrorCode, WireError};
