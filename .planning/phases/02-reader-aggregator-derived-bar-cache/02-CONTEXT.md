@@ -27,7 +27,7 @@ The user is not a Rust practitioner; downstream agents should default to the mos
 
 ### Derived-Bar Cache Format
 
-- **D2-01: Arrow IPC files (one per quartet).** Cache files are `<bar_cache_root>/<source_id>/<SYMBOL>/<timeframe>_<side>.arrow` — one Arrow IPC file per `(source_id, symbol, side, timeframe)` covering all years. Adds `arrow = "53"` (lockstep with `parquet = "53"`) to `miner-core` workspace deps. Chosen specifically because PROJECT.md flags PLAT-v2-02 (Python aggregator export — replace tradedesk's Python 1m→Nm aggregation with miner's Rust impl) as a future goal: Arrow IPC is Polars/Pandas-readable in one line, making that goal trivial to land later. Rejected: Parquet (compression tax unnecessary for write-once cache), bincode+zstd (Rust-only, blocks Python interop), custom mmap binary (loses all tooling interop).
+- **D2-01: Arrow IPC files (one per quartet).** Cache files are `<bar_cache_root>/<source_id>/<SYMBOL>/<timeframe>_<side>.arrow` — one Arrow IPC file per `(source_id, symbol, side, timeframe)` covering all years. Adds `arrow` (latest stable as of plan-phase; CLAUDE.md locks the floor at `53+` with lockstep `parquet` of the same major — research at 2026-05-17 confirmed `arrow = "58"` is current and ships the BTreeMap-aware `Schema` metadata API required for byte-deterministic IPC writes; pin whatever major `cargo add arrow` resolves and lock parquet to the same major) to `miner-core` workspace deps. Chosen specifically because PROJECT.md flags PLAT-v2-02 (Python aggregator export — replace tradedesk's Python 1m→Nm aggregation with miner's Rust impl) as a future goal: Arrow IPC is Polars/Pandas-readable in one line, making that goal trivial to land later. Rejected: Parquet (compression tax unnecessary for write-once cache), bincode+zstd (Rust-only, blocks Python interop), custom mmap binary (loses all tooling interop).
 
 - **D2-02: Year partitioning deferred to v2.** v1 ships ONE Arrow file per quartet covering all years. CLAUDE.md notes year-partitioning (`EURUSD/15m/bid/2024.arrow`, `…/2025.arrow`) as a natural upgrade path for cheaper append + parallel reads, but for the v1 cache size (28 symbols × 6 years × 1.4M rows max) a single file per quartet is well-bounded. Re-evaluate if a quartet file exceeds ~500MB in profiling.
 
@@ -230,7 +230,7 @@ miner-http ──┘
 
 | Crate | Where | Reason |
 |-------|-------|--------|
-| `arrow = "53"` | `miner-core` | D2-01 cache format |
+| `arrow` (latest stable; floor `53+` per CLAUDE.md, parquet pinned to the same major) | `miner-core` | D2-01 cache format |
 | `csv = "1.3"` | `miner-reader-dukascopy` | Dukascopy CSV parsing |
 | `csv-core = "0.1"` | `miner-reader-dukascopy` | Hot-path byte-level parser if `csv` profile is too slow (Plan can decide) |
 | `zstd = "0.13"` | `miner-reader-dukascopy` | `.csv.zst` decompression |
