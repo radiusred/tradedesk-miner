@@ -1,0 +1,38 @@
+# Workspace clippy configuration — FOUND-02 stdout/stderr discipline (D-15).
+#
+# `disallowed-macros` bans the convenience macros that bypass the two
+# sanctioned writer modules:
+#
+#   * `miner-core::findings::sink::StdoutSink`        (the ONLY stdout writer)
+#   * `miner-core::error::stderr_emit::write_*`       (the ONLY pre-flight
+#                                                       stderr writer)
+#
+# Together with `tracing` (which routes log output through
+# `tracing_subscriber::fmt().with_writer(std::io::stderr)` initialised in each
+# binary's `main`), this is the three-layer defence against threat T-01-03
+# (stdout pollution leaking sensitive paths into the JSONL findings stream).
+#
+# Exemptions:
+#
+#   1. `crates/miner-core/build.rs` — Cargo's `println!("cargo:...")`
+#      directives ARE the build-script protocol. The crate-level
+#      `#[allow(clippy::disallowed_macros)]` at the head of `build.rs`
+#      makes the exemption explicit. (Note: cargo build scripts run as a
+#      separate compilation unit; the lint may not catch them automatically.
+#      The attribute is defensive.)
+#
+#   2. `xtask/src/main.rs` — dev-only command runner; never shipped, never
+#      executed inside a wrapper binary. Carries
+#      `#![allow(clippy::disallowed_macros)]` at the binary scope so the
+#      dev-loop diagnostic output stays ergonomic.
+#
+# Anything else using one of these macros fails CI on
+# `cargo clippy --workspace --all-targets -- -D warnings`.
+
+disallowed-macros = [
+    { path = "std::println",   reason = "stdout is reserved for findings; use FindingSink or tracing::info!" },
+    { path = "std::print",     reason = "stdout is reserved for findings" },
+    { path = "std::eprintln",  reason = "use tracing::warn!/error! routed to stderr by the subscriber, or error::stderr_emit::write_preflight_error" },
+    { path = "std::eprint",    reason = "use tracing::warn!/error!" },
+    { path = "std::dbg",       reason = "do not leave dbg! in production code" },
+]

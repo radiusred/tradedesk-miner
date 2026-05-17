@@ -105,8 +105,13 @@ pub struct Raw {
 impl Raw {
     /// Construct a `Raw` block, validating that `timestamps_ms` is present (D-03).
     ///
-    /// Returns `Err` with a static message when the invariant is violated. Production
-    /// callers should map this into a `MinerError::Internal` at the scan boundary.
+    /// Production callers should map the `Err` into a `MinerError::Internal` at the
+    /// scan boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` with a static message when `series` does NOT contain a
+    /// `timestamps_ms` key (D-03 invariant).
     pub fn new(series: BTreeMap<String, RawArray>) -> Result<Self, &'static str> {
         if !series.contains_key("timestamps_ms") {
             return Err("Raw::new: `series` must contain a `timestamps_ms` array (D-03)");
@@ -463,8 +468,15 @@ mod tests {
     }
 
     /// Test 4 — `run_id_is_copy`: compile-time + runtime check that `RunId` is `Copy`.
-    /// Two moves of the same value compile only when `Copy` is derived.
+    /// Two moves of the same value compile only when `Copy` is derived. The two
+    /// `_x = id` bindings are INTENTIONAL no-ops: their purpose is to exercise the
+    /// Copy bit (each move would consume the value if `Copy` weren't derived); we
+    /// allow `clippy::no_effect_underscore_binding` locally to document that.
     #[test]
+    #[allow(
+        clippy::no_effect_underscore_binding,
+        reason = "the two underscore bindings ARE the test — each move only compiles if RunId: Copy"
+    )]
     fn run_id_is_copy() {
         assert_copy::<RunId>();
         let id = RunId::new();
@@ -488,7 +500,7 @@ mod tests {
         assert_eq!(p.gap_aborted, 0);
     }
 
-    /// Test 6 — `base64_round_trip`: Base64Bytes round-trips through serde_json.
+    /// Test 6 — `base64_round_trip`: `Base64Bytes` round-trips through `serde_json`.
     #[test]
     fn base64_round_trip() {
         let b = Base64Bytes(vec![0u8, 1, 2, 255]);
@@ -498,7 +510,7 @@ mod tests {
     }
 
     /// Test 7 — `raw_series_uses_btreemap`: type-annotated reference binding ensures
-    /// `Raw::series` is `BTreeMap<String, RawArray>` (NEVER HashMap — OUT-03).
+    /// `Raw::series` is `BTreeMap<String, RawArray>` (NEVER `HashMap` — OUT-03).
     #[test]
     fn raw_series_uses_btreemap() {
         let mut series: BTreeMap<String, RawArray> = BTreeMap::new();
@@ -519,8 +531,8 @@ mod tests {
         assert!(Raw::new(bad).is_err());
     }
 
-    /// Test 8 — `all_five_variants_round_trip`: each Finding variant survives a
-    /// serde_json round-trip.
+    /// Test 8 — `all_five_variants_round_trip`: each `Finding` variant survives a
+    /// `serde_json` round-trip.
     #[test]
     fn all_five_variants_round_trip() {
         for finding in [

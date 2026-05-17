@@ -136,7 +136,7 @@ mod tests {
     use super::*;
 
     /// Test 1 — `preflight_code_serialises_snake_case`: every variant round-trips
-    /// through serde_json as the locked snake_case string.
+    /// through `serde_json` as the locked `snake_case` string.
     #[test]
     fn preflight_code_serialises_snake_case() {
         let cases = [
