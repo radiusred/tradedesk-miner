@@ -41,7 +41,7 @@ Plans:
 - [x] 01-04-PLAN.md — StdoutSink + stderr_emit writer modules + workspace clippy.toml disallowed-macros gate
 - [x] 01-05-PLAN.md — miner-core::config figment builder + miner-cli clap+tracing wiring + emit-fixture subcommand
 - [x] 01-06-PLAN.md — xtask gen-schema subcommand + committed schemas/findings-v1.schema.json + GitHub Actions CI with 4 mandatory gates
-- [ ] 01-07-PLAN.md — Integration tests (schema_roundtrip, config_precedence, cli_streams) + README Quickstart + Phase 1 sign-off ritual
+- [x] 01-07-PLAN.md — Integration tests (schema_roundtrip, config_precedence, cli_streams) + README Quickstart + Phase 1 sign-off ritual
 **UI hint**: No
 
 ### Phase 2: Reader, Aggregator & Derived-Bar Cache
