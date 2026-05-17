@@ -179,7 +179,10 @@ fn emit_fixture_validates_against_committed_schema() {
     assert_eq!(lines.len(), 2);
 
     for (i, line) in lines.iter().enumerate() {
-        let errors: Vec<String> = validator.iter_errors(line).map(|e| format!("  - {e}")).collect();
+        let errors: Vec<String> = validator
+            .iter_errors(line)
+            .map(|e| format!("  - {e}"))
+            .collect();
         assert!(
             errors.is_empty() && validator.is_valid(line),
             "stdout line {i} (kind={}) failed schema validation:\nline: {}\nerrors:\n{}",
@@ -272,7 +275,9 @@ fn preflight_invalid_toml_emits_invalid_config_code() {
             bad_toml.to_str().expect("toml path utf-8"),
             "emit-fixture",
         ]);
-    let out = cmd.output().expect("spawn miner emit-fixture --config bad.toml");
+    let out = cmd
+        .output()
+        .expect("spawn miner emit-fixture --config bad.toml");
 
     assert_eq!(
         out.status.code(),
@@ -326,10 +331,7 @@ fn mask_volatile_fields(v: &mut serde_json::Value) {
             }
         }
         if map.contains_key("wall_clock_ms") {
-            map.insert(
-                "wall_clock_ms".to_string(),
-                serde_json::Value::from(0i64),
-            );
+            map.insert("wall_clock_ms".to_string(), serde_json::Value::from(0i64));
         }
         for (_, child) in map.iter_mut() {
             mask_volatile_fields(child);
@@ -348,8 +350,8 @@ fn mask_emit_fixture_stdout(raw: &str) -> Vec<String> {
     raw.lines()
         .filter(|l| !l.is_empty())
         .map(|line| {
-            let mut v: serde_json::Value = serde_json::from_str(line)
-                .expect("emit-fixture stdout line is valid JSON");
+            let mut v: serde_json::Value =
+                serde_json::from_str(line).expect("emit-fixture stdout line is valid JSON");
             mask_volatile_fields(&mut v);
             serde_json::to_string(&v).expect("masked JSON re-serialises")
         })
@@ -368,9 +370,14 @@ fn emit_fixture_byte_identical_when_volatile_fields_masked() {
     let masked2 = mask_emit_fixture_stdout(&out2);
 
     assert_eq!(masked1.len(), 2, "expected 2 envelope lines per run");
-    assert_eq!(masked2.len(), 2, "expected 2 envelope lines per run (run 2)");
     assert_eq!(
-        masked1, masked2,
+        masked2.len(),
+        2,
+        "expected 2 envelope lines per run (run 2)"
+    );
+    assert_eq!(
+        masked1,
+        masked2,
         "OUT-03 closure: masked envelopes from two emit-fixture runs differ.\n\
          Run 1:\n{}\n\
          Run 2:\n{}",

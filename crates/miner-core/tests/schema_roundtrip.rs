@@ -37,8 +37,8 @@ use miner_core::{
 // ---------------------------------------------------------------------------
 
 fn load_validator() -> jsonschema::Validator {
-    let schema_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../schemas/findings-v1.schema.json");
+    let schema_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas/findings-v1.schema.json");
     let schema_text = std::fs::read_to_string(&schema_path)
         .unwrap_or_else(|e| panic!("read schema at {}: {}", schema_path.display(), e));
     let schema_json: serde_json::Value = serde_json::from_str(&schema_text)
@@ -289,7 +289,11 @@ fn dsr_and_fdr_q_present_as_null_in_v1() {
 fn raw_array_content_encoding_path_works() {
     let validator = load_validator();
     let finding = sample_result_with_raw();
-    assert_validates(&validator, &finding, "Result with raw.series (contentEncoding)");
+    assert_validates(
+        &validator,
+        &finding,
+        "Result with raw.series (contentEncoding)",
+    );
 
     // Also assert the produced JSON for `raw.series.timestamps_ms.data` is a string
     // (the base64-encoded form), not a number/array. This is the wire shape
