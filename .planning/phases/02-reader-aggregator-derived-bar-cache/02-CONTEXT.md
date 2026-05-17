@@ -10,7 +10,7 @@ Phase 2 delivers the data layer every later phase consumes:
 
 1. **Dukascopy zstd-CSV reader** — reads `<root>/<SYMBOL>/<YYYY>/<MM 00-indexed>/<DD>_<bid|ask>.csv.zst` 1-minute bars without re-download or layout change (CACHE-01); 00-indexed month quirk is boundary-tested and encapsulated.
 2. **`Reader` trait** — pluggable data-source abstraction; Dukascopy is the first impl (CACHE-02).
-3. **Aggregator** — pure function of (1m source bars, params); produces UTC-aligned, close-aligned, gap-omitting (never interpolated) OHLC + tick_count bars at 15m / 1h / 1d (CACHE-03, CACHE-04, CACHE-05).
+3. **Aggregator** — pure function of (1m source bars, params); produces UTC-aligned, close-aligned, gap-omitting (never interpolated) OHLC + `tick_volume` bars at 15m / 1h / 1d (CACHE-03, CACHE-04, CACHE-05).
 4. **Derived-bar cache (Arrow IPC)** — semi-permanent on-disk cache keyed by `(source_id, symbol, side, timeframe)` with `aggregator_version` + per-day source fingerprint invalidation (CACHE-06).
 5. **Gap manifest** — structured pre-scan report of `(symbol, side, [(start, end, reason)])` covering missing daily files, zero-byte/corrupt files, and intra-day bar holes against the instrument's trading calendar (CACHE-07).
 6. **Gap policy enforcement scaffolding** — the gap manifest is the input; actual `strict` / `continuous_only` policy enforcement at scan-engine boundary is Phase 3 (CACHE-08 is partially Phase 2 / partially Phase 3 — see boundary note below).
@@ -113,7 +113,7 @@ The user did not select "Reader trait surface" as a discussion area; default dec
   ```
   Streaming over years of 1-minute data is memory-bounded; the aggregator pulls a windowed view per output bar. `fingerprint_day` is a separate method so the cache invalidator can walk fingerprints without parsing CSV.
 
-- **D2-13 (discretion): `RawBar` shape.** `RawBar { ts_open_utc: DateTime<Utc>, ts_close_utc: DateTime<Utc>, open: f64, high: f64, low: f64, close: f64, tick_count: u32 }`. `ts_open_utc` is the start of the 60-second window; `ts_close_utc = ts_open_utc + 60s`. Tick count comes from Dukascopy's `volume` field per CACHE-05 (renamed at the reader boundary, not propagated as `volume` anywhere else).
+- **D2-13 (discretion): `RawBar` shape.** `RawBar { ts_open_utc: DateTime<Utc>, ts_close_utc: DateTime<Utc>, open: f64, high: f64, low: f64, close: f64, tick_volume: f64 }`. `ts_open_utc` is the start of the 60-second window; `ts_close_utc = ts_open_utc + 60s`. `tick_volume` comes from Dukascopy's per-resample `volume` field per CACHE-05, which `tradedesk-dukascopy/export.py:312` builds as `vol.resample(rule).sum()` over per-tick `bid_vol`/`ask_vol` floats — it is a **sum of per-tick float volumes** within the bar, not an integer tick count. The Dukascopy `volume` name is renamed to `tick_volume` at the reader boundary (never propagated as `volume`) so downstream consumers cannot confuse it with contract volume. Aggregation across bars: sum (matches Dukascopy's own `vol.resample().sum()` semantics).
 
 - **D2-14 (discretion): `AggregatedBar` shape.** Same as `RawBar` but with `tf: Timeframe` instead of fixed 1m. The aggregator output. Column-oriented BarFrame is the materialized view at the cache boundary:
   ```rust
@@ -128,7 +128,7 @@ The user did not select "Reader trait surface" as a discussion area; default dec
       pub high: Vec<f64>,
       pub low: Vec<f64>,
       pub close: Vec<f64>,
-      pub tick_count: Vec<u32>,
+      pub tick_volume: Vec<f64>,
   }
   ```
   Column-oriented because that's the access pattern for scans (load one column at a time) AND the Arrow IPC mapping is trivial.
