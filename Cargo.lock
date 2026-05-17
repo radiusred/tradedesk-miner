@@ -1146,6 +1146,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "serial_test",
  "thiserror 1.0.69",
  "tracing",
  "ulid",
