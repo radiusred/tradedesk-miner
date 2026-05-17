@@ -38,8 +38,8 @@ Plans:
 - [x] 01-01-PLAN.md — Workspace skeleton: virtual manifest, rust-toolchain, 6 member crates + xtask, build.rs for code_revision injection
 - [x] 01-02-PLAN.md — Wave 0 spikes: schemars 1.x base64-with-shape pattern + figment+clap CLI-wins precedence
 - [x] 01-03-PLAN.md — Finding envelope types (5 variants, RawArray, Base64Bytes, RunId, error_code enums), FindingSink trait, MinerConfig schema
-- [ ] 01-04-PLAN.md — StdoutSink + stderr_emit writer modules + workspace clippy.toml disallowed-macros gate
-- [ ] 01-05-PLAN.md — miner-core::config figment builder + miner-cli clap+tracing wiring + emit-fixture subcommand
+- [x] 01-04-PLAN.md — StdoutSink + stderr_emit writer modules + workspace clippy.toml disallowed-macros gate
+- [x] 01-05-PLAN.md — miner-core::config figment builder + miner-cli clap+tracing wiring + emit-fixture subcommand
 - [ ] 01-06-PLAN.md — xtask gen-schema subcommand + committed schemas/findings-v1.schema.json + GitHub Actions CI with 4 mandatory gates
 - [ ] 01-07-PLAN.md — Integration tests (schema_roundtrip, config_precedence, cli_streams) + README Quickstart + Phase 1 sign-off ritual
 **UI hint**: No
