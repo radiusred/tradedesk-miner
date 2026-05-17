@@ -13,7 +13,5 @@ pub mod reader;
 
 // FROZEN public surface — extended in a backwards-compatible way only.
 pub use error::DukascopyError;
-pub use path_layout::{
-    DukascopyMonth, ParsedDayPath, PathParseError, day_csv_zst, parse_day_path,
-};
+pub use path_layout::{DukascopyMonth, ParsedDayPath, PathParseError, day_csv_zst, parse_day_path};
 pub use reader::DukascopyReader;

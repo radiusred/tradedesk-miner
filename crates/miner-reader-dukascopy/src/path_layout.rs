@@ -100,12 +100,7 @@ pub enum PathParseError {
 /// THE ONLY public path constructor — encapsulates the 00-indexed-month quirk.
 /// Anyone composing this by hand bypasses the invariant.
 #[must_use]
-pub fn day_csv_zst(
-    cache_root: &Path,
-    symbol: &str,
-    date: NaiveDate,
-    side: Side,
-) -> PathBuf {
+pub fn day_csv_zst(cache_root: &Path, symbol: &str, date: NaiveDate, side: Side) -> PathBuf {
     cache_root
         .join(symbol)
         .join(format!("{}", date.year()))
@@ -186,8 +181,9 @@ pub fn parse_day_path(p: &Path) -> Result<ParsedDayPath, PathParseError> {
         .ok_or(PathParseError::NonUtf8Component)?
         .to_string();
 
-    let date = NaiveDate::from_ymd_opt(year, u32::from(month_calendar), day)
-        .ok_or_else(|| PathParseError::OutOfRange(format!("{year}-{month_calendar:02}-{day:02}")))?;
+    let date = NaiveDate::from_ymd_opt(year, u32::from(month_calendar), day).ok_or_else(|| {
+        PathParseError::OutOfRange(format!("{year}-{month_calendar:02}-{day:02}"))
+    })?;
 
     Ok(ParsedDayPath { symbol, date, side })
 }

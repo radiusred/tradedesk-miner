@@ -196,7 +196,10 @@ pub trait Reader: Send + Sync {
 
     /// Stable identifier for the data source (e.g. `"dukascopy"`). Used as a cache
     /// path component and in `Finding::source.source_id`.
-    fn source_id(&self) -> &str;
+    ///
+    /// Returns `&'static str` because every reader's source-id is a compile-time
+    /// constant — there is no dynamic-dispatch on this value.
+    fn source_id(&self) -> &'static str;
 
     /// Per-source trading calendar. Phase 2-02 ships the FX-major default; a future
     /// equity-reader returns its exchange's calendar. Returned by value (with a
