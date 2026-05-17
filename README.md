@@ -4,13 +4,13 @@ High-performance, agent-operable data-mining engine for historical financial OHL
 data. Scans cached candle data (typically Dukascopy bid/ask CSVs prepared by
 `tradedesk-dukascopy`) and surfaces statistical anomalies, cross-instrument
 relationships, and seasonality effects as raw candidate findings. The primary
-consumer is the RadiusRed Quant agent, which turns those findings into testable
-trading-strategy hypotheses that feed back into `tradedesk`.
+consumer is a Quant agent, which turns those findings into testable
+trading-strategy hypotheses.
 
 ```
 tradedesk-dukascopy (cache)  →  tradedesk-miner (raw findings)
-                              →  Quant agent (hypotheses)
-                              →  tradedesk (strategies, backtests, live)
+                             →  Quant agent (hypotheses)
+                             →  tradedesk based app (strategies, backtests, live)
 ```
 
 ## Status
@@ -99,3 +99,4 @@ research artefacts.
 
 See `.planning/ROADMAP.md`. Plan-by-plan summaries live under
 `.planning/phases/<phase>/<phase>-<plan>-SUMMARY.md`.
+
