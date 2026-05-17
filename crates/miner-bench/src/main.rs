@@ -6,6 +6,8 @@
 //! Plan 04 catches accidental stdout writes from this crate.
 
 fn main() {
-    tracing_subscriber::fmt().with_writer(std::io::stderr).init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
     tracing::info!("miner-bench placeholder; real harness lands in Phase 7 (criterion)");
 }

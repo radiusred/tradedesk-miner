@@ -83,7 +83,8 @@ mod tests {
 
         let newlines = buf.iter().filter(|&&b| b == b'\n').count();
         assert_eq!(
-            newlines, 1,
+            newlines,
+            1,
             "expected exactly one newline; got {newlines} (buf={:?})",
             String::from_utf8_lossy(&buf)
         );

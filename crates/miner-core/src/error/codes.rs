@@ -154,8 +154,7 @@ mod tests {
         for (code, expected) in cases {
             let json = serde_json::to_string(&code).expect("serialise");
             assert_eq!(json, format!("\"{expected}\""), "wire form mismatch");
-            let parsed: PreflightCode =
-                serde_json::from_str(&json).expect("deserialise");
+            let parsed: PreflightCode = serde_json::from_str(&json).expect("deserialise");
             assert_eq!(parsed, code);
             assert_eq!(code.as_str(), expected);
         }
@@ -173,8 +172,7 @@ mod tests {
         for (code, expected) in cases {
             let json = serde_json::to_string(&code).expect("serialise");
             assert_eq!(json, format!("\"{expected}\""), "wire form mismatch");
-            let parsed: ScanErrorCode =
-                serde_json::from_str(&json).expect("deserialise");
+            let parsed: ScanErrorCode = serde_json::from_str(&json).expect("deserialise");
             assert_eq!(parsed, code);
             assert_eq!(code.as_str(), expected);
         }

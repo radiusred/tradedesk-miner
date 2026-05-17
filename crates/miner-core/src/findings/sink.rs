@@ -201,8 +201,7 @@ mod tests {
 
     impl<W: Write + Send> FindingSink for WriterSink<W> {
         fn write_envelope(&mut self, finding: &Finding) -> Result<(), MinerError> {
-            serde_json::to_writer(&mut self.writer, finding)
-                .map_err(MinerError::Serialize)?;
+            serde_json::to_writer(&mut self.writer, finding).map_err(MinerError::Serialize)?;
             self.writer.write_all(b"\n").map_err(MinerError::Io)?;
             self.writer.flush().map_err(MinerError::Io)?;
             Ok(())
@@ -283,8 +282,7 @@ mod tests {
         lines.pop();
         assert_eq!(lines.len(), 2, "expected two JSON lines");
 
-        let first: serde_json::Value =
-            serde_json::from_slice(lines[0]).expect("parse first line");
+        let first: serde_json::Value = serde_json::from_slice(lines[0]).expect("parse first line");
         let second: serde_json::Value =
             serde_json::from_slice(lines[1]).expect("parse second line");
         assert_eq!(first["kind"], "run_start");
