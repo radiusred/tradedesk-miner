@@ -44,6 +44,14 @@ jsonschema.workspace = true
 # and scope-cleans on drop. The workspace inheritance only enables ["toml", "env"]; the
 # `test` feature is opt-in per-crate.
 figment              = { version = "0.10", features = ["toml", "env", "test"] }
+# Plan 07 Task 1 (`tests/config_precedence.rs`) builds production-grade integration tests
+# against `miner_core::config::build_figment` from the public re-export surface. Tests use
+# `figment::Jail` (already enabled by the `test` feature above) for env isolation and
+# scratch TOML files; `serial_test::serial` annotations belt-and-brace the env-var
+# serialisation. `tempfile` was contemplated for raw `std::env::set_var` plumbing but the
+# workspace `forbid(unsafe_code)` lint blocks that pattern in Rust 2024 — Jail is the
+# documented alternative and uses no `tempfile`, so the dev-dep is omitted.
+serial_test          = "3"
 
 [lints]
 workspace = true
