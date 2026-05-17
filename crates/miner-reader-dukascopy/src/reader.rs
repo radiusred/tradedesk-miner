@@ -61,7 +61,7 @@ impl DukascopyReader {
     pub fn new(cache_root: impl Into<PathBuf>) -> Self {
         Self {
             cache_root: cache_root.into(),
-            calendar: miner_core::Calendar::new(),
+            calendar: miner_core::Calendar::fx_major(),
         }
     }
 
