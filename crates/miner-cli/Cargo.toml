@@ -43,9 +43,18 @@ tempfile     = "3"
 # feature set (no `test` feature), and adding the `test` feature only for a binary
 # crate's dev-deps would pull in extra dev-deps for the whole workspace.
 serial_test  = "3"
-# End-to-end binary harness; will be used by Plan 07's `cli_streams` integration test.
+# End-to-end binary harness; used by Plan 07's `cli_streams` integration test to spawn
+# the actual built `miner` binary via `assert_cmd::Command::cargo_bin("miner")`.
 assert_cmd   = "2"
 predicates   = "3"
+# Plan 07 Task 2 — schema validation of each stdout line against the committed
+# `schemas/findings-v1.schema.json` artifact. Workspace-pinned to 0.46 (matches
+# miner-core's dev-dep).
+jsonschema.workspace = true
+# Plan 07 Task 2 — parsing the subprocess stdout bytes as `serde_json::Value` and
+# masking the four volatile envelope fields for the OUT-03 twice-run byte-identity
+# regression gate.
+serde_json.workspace = true
 
 [lints]
 workspace = true

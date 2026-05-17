@@ -1123,6 +1123,7 @@ dependencies = [
  "clap",
  "directories",
  "figment",
+ "jsonschema",
  "miner-core",
  "miner-reader-dukascopy",
  "predicates",
