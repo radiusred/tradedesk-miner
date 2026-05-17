@@ -31,4 +31,4 @@ pub use findings::{
 
 pub use error::{MinerError, PreflightCode, ScanErrorCode, WireError};
 
-pub use config::{MinerConfig, OutputDest};
+pub use config::{CliOverrides, MinerConfig, OutputDest, build_figment};

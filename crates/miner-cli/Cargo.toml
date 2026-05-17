@@ -1,7 +1,14 @@
-# miner-cli: thin CLI wrapper around miner-core. Phase 5 wires the clap parser and the
-# emit-fixture / scan / sweep subcommands; Phase 1 ships only a stub `main` that initialises
-# tracing-to-stderr so the binary compiles and demonstrates the stdout/stderr discipline
-# (D-15, D-19) before any scan code exists.
+# miner-cli: thin CLI wrapper around miner-core.
+#
+# Plan 05 (this plan) wires the clap parser, the figment config builder, the XDG/CWD
+# config-path resolution, and the `emit-fixture` subcommand. The binary initialises
+# tracing-to-stderr (D-15) and routes findings to stdout via FindingSink (D-19).
+#
+# Plan 04 (parallel, same wave) lands the canonical `miner_core::findings::sink::StdoutSink`
+# and `miner_core::error::stderr_emit::emit_to_stderr`. While Plan 04 is in flight, this
+# crate ships local stubs (`src/stdout_sink.rs`, `src/stderr_emit.rs`) so `emit-fixture`
+# is runnable; when Plan 04 merges these stub modules can be deleted and the imports in
+# `main.rs` flipped to the canonical paths.
 
 [package]
 name = "miner-cli"
@@ -24,6 +31,21 @@ figment.workspace           = true
 serde.workspace             = true
 serde_json.workspace        = true
 directories.workspace       = true
+# Used in `emit_fixture()` for the `started_at_utc` / `ended_at_utc` framing-record
+# timestamps. Workspace pin is `0.4` with `["clock", "serde"]`.
+chrono.workspace            = true
+
+[dev-dependencies]
+# Local tempdir for integration tests that need an isolated config file.
+tempfile     = "3"
+# Serialises env-var mutation across tests that touch `MINER_*` vars; figment::Jail
+# could not be used here because miner-cli depends on `figment` with the workspace
+# feature set (no `test` feature), and adding the `test` feature only for a binary
+# crate's dev-deps would pull in extra dev-deps for the whole workspace.
+serial_test  = "3"
+# End-to-end binary harness; will be used by Plan 07's `cli_streams` integration test.
+assert_cmd   = "2"
+predicates   = "3"
 
 [lints]
 workspace = true
