@@ -44,10 +44,18 @@ fn main() {
         })
         .map_or_else(|| "unknown".to_string(), |s| s.trim().to_string());
 
-    // `git diff --quiet` exits non-zero when there are unstaged worktree changes against HEAD.
+    // `git diff --quiet HEAD` exits non-zero when the worktree differs from HEAD —
+    // catching BOTH staged-but-uncommitted changes AND unstaged worktree changes.
+    // The bare `git diff --quiet` (no revision argument) compares worktree-vs-INDEX
+    // only, which silently ignores `git add`ed-but-not-yet-committed changes — a
+    // T-01-04 (code revision tampering) hole: a developer could `git add` a patch,
+    // build a binary that records the previous clean HEAD SHA without the `dirty-`
+    // prefix, then `git checkout` the file to restore the clean tree. The explicit
+    // `HEAD` argument closes that gap.
+    //
     // We treat "git not available" as not-dirty (we already fell back to "unknown" above).
     let dirty = Command::new("git")
-        .args(["diff", "--quiet"])
+        .args(["diff", "--quiet", "HEAD"])
         .status()
         .map(|s| !s.success())
         .unwrap_or(false);
