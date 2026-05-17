@@ -406,8 +406,12 @@ fn emit_fixture_writes_to_file_when_miner_output_is_a_path() {
         "MINER_OUTPUT=<file> must NOT write findings to stdout; got: {stdout:?}"
     );
 
-    let file_bytes = std::fs::read(&out_path)
-        .unwrap_or_else(|e| panic!("MINER_OUTPUT file {} must exist after run: {e}", out_path.display()));
+    let file_bytes = std::fs::read(&out_path).unwrap_or_else(|e| {
+        panic!(
+            "MINER_OUTPUT file {} must exist after run: {e}",
+            out_path.display()
+        )
+    });
     let file_text = String::from_utf8(file_bytes).expect("output file must be utf-8");
 
     let newlines = file_text.bytes().filter(|&b| b == b'\n').count();
@@ -417,7 +421,11 @@ fn emit_fixture_writes_to_file_when_miner_output_is_a_path() {
     );
 
     let lines = parse_stdout_lines(&file_text);
-    assert_eq!(lines.len(), 2, "expected 2 JSON envelopes in MINER_OUTPUT file");
+    assert_eq!(
+        lines.len(),
+        2,
+        "expected 2 JSON envelopes in MINER_OUTPUT file"
+    );
     assert_eq!(
         lines[0]["kind"], "run_start",
         "first envelope in file must be kind=run_start; got {}",
