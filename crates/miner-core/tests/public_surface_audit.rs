@@ -179,7 +179,7 @@ use miner_core::{
 };
 
 #[test]
-#[allow(unused_variables)]
+#[allow(unused_variables, clippy::type_complexity)]
 fn phase_3_public_surface_present() {
     // ---------------------------------------------------------------------
     // 03-02 surface — Scan trait + support types + Registry + bootstrap
@@ -227,7 +227,10 @@ fn phase_3_public_surface_present() {
         &mut dyn miner_core::FindingSink,
         std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) -> Result<RunOutcome, miner_core::MinerError> = run_one::<EmptyReader>;
-    assert!((run_one_fn as usize) != 0, "run_one fn pointer must be non-null");
+    assert!(
+        (run_one_fn as usize) != 0,
+        "run_one fn pointer must be non-null"
+    );
 
     // ---------------------------------------------------------------------
     // 03-02 surface — DryRunFinding (the new Finding variant body type)

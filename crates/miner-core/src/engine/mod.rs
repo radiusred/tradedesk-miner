@@ -34,11 +34,11 @@ use crate::aggregator::AggParams;
 use crate::cache::BarCache;
 use crate::config::MinerConfig;
 use crate::error::MinerError;
+use crate::findings::run_id::RunId;
 use crate::findings::{
     DataSlice, DryRunFinding, Finding, FindingSink, GapAbortedFinding, PerScanCounts, RunSummary,
     Source, TimeRange,
 };
-use crate::findings::run_id::RunId;
 use crate::gap::GapDetector;
 use crate::reader::{ClosedRangeUtc, Reader};
 use crate::scan::{ScanCtx, ScanError, ScanRequest};
@@ -204,8 +204,7 @@ pub fn run_one<R: Reader>(
     // -----------------------------------------------------------------------
     let run_id = RunId::new();
     let started = Utc::now();
-    let run_start_finding =
-        framing::build_run_start(req, run_id, started, crate::CODE_REVISION);
+    let run_start_finding = framing::build_run_start(req, run_id, started, crate::CODE_REVISION);
     sink.write_envelope(&run_start_finding)?;
 
     // Holds the request Value the dry-run path echoes (extracted from the
@@ -248,10 +247,8 @@ pub fn run_one<R: Reader>(
     // Step 5 — Gap detection (Warning 8 — wrap reader errors via
     // MinerError::Scan(String); MinerError has no Reader variant).
     // -----------------------------------------------------------------------
-    let manifest =
-        GapDetector::detect(reader, &req.instrument, req.side, req.window).map_err(|e| {
-            MinerError::Scan(format!("reader: {e}"))
-        })?;
+    let manifest = GapDetector::detect(reader, &req.instrument, req.side, req.window)
+        .map_err(|e| MinerError::Scan(format!("reader: {e}")))?;
     let dispatch_result = gap_policy::dispatch(&manifest, req.window, req.gap_policy);
 
     // -----------------------------------------------------------------------
@@ -475,6 +472,14 @@ fn emit_run_end(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(
+    dead_code,
+    clippy::similar_names,
+    clippy::match_wildcard_for_single_variants,
+    clippy::items_after_statements,
+    clippy::manual_let_else,
+    clippy::doc_markdown
+)]
 mod tests {
     use super::*;
     use crate::aggregator::Timeframe;
@@ -508,13 +513,7 @@ mod tests {
             }
         }
 
-        pub fn insert_day(
-            &mut self,
-            symbol: &str,
-            side: Side,
-            date: NaiveDate,
-            bars: Vec<RawBar>,
-        ) {
+        pub fn insert_day(&mut self, symbol: &str, side: Side, date: NaiveDate, bars: Vec<RawBar>) {
             self.bars.insert((symbol.to_string(), side, date), bars);
         }
     }
@@ -595,10 +594,7 @@ mod tests {
     /// price walk so the aggregated bars are well-formed and the scan can
     /// compute meaningful Q-stats.
     fn build_full_day_1m_bars(date: NaiveDate, seed: u32) -> Vec<RawBar> {
-        let day_start = date
-            .and_hms_opt(0, 0, 0)
-            .expect("00:00:00 valid")
-            .and_utc();
+        let day_start = date.and_hms_opt(0, 0, 0).expect("00:00:00 valid").and_utc();
         let mut bars = Vec::with_capacity(1440);
         let mut s = seed;
         for i in 0..1440_i64 {
@@ -652,8 +648,7 @@ mod tests {
         dry_run: bool,
     ) -> ScanRequest {
         let resolved = serde_json::json!({"lags": 5});
-        let param_hash =
-            param_hash::param_hash(&resolved).expect("param_hash ok");
+        let param_hash = param_hash::param_hash(&resolved).expect("param_hash ok");
         ScanRequest {
             scan_id: "stats.autocorr.ljung_box".into(),
             version: 1,
@@ -815,7 +810,11 @@ mod tests {
         assert_eq!(re.summary.gap_aborted, 1);
         // The GapAborted carries the full manifest with the gap.
         if let Finding::GapAborted(ga) = &findings[1] {
-            let m = ga.data_slice.gap_manifest.as_ref().expect("manifest present");
+            let m = ga
+                .data_slice
+                .gap_manifest
+                .as_ref()
+                .expect("manifest present");
             assert!(!m.gaps.is_empty(), "manifest must carry the gap");
         }
     }
@@ -835,8 +834,14 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp_config(&tmp);
         let mut sink = VecSink::new();
-        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false)))
-            .expect("ok");
+        let outcome = run_one(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("ok");
         assert_eq!(outcome, RunOutcome::Ok);
         let findings = parse_findings(&sink);
         let (s, r, _, _, e, _) = count_envelopes(&findings);
@@ -876,13 +881,22 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp_config(&tmp);
         let mut sink = VecSink::new();
-        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false)))
-            .expect("ok");
+        let outcome = run_one(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("ok");
         assert_eq!(outcome, RunOutcome::Ok);
         let findings = parse_findings(&sink);
         let (s_n, r_n, _, g_n, e_n, _) = count_envelopes(&findings);
         assert_eq!(s_n, 1);
-        assert_eq!(r_n, 2, "ContinuousOnly + 1 gap -> 2 sub-ranges -> 2 Results");
+        assert_eq!(
+            r_n, 2,
+            "ContinuousOnly + 1 gap -> 2 sub-ranges -> 2 Results"
+        );
         assert_eq!(g_n, 0);
         assert_eq!(e_n, 1);
         // Each Result carries the FULL manifest cloned into data_slice.
@@ -910,14 +924,23 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp_config(&tmp);
         let mut sink = VecSink::new();
-        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false)))
-            .expect("ok");
+        let outcome = run_one(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("ok");
         assert_eq!(outcome, RunOutcome::Ok);
         let findings = parse_findings(&sink);
         let (s, r, _, _, e, dry_n) = count_envelopes(&findings);
         assert_eq!((s, r, e, dry_n), (1, 0, 1, 1));
         let re = get_run_end(&findings);
-        assert_eq!(re.summary.results_emitted, 0, "Pitfall 3 — dry-run does NOT increment results_emitted");
+        assert_eq!(
+            re.summary.results_emitted, 0,
+            "Pitfall 3 — dry-run does NOT increment results_emitted"
+        );
         // Warning 9 pin: the raw JSON envelope contains no extension counter
         // for the dry-run signal — RunSummary has only the original four
         // fields, and the JSONL output reflects that exactly. The literal
@@ -940,7 +963,14 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp_config(&tmp);
         let mut sink = VecSink::new();
-        run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false))).expect("ok");
+        run_one(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("ok");
         let findings = parse_findings(&sink);
         let Finding::RunStart(rs) = &findings[0] else {
             panic!("expected RunStart first");
@@ -966,7 +996,14 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp_config(&tmp);
         let mut sink = VecSink::new();
-        run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false))).expect("ok");
+        run_one(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("ok");
         let findings = parse_findings(&sink);
         let Finding::Result(r) = findings
             .iter()
@@ -998,21 +1035,34 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp_config(&tmp);
         let mut sink = VecSink::new();
-        run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false))).expect("ok");
+        run_one(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("ok");
         let findings = parse_findings(&sink);
         let rs_id = if let Finding::RunStart(rs) = &findings[0] {
             rs.run_id
         } else {
             panic!("expected RunStart")
         };
-        let re_id = if let Finding::RunEnd(re) =
-            findings.iter().rev().find(|f| matches!(f, Finding::RunEnd(_))).unwrap()
+        let re_id = if let Finding::RunEnd(re) = findings
+            .iter()
+            .rev()
+            .find(|f| matches!(f, Finding::RunEnd(_)))
+            .unwrap()
         {
             re.run_id
         } else {
             unreachable!()
         };
-        assert_eq!(rs_id, re_id, "run_id must be consistent across RunStart/RunEnd");
+        assert_eq!(
+            rs_id, re_id,
+            "run_id must be consistent across RunStart/RunEnd"
+        );
         for f in &findings {
             if let Finding::Result(r) = f {
                 assert_eq!(r.run_id, rs_id, "every Result.run_id must match");
@@ -1035,7 +1085,14 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp_config(&tmp);
         let mut sink = VecSink::new();
-        run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false))).expect("ok");
+        run_one(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("ok");
         let findings = parse_findings(&sink);
         let rs = if let Finding::RunStart(rs) = &findings[0] {
             rs
@@ -1070,7 +1127,13 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp_config(&tmp);
         let mut sink = VecSink::new();
-        let res = run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false)));
+        let res = run_one(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        );
         // run_one returns Err(MinerError::Scan(_)) per Warning 8 — the error
         // enum has no `Reader` variant (only Io / Serialize / Config / Scan /
         // Internal).
@@ -1095,6 +1158,13 @@ mod tests {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(
+    clippy::similar_names,
+    clippy::match_wildcard_for_single_variants,
+    clippy::items_after_statements,
+    clippy::manual_let_else,
+    clippy::doc_markdown
+)]
 mod cancellation_tests {
     use super::tests::FakeReader;
     use super::*;
@@ -1189,12 +1259,12 @@ mod cancellation_tests {
     }
 
     /// SC-5b yield site 2 — cancel flipped between the first and second
-    /// sub-range of a ContinuousOnly partition. Built by routing the sink
+    /// sub-range of a `ContinuousOnly` partition. Built by routing the sink
     /// through a closure that observes the first Result and flips cancel.
     ///
     /// The fixture provides a manifest with exactly one intra-day gap
     /// splitting the requested window into TWO sub-ranges; the test asserts
-    /// exactly ONE Result is emitted (for the first sub-range) and RunEnd is
+    /// exactly ONE Result is emitted (for the first sub-range) and `RunEnd` is
     /// still emitted cleanly. The cancellation breaks the sub-range loop
     /// before the second sub-range's bars are loaded.
     #[test]
@@ -1209,8 +1279,7 @@ mod cancellation_tests {
         let day1 = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
         let day2 = NaiveDate::from_ymd_opt(2024, 1, 3).unwrap();
         let start = day1.and_hms_opt(0, 0, 0).unwrap().and_utc();
-        let end = day2.and_hms_opt(0, 0, 0).unwrap().and_utc()
-            + Duration::days(1);
+        let end = day2.and_hms_opt(0, 0, 0).unwrap().and_utc() + Duration::days(1);
 
         let req = mk_request(start, end, None);
         let mut reader = FakeReader::new();
@@ -1235,10 +1304,7 @@ mod cancellation_tests {
             results_seen: usize,
         }
         impl FindingSink for FlipOnResult {
-            fn write_envelope(
-                &mut self,
-                f: &Finding,
-            ) -> Result<(), crate::error::MinerError> {
+            fn write_envelope(&mut self, f: &Finding) -> Result<(), crate::error::MinerError> {
                 if matches!(f, Finding::Result(_)) {
                     self.results_seen += 1;
                     if self.results_seen == 1 {
@@ -1260,8 +1326,7 @@ mod cancellation_tests {
             cancel: Arc::clone(&cancel),
             results_seen: 0,
         };
-        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::clone(&cancel))
-            .expect("ok");
+        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::clone(&cancel)).expect("ok");
         assert_eq!(outcome, RunOutcome::Ok);
 
         // Parse the captured envelopes.
@@ -1319,8 +1384,7 @@ mod cancellation_tests {
         });
 
         let begin = Instant::now();
-        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::clone(&cancel))
-            .expect("ok");
+        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::clone(&cancel)).expect("ok");
         let elapsed = begin.elapsed();
         handle.join().unwrap();
 
@@ -1348,5 +1412,4 @@ mod cancellation_tests {
             .count();
         assert_eq!(run_end_count, 1);
     }
-
 }

@@ -136,6 +136,12 @@ pub(super) fn ljung_box_q_and_p(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(
+    clippy::cast_lossless,
+    clippy::needless_range_loop,
+    clippy::redundant_closure_for_method_calls,
+    clippy::redundant_closure
+)]
 mod tests {
     use super::*;
 
@@ -174,7 +180,7 @@ mod tests {
     #[test]
     fn log_returns_length_invariant() {
         // n closes -> n-1 returns.
-        let closes: Vec<f64> = (1..=10).map(|i| i as f64).collect();
+        let closes: Vec<f64> = (1..=10).map(|i| f64::from(i)).collect();
         let r = log_returns(&closes);
         assert_eq!(r.len(), closes.len() - 1);
     }
@@ -297,10 +303,7 @@ mod tests {
         let acf = biased_acf(&x, 5);
         let (_q, p) = ljung_box_q_and_p(x.len(), &acf, 5);
         for (i, pv) in p.iter().enumerate() {
-            assert!(
-                (0.0..=1.0).contains(pv),
-                "p[{i}]={pv} must be in [0, 1]"
-            );
+            assert!((0.0..=1.0).contains(pv), "p[{i}]={pv} must be in [0, 1]");
         }
     }
 

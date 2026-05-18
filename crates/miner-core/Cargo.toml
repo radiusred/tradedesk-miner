@@ -77,6 +77,14 @@ insta                = { version = "1.47", features = ["json"] }
 # (see Plan 02-06 threat model T-02-21 — accepted).
 miner-reader-dukascopy = { path = "../miner-reader-dukascopy" }
 zstd.workspace       = true
+# Plan 03-06: Activate the `test-internal` feature on the miner-core dep
+# graph during this crate's integration test builds. Cargo permits a
+# self-pointing dev-dep — the lib graph and the dev-dep graph are separate,
+# so `cargo build` / `cargo build --release` activate neither cfg(test) nor
+# the feature and the cfg-gated `ScanRequest.sleep_after_first_finding_ms`
+# field stays absent from the release surface. The same pattern (with a
+# parent-path) is used by `crates/miner-cli/Cargo.toml`.
+miner-core           = { path = ".", features = ["test-internal"] }
 
 [lints]
 workspace = true

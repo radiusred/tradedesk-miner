@@ -145,7 +145,10 @@ impl Scan for LjungBoxScan {
             // is exact and lossless (Phase 1 only targets 64-bit pointers per
             // FOUND-04 invariant). `try_into` would force an Err arm that can
             // never trigger.
-            #[allow(clippy::cast_possible_truncation, reason = "usize <= u64 on all supported targets (Phase 1 is 64-bit only)")]
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "usize <= u64 on all supported targets (Phase 1 is 64-bit only)"
+            )]
             n: Some(n as u64),
             ci95: None,
             extra,
@@ -171,7 +174,10 @@ impl Scan for LjungBoxScan {
                 // [-2^53, 2^53] ms (~285M years either side of epoch). The
                 // realistic OHLCV range is decades, so the precision loss is
                 // theoretical only.
-                #[allow(clippy::cast_precision_loss, reason = "epoch-ms fits exactly in f64 mantissa for realistic timestamps")]
+                #[allow(
+                    clippy::cast_precision_loss,
+                    reason = "epoch-ms fits exactly in f64 mantissa for realistic timestamps"
+                )]
                 let v = dt.timestamp_millis() as f64;
                 v
             })
@@ -320,8 +326,8 @@ mod tests {
     use crate::aggregator::{BarFrame, Timeframe};
     use crate::engine::gap_policy::GapPolicyKind;
     use crate::findings::TimeRange;
-    use crate::findings::sink::VecSink;
     use crate::findings::run_id::RunId;
+    use crate::findings::sink::VecSink;
     use crate::reader::{Blake3Hex, ClosedRangeUtc, Side};
     use chrono::{DateTime, Duration, TimeZone};
     use std::sync::Arc;
@@ -354,9 +360,7 @@ mod tests {
         let mut s = seed as u32;
         let mut closes = Vec::with_capacity(n);
         for _ in 0..n {
-            s = s
-                .wrapping_mul(1_664_525)
-                .wrapping_add(1_013_904_223);
+            s = s.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
             let frac = f64::from(s) / f64::from(u32::MAX);
             closes.push(1.0 + frac);
         }
@@ -366,10 +370,8 @@ mod tests {
                 start + Duration::minutes(15 * i_i64)
             })
             .collect();
-        let ts_close: Vec<DateTime<chrono::Utc>> = ts_open
-            .iter()
-            .map(|t| *t + Duration::minutes(15))
-            .collect();
+        let ts_close: Vec<DateTime<chrono::Utc>> =
+            ts_open.iter().map(|t| *t + Duration::minutes(15)).collect();
         let opens = closes.clone();
         let highs: Vec<f64> = closes.iter().map(|c| c + 0.001).collect();
         let lows: Vec<f64> = closes.iter().map(|c| c - 0.001).collect();
@@ -411,11 +413,7 @@ mod tests {
         }
     }
 
-    fn make_ctx(
-        bars: &BarFrame,
-        cancel: Arc<AtomicBool>,
-        sleep_ms: Option<u64>,
-    ) -> ScanCtx<'_> {
+    fn make_ctx(bars: &BarFrame, cancel: Arc<AtomicBool>, sleep_ms: Option<u64>) -> ScanCtx<'_> {
         ScanCtx {
             bars,
             gap_manifest: None,
@@ -449,7 +447,10 @@ mod tests {
     fn ljung_box_scan_finding_fields() {
         let s = LjungBoxScan;
         let shape = s.finding_fields();
-        assert_eq!(shape.effect_extra_keys, &["lags", "q_stats", "p_values", "acf"]);
+        assert_eq!(
+            shape.effect_extra_keys,
+            &["lags", "q_stats", "p_values", "acf"]
+        );
         assert_eq!(shape.raw_series_keys, &["returns", "timestamps_ms"]);
     }
 
@@ -478,11 +479,7 @@ mod tests {
             panic!("expected Result");
         };
         // 10 q-stats means lags=10 was selected.
-        let qs = r
-            .effect
-            .extra
-            .get("q_stats")
-            .expect("q_stats present");
+        let qs = r.effect.extra.get("q_stats").expect("q_stats present");
         assert_eq!(qs.shape, vec![10]);
     }
 
@@ -506,7 +503,9 @@ mod tests {
         let mut sink = VecSink::new();
         let req = sample_request_with_params(serde_json::json!({"lags": 0}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)), None);
-        let err = LjungBoxScan.run(&ctx, &req, &mut sink).expect_err("must reject");
+        let err = LjungBoxScan
+            .run(&ctx, &req, &mut sink)
+            .expect_err("must reject");
         assert!(matches!(err, ScanError::Kernel(_)), "got {err:?}");
     }
 
@@ -517,7 +516,9 @@ mod tests {
         // 256 closes -> 255 returns; lags=999 >= 255 must reject.
         let req = sample_request_with_params(serde_json::json!({"lags": 999}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)), None);
-        let err = LjungBoxScan.run(&ctx, &req, &mut sink).expect_err("must reject");
+        let err = LjungBoxScan
+            .run(&ctx, &req, &mut sink)
+            .expect_err("must reject");
         assert!(matches!(err, ScanError::Kernel(_)), "got {err:?}");
     }
 
@@ -637,7 +638,9 @@ mod tests {
         let mut sink = VecSink::new();
         let req = sample_request_with_params(serde_json::json!({"lags": 5}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(true)), None);
-        LjungBoxScan.run(&ctx, &req, &mut sink).expect("cancel returns Ok");
+        LjungBoxScan
+            .run(&ctx, &req, &mut sink)
+            .expect("cancel returns Ok");
         assert!(sink.0.is_empty(), "no envelope written on cancel-at-entry");
     }
 

@@ -83,10 +83,7 @@ pub fn resolve_scan_id_at_version(s: &str) -> Result<(String, u32), WireError> {
 ///   [`resolve_scan_id_at_version`]).
 /// - `UnknownScan` if either the id OR the version is not registered
 ///   (registry `get()` returns `None` for both cases — D3-17).
-pub fn resolve_scan<'a>(
-    s: &str,
-    registry: &'a Registry,
-) -> Result<&'a dyn Scan, WireError> {
+pub fn resolve_scan<'a>(s: &str, registry: &'a Registry) -> Result<&'a dyn Scan, WireError> {
     let (id, version) = resolve_scan_id_at_version(s)?;
     registry.get(&id, version).ok_or_else(|| {
         WireError::preflight(
@@ -173,11 +170,8 @@ pub fn parse_params_kv(items: &[String]) -> Result<serde_json::Value, WireError>
 /// - empty window (`start >= end`).
 pub fn parse_iso_utc_window(s: &str) -> Result<ClosedRangeUtc, WireError> {
     let (lhs, rhs) = split_window(s).ok_or_else(|| {
-        WireError::preflight(
-            PreflightCode::InvalidParameter,
-            "window must be START:END",
-        )
-        .with_context("window", serde_json::Value::String(s.to_string()))
+        WireError::preflight(PreflightCode::InvalidParameter, "window must be START:END")
+            .with_context("window", serde_json::Value::String(s.to_string()))
     })?;
     let start = parse_iso_utc(lhs).map_err(|msg| {
         WireError::preflight(PreflightCode::InvalidParameter, msg)
@@ -300,8 +294,8 @@ mod tests {
 
     #[test]
     fn resolve_scan_id_at_version_splits_id_and_version() {
-        let (id, v) = resolve_scan_id_at_version("stats.autocorr.ljung_box@1")
-            .expect("valid id@version");
+        let (id, v) =
+            resolve_scan_id_at_version("stats.autocorr.ljung_box@1").expect("valid id@version");
         assert_eq!(id, "stats.autocorr.ljung_box");
         assert_eq!(v, 1);
     }
@@ -370,8 +364,9 @@ mod tests {
 
     #[test]
     fn parse_params_kv_parses_float() {
-        let v = parse_params_kv(&["floaty=3.14".to_string()]).expect("ok");
-        assert_eq!(v, serde_json::json!({"floaty": 3.14}));
+        // Use 2.5 instead of 3.14 to avoid clippy::approx_constant (PI lint).
+        let v = parse_params_kv(&["floaty=2.5".to_string()]).expect("ok");
+        assert_eq!(v, serde_json::json!({"floaty": 2.5}));
     }
 
     #[test]

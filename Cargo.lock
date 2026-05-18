@@ -1580,6 +1580,7 @@ dependencies = [
  "tempfile",
  "tracing",
  "tracing-subscriber",
+ "zstd",
 ]
 
 [[package]]
@@ -1593,6 +1594,7 @@ dependencies = [
  "figment",
  "insta",
  "jsonschema",
+ "miner-core",
  "miner-reader-dukascopy",
  "proptest",
  "schemars",

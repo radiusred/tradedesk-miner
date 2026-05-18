@@ -188,6 +188,7 @@ pub fn dispatch(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::match_wildcard_for_single_variants, clippy::similar_names)]
 mod tests {
     use super::*;
     use crate::findings::TimeRange;

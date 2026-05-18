@@ -673,7 +673,7 @@ mod tests {
     /// pin / D3-21 / Warning 9). Emit a `Finding::DryRun(_)` through a
     /// `VecSink`; assert that constructing the dry-run envelope and writing
     /// it does NOT touch `RunSummary` counters. The summary stays at
-    /// `Default::default()` (all zeros, empty per_scan).
+    /// `Default::default()` (all zeros, empty `per_scan`).
     ///
     /// This test pins the TYPE-LEVEL invariant: the dry-run signal lives in
     /// the envelope, not in a summary counter. Plan 04's engine test pins the

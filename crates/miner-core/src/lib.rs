@@ -58,7 +58,7 @@ pub use cache::{
 };
 
 // Phase 3 (scan-engine-facade-cli) extensions:
-pub use scan::{Registry, Scan, ScanCtx, ScanError, ScanFindingShape, ScanRequest, bootstrap};
-pub use scan::ljung_box::LjungBoxScan;
 pub use engine::{GapDispatch, GapPolicyKind, RunOutcome, run_one};
 pub use findings::DryRunFinding;
+pub use scan::ljung_box::LjungBoxScan;
+pub use scan::{Registry, Scan, ScanCtx, ScanError, ScanFindingShape, ScanRequest, bootstrap};

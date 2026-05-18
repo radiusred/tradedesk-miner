@@ -105,8 +105,7 @@ fn main() -> anyhow::Result<()> {
         Command::EmitFixture => emit_fixture(&mut *sink)?,
         Command::Scans => handle_scans_subcommand(&mut *sink)?,
         Command::Scan(scan_args) => {
-            let outcome =
-                handle_scan_subcommand(scan_args, &cfg, &mut *sink, Arc::clone(&cancel))?;
+            let outcome = handle_scan_subcommand(scan_args, &cfg, &mut *sink, Arc::clone(&cancel))?;
             let code = compute_exit_code(cancel.load(Ordering::SeqCst), &outcome);
             std::process::exit(code);
         }
@@ -238,7 +237,8 @@ fn handle_scans_subcommand(sink: &mut dyn FindingSink) -> std::io::Result<()> {
     }
     // Final flush — the per-envelope StdoutSink/FileSink flush already
     // happened inside write_raw_json, but this is the contract close.
-    sink.flush().map_err(|e| std::io::Error::other(format!("sink flush: {e}")))?;
+    sink.flush()
+        .map_err(|e| std::io::Error::other(format!("sink flush: {e}")))?;
     Ok(())
 }
 
@@ -290,9 +290,7 @@ fn handle_scan_subcommand(
     // demote to PreflightFailed.
     match run_one(&req, cfg, &reader, sink, cancel) {
         Ok(outcome) => Ok(outcome),
-        Err(miner_core::error::MinerError::Scan(msg))
-            if msg.starts_with("unknown scan:") =>
-        {
+        Err(miner_core::error::MinerError::Scan(msg)) if msg.starts_with("unknown scan:") => {
             // Map the run_one preflight rejection into a structured WireError
             // on stderr; stdout stays empty (T-01-03 stdout discipline).
             let err = WireError::preflight(PreflightCode::UnknownScan, msg);
@@ -419,8 +417,7 @@ mod tests {
         assert!(expected >= 1, "Phase 3 ships at least one scan");
         // Parse each line and assert the four required properties.
         for line in &lines {
-            let v: serde_json::Value =
-                serde_json::from_slice(line).expect("line parses as JSON");
+            let v: serde_json::Value = serde_json::from_slice(line).expect("line parses as JSON");
             for key in ["scan_id", "version", "params", "finding_fields"] {
                 assert!(
                     v.get(key).is_some(),

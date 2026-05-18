@@ -55,7 +55,9 @@ impl Registry {
         // `BTreeMap::get` accepts the key by reference; we build a tuple of
         // owned `String` because the key type is `(String, u32)`. The .to_string()
         // allocation is fine — this is the preflight path, not the kernel.
-        self.scans.get(&(id.to_string(), version)).map(std::convert::AsRef::as_ref)
+        self.scans
+            .get(&(id.to_string(), version))
+            .map(std::convert::AsRef::as_ref)
     }
 
     /// Iterate registered scans in `(id, version)` lexicographic order
@@ -160,14 +162,14 @@ mod tests {
     }
 
     /// Plan 03-02 Task 2 Test 5 — `registry_iter_lex_order`. `Registry::iter()`
-    /// yields scans in `(id, version)` lexicographic order — the BTreeMap
+    /// yields scans in `(id, version)` lexicographic order — the `BTreeMap`
     /// iteration contract. Phase 3 has one scan so the assertion is trivial;
     /// the test pins the contract for Phase 4 plans that register multiple
     /// scans.
     #[test]
     fn registry_iter_lex_order() {
         let r = bootstrap();
-        let ids: Vec<&'static str> = r.iter().map(|s| s.id()).collect();
+        let ids: Vec<&'static str> = r.iter().map(super::super::Scan::id).collect();
         // For Phase 3 the single-element vec is trivially sorted; the test pins
         // the contract.
         let mut sorted = ids.clone();

@@ -15,10 +15,13 @@ tradedesk-dukascopy (cache)  →  tradedesk-miner (raw findings)
 
 ## Status
 
-Phase 1 (Foundations & Contracts) complete. Phase 2 (reader / aggregator / cache) in
-progress. The Phase 1 contract surface — locked `Finding` JSON Schema, single sink
-writer, config precedence, CI gates — is FROZEN; later phases add scans and
-wrappers on top without re-litigating the envelope.
+Phase 1 (Foundations & Contracts) and Phase 2 (reader / aggregator / cache)
+complete. Phase 3 (scan engine + facade + CLI) is the discovery surface — the
+`miner scan` and `miner scans` subcommands wire the locked envelope to a working
+Ljung-Box demo scan (`stats.autocorr.ljung_box@1`) end-to-end. The Phase 1
+contract surface — locked `Finding` JSON Schema, single sink writer, config
+precedence, CI gates — is FROZEN; later phases add scans and wrappers on top
+without re-litigating the envelope.
 
 ## License
 
@@ -60,6 +63,63 @@ Apache-2.0 — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
    cargo test --workspace
    cargo clippy --workspace --all-targets -- -D warnings
    ```
+
+## Running a Scan (Phase 3)
+
+The `miner scan` subcommand executes one scan invocation end-to-end and
+streams `RunStart` → per-finding envelopes (`Result` / `ScanError` /
+`GapAborted` / `DryRun`) → `RunEnd` as JSONL on stdout.
+
+1. **Discover registered scans.** `miner scans` emits one JSONL line per
+   registered scan with `scan_id`, `version`, `params` (JSON Schema), and
+   `finding_fields`.
+
+   ```sh
+   MINER_CACHE_ROOT=/tmp/cache \
+   MINER_BAR_CACHE_ROOT=/tmp/bar \
+   MINER_OUTPUT=stdout \
+   cargo run -p miner-cli -- scans | jq .
+   ```
+
+   Phase 3 ships exactly one scan (`stats.autocorr.ljung_box@1`). Lines
+   validate against `schemas/scans-catalogue-v1.schema.json`.
+
+2. **Run the Ljung-Box demo scan** against a populated cache (synthesised by
+   `tradedesk-dukascopy` or seeded for tests):
+
+   ```sh
+   MINER_CACHE_ROOT=/path/to/cache \
+   MINER_BAR_CACHE_ROOT=/tmp/bar \
+   MINER_OUTPUT=stdout \
+   cargo run -p miner-cli -- scan stats.autocorr.ljung_box@1 \
+       --instrument EURUSD --side bid --timeframe 15m \
+       --window 2024-01-01:2024-12-31
+   ```
+
+   Exit code routing (D3-24): `0` clean run, `1` preflight rejection
+   (unknown scan / invalid params), `2` at least one mid-stream
+   `ScanError`, `130` SIGINT — all already-streamed findings persist on
+   stdout (D-19 per-envelope flush).
+
+3. **Dry-run** prints the resolved request + planned `data_slice` + an
+   estimated findings count and exits 0 WITHOUT touching the bars:
+
+   ```sh
+   cargo run -p miner-cli -- scan stats.autocorr.ljung_box@1 \
+       --instrument EURUSD --timeframe 15m \
+       --window 2024-01-01:2024-01-02 \
+       --dry-run
+   ```
+
+   The stream is `[run_start, dry_run, run_end]` — no `Result` envelope is
+   emitted; `RunSummary.results_emitted == 0`.
+
+4. **Gap policy.** `--gap-policy strict` (the high-correctness choice)
+   emits one `Finding::GapAborted` carrying the full Phase-2 gap manifest
+   on any data hole, then `RunEnd` — no `Result`. `--gap-policy
+   continuous_only` (the default) partitions the requested window into
+   maximal gap-free sub-ranges and emits one `Result` per sub-range with
+   the manifest inlined into `data_slice.gap_manifest`.
 
 ## What Phase 1 Delivers
 

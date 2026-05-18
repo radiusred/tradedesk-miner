@@ -242,7 +242,10 @@ impl ScanRequest {
     /// Under release builds (no `test-internal`) the cfg-gated
     /// `sleep_after_first_finding_ms` field is absent from the struct entirely,
     /// so this constructor is the canonical entry point.
-    #[allow(clippy::too_many_arguments, reason = "ScanRequest is a flat 10-field request type and this constructor is the canonical builder; introducing an intermediate builder type would obscure the call site")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "ScanRequest is a flat 10-field request type and this constructor is the canonical builder; introducing an intermediate builder type would obscure the call site"
+    )]
     #[must_use]
     pub fn new(
         scan_id: String,
@@ -414,8 +417,7 @@ mod tests {
         // explicit value on the wire.
         let req_false = sample_scan_request(false);
         let json_false = serde_json::to_string(&req_false).expect("serialise");
-        let parsed_false: ScanRequest =
-            serde_json::from_str(&json_false).expect("deserialise");
+        let parsed_false: ScanRequest = serde_json::from_str(&json_false).expect("deserialise");
         assert!(!parsed_false.dry_run);
     }
 
@@ -463,7 +465,10 @@ mod tests {
             side: Side::Bid,
             timeframe: Timeframe::Tf15m,
             window: ClosedRangeUtc { start, end },
-            sub_range: TimeRange { start_utc: start, end_utc: end },
+            sub_range: TimeRange {
+                start_utc: start,
+                end_utc: end,
+            },
             gap_policy: GapPolicyKind::ContinuousOnly,
             resolved_params: serde_json::json!({"lags": 20}),
             param_hash: blake3_hex_zero(),

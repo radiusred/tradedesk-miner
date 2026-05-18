@@ -124,8 +124,7 @@ impl ScanArgs {
     pub fn to_scan_request(&self, _code_revision: &str) -> Result<ScanRequest, WireError> {
         // 1. id@version split (engine::preflight is the canonical helper —
         // mirrors Plan 03-03's symmetric MCP/HTTP usage in Phase 6).
-        let (scan_id, version) =
-            preflight::resolve_scan_id_at_version(&self.scan_id_at_version)?;
+        let (scan_id, version) = preflight::resolve_scan_id_at_version(&self.scan_id_at_version)?;
 
         // 2. side / timeframe / gap_policy enum parses.
         let side = Side::from_str(&self.side).map_err(|bad| {
@@ -138,9 +137,7 @@ impl ScanArgs {
         let timeframe = Timeframe::from_str(&self.timeframe).map_err(|bad| {
             WireError::preflight(
                 PreflightCode::InvalidParameter,
-                format!(
-                    "timeframe must be one of \"15m\" / \"1h\" / \"1d\"; got {bad:?}"
-                ),
+                format!("timeframe must be one of \"15m\" / \"1h\" / \"1d\"; got {bad:?}"),
             )
             .with_context(
                 "timeframe",
@@ -150,9 +147,7 @@ impl ScanArgs {
         let gap_policy = GapPolicyKind::from_str(&self.gap_policy).map_err(|bad| {
             WireError::preflight(
                 PreflightCode::InvalidParameter,
-                format!(
-                    "gap_policy must be one of \"strict\" / \"continuous_only\"; got {bad:?}"
-                ),
+                format!("gap_policy must be one of \"strict\" / \"continuous_only\"; got {bad:?}"),
             )
             .with_context(
                 "gap_policy",
@@ -164,8 +159,8 @@ impl ScanArgs {
         let resolved_params = preflight::parse_params_kv(&self.params)?;
 
         // 4. param_hash over canonical resolved-params blob (D3-13).
-        let param_hash = miner_core::engine::param_hash::param_hash(&resolved_params)
-            .map_err(|e| {
+        let param_hash =
+            miner_core::engine::param_hash::param_hash(&resolved_params).map_err(|e| {
                 WireError::preflight(
                     PreflightCode::InvalidParameter,
                     format!("param hash failed: {e}"),
@@ -317,8 +312,8 @@ mod tests {
             other => panic!("expected Object; got {other:?}"),
         }
         // param_hash matches engine::param_hash::param_hash over the same blob.
-        let expected = miner_core::engine::param_hash::param_hash(&req.resolved_params)
-            .expect("hash ok");
+        let expected =
+            miner_core::engine::param_hash::param_hash(&req.resolved_params).expect("hash ok");
         assert_eq!(req.param_hash.as_str(), expected.as_str());
     }
 
@@ -389,8 +384,8 @@ mod tests {
             "non-Z timezone must reject (A3)"
         );
         // Strict-Z UTC accepted.
-        let r = parse_window("2024-01-01T00:00:00Z:2024-12-31T00:00:00Z")
-            .expect("strict-Z accepted");
+        let r =
+            parse_window("2024-01-01T00:00:00Z:2024-12-31T00:00:00Z").expect("strict-Z accepted");
         assert!(r.start < r.end);
     }
 
