@@ -41,6 +41,11 @@ arrow.workspace      = true   # CACHE-06 cache format (Plan 02-05 uses; declared
                               # the workspace dep graph lands in one PR — Plan 02-01 scope)
 tempfile.workspace   = true   # atomic NamedTempFile::persist (Plan 02-05); ahead-declare
                               # so downstream plans inherit through this crate
+# Phase 3 additions:
+# `statrs` ships the `ChiSquared` distribution used by Ljung-Box p-value computation
+# (D3-04). miner-core is the ONLY crate that depends on it (Pitfall 1 — keep the chi-squared
+# kernel in one place). The dep is sync-only — no async creep into miner-core (FOUND-04).
+statrs.workspace     = true
 
 [dev-dependencies]
 jsonschema.workspace = true

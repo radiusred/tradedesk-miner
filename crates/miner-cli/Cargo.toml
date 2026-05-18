@@ -34,6 +34,10 @@ directories.workspace       = true
 # Used in `emit_fixture()` for the `started_at_utc` / `ended_at_utc` framing-record
 # timestamps. Workspace pin is `0.4` with `["clock", "serde"]`.
 chrono.workspace            = true
+# Phase 3 (Plan 03-01): SIGINT handler. Installed in `main()` BEFORE `Cli::parse()`
+# per CONTEXT D3-22 / RESEARCH §Pattern 4 — sets an `Arc<AtomicBool>` cancellation flag
+# the facade polls. miner-core knows nothing of `ctrlc` (one-way dep direction preserved).
+ctrlc.workspace             = true
 
 [dev-dependencies]
 # Local tempdir for integration tests that need an isolated config file.
@@ -55,6 +59,12 @@ jsonschema.workspace = true
 # masking the four volatile envelope fields for the OUT-03 twice-run byte-identity
 # regression gate.
 serde_json.workspace = true
+# Phase 3 (Plan 03-01): unix-only SIGINT integration test (sigint_preserves_stream.rs)
+# uses `nix::sys::signal::kill` to deliver SIGINT to a child `miner` subprocess. Declared
+# inline here (not at workspace level) because the dep is dev-only AND unix-only — the
+# integration test file gates with `#![cfg(unix)]`. See RESEARCH line 76 + 03-PATTERNS
+# lines 1027-1048.
+nix          = { version = "0.31", default-features = false, features = ["signal"] }
 
 [lints]
 workspace = true
