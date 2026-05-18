@@ -17,14 +17,18 @@
 //! ## Module decomposition (D3-15 broker + D3-22 cancel + D3-24 exit-code routing)
 //!
 //! - [`preflight`] — parse + validate `--params`, reject unknown scans.
-//! - [`gap_policy`] — strict / continuous_only dispatch + sub-range partitioning.
+//! - [`gap_policy`] — strict / `continuous_only` dispatch + sub-range partitioning.
 //! - [`param_hash`] — blake3 hash of canonical resolved params (D3-13).
 //! - [`framing`] — `RunStart` / `RunEnd` envelope builders (clock reads ONLY here).
 //!
 //! The facade is sync + std-only (FOUND-04). No tokio, no async-std, no async
 //! traits — Phase 5 will fan out via rayon, never tokio.
 
-#![allow(dead_code, unused_variables)]
+// `run_one` is still a scaffold body (Plan 04 fills) — its `cancel: Arc<AtomicBool>`
+// argument is unused inside the `unimplemented!()` stub, so clippy's
+// `needless_pass_by_value` lint fires spuriously. Plan 04's real body will consume
+// the arg (passing it into `ScanCtx`); the allow can be removed once that lands.
+#![allow(dead_code, unused_variables, clippy::needless_pass_by_value)]
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -40,6 +44,10 @@ pub mod gap_policy;
 pub mod param_hash;
 pub mod preflight;
 
+// Plan 04 imports these via `use miner_core::engine::*;` — re-export the
+// two enums so callers don't need to spell out the inner module path.
+pub use gap_policy::{GapDispatch, GapPolicyKind};
+
 // ---------------------------------------------------------------------------
 // RunOutcome — internal enum the CLI maps to an exit code (D3-24).
 // ---------------------------------------------------------------------------
@@ -50,7 +58,7 @@ pub mod preflight;
 /// `Eq`-safe variants (no `f64` inside). `RunOutcome` is INTERNAL — no
 /// `Serialize` derive needed; the CLI maps it to a POSIX exit code per D3-24:
 ///
-/// | RunOutcome              | exit code |
+/// | `RunOutcome`            | exit code |
 /// |-------------------------|-----------|
 /// | `Ok`                    | `0` (or `2` if SIGINT mid-run → `130`) |
 /// | `HadScanErrors`         | `2` |
@@ -60,11 +68,11 @@ pub mod preflight;
 /// and overrides the outcome — the CLI emits exit code `130` regardless.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunOutcome {
-    /// `RunEnd` emitted; at least one Result / GapAborted / DryRun finding
+    /// `RunEnd` emitted; at least one `Result` / `GapAborted` / `DryRun` finding
     /// streamed (or zero findings if the scan computed none).
     Ok,
     /// `RunEnd` emitted AND at least one mid-stream `Finding::ScanError` was
-    /// emitted. Stream may have a mix of Result + ScanError findings.
+    /// emitted. Stream may have a mix of `Result` + `ScanError` findings.
     HadScanErrors,
     /// Pre-flight rejection: unknown scan, invalid param, missing config, etc.
     /// Stdout is empty; the CLI writes a single `WireError` JSON line to

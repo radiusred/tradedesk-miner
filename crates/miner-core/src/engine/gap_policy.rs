@@ -14,9 +14,9 @@
 //! - `continuous_only` + zero gaps → one `Result` with
 //!   `data_slice.gap_manifest = Some(GapManifest { gaps: vec![] })` (D3-12).
 //!
-//! Wave 0 scaffold: signature only. Plan 03-03 fills the bodies.
-
-#![allow(dead_code, unused_variables)]
+//! [`dispatch`] is a PURE function — given the same `(manifest, requested,
+//! policy)` triple it returns the same [`GapDispatch`]. No clock reads, no
+//! file IO, no allocations beyond the returned `Vec<TimeRange>`.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -70,6 +70,9 @@ impl GapPolicyKind {
 /// will inline (D3-11). `SubRanges(Vec<TimeRange>)` carries the gap-free
 /// partition the facade iterates over, calling `Scan::run` once per sub-range
 /// (D3-10).
+///
+/// No `Serialize` derive — this is an internal facade type (Plan 04 consumes
+/// via match).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GapDispatch {
     /// Strict policy + gaps present — emit one `GapAborted` and stop.
@@ -83,31 +86,400 @@ pub enum GapDispatch {
 // dispatch — the stateless function the facade calls.
 // ---------------------------------------------------------------------------
 
-/// Compute the gap-policy dispatch for a (manifest, requested, policy) triple.
+/// Compute the gap-policy dispatch for a `(manifest, requested, policy)` triple.
 ///
 /// Pattern analog: `gap.rs:188-279` `GapDetector::detect` — pure function with
 /// a numbered algorithm doc.
 ///
-/// ## Algorithm (Plan 03-03 fills the body)
+/// ## Algorithm
 ///
-/// 1. Inspect `manifest.gaps`:
-///    - Empty → return `SubRanges(vec![requested as TimeRange])` (single
-///      pass-through sub-range, works for both policies' fast path).
-///    - Non-empty:
-///      - `policy == Strict` → return `Aborted(manifest.clone())`.
-///      - `policy == ContinuousOnly` → walk the sorted manifest, compute
-///        maximal gap-free sub-ranges of `requested`, return `SubRanges(v)`.
-/// 2. NEVER silently swallow a gap (the
-///    `never_silently_emits_on_hole_proptest` regression pins this).
+/// 1. If `manifest.gaps` is empty:
+///    - Either policy → return `SubRanges(vec![requested as TimeRange])`
+///      (single pass-through sub-range; the zero-gap fast path for both
+///      strict — D3-12 — and `continuous_only` — D3-12).
+/// 2. Else if `policy == Strict`:
+///    - Return `Aborted(manifest.clone())` (D3-11).
+/// 3. Else (`policy == ContinuousOnly`):
+///    - Walk the (sorted, per Phase 2 `GapManifest` invariant) gaps and
+///      compute maximal gap-free sub-ranges inside `requested`. Gaps
+///      entirely outside `[requested.start, requested.end)` are ignored.
+///      Gaps clamped at the boundaries split the requested range
+///      accordingly. If the union of clamped gaps covers `requested`
+///      entirely, return `SubRanges(vec![])` (no sub-ranges; the engine
+///      emits zero `Result` findings).
 ///
-/// Wave 0 scaffold: signature only. Plan 03-03 fills the body.
+/// `dispatch` NEVER silently produces a `SubRanges` element overlapping a
+/// gap — the [`never_silently_emits_on_hole_proptest`] regression pins this.
 #[must_use]
 pub fn dispatch(
     manifest: &GapManifest,
     requested: ClosedRangeUtc,
     policy: GapPolicyKind,
 ) -> GapDispatch {
-    unimplemented!(
-        "Plan 03-03 wires gap_policy::dispatch per the numbered algorithm doc"
-    )
+    // Step 1 — zero-gap fast path for both policies (D3-12).
+    if manifest.gaps.is_empty() {
+        return GapDispatch::SubRanges(vec![TimeRange {
+            start_utc: requested.start,
+            end_utc: requested.end,
+        }]);
+    }
+
+    // Step 2 — strict + gaps present aborts (D3-11).
+    if matches!(policy, GapPolicyKind::Strict) {
+        return GapDispatch::Aborted(manifest.clone());
+    }
+
+    // Step 3 — continuous_only: sweep gaps and emit maximal gap-free sub-ranges.
+    // Clamp each gap to [requested.start, requested.end) before consideration;
+    // gaps entirely outside the requested range have no effect.
+    let mut subs: Vec<TimeRange> = Vec::new();
+    let mut cursor = requested.start;
+    for gap in &manifest.gaps {
+        // Skip gaps entirely outside [requested.start, requested.end).
+        if gap.end_utc <= requested.start || gap.start_utc >= requested.end {
+            continue;
+        }
+        // Clamp the gap to the requested boundary.
+        let g_start = gap.start_utc.max(requested.start);
+        let g_end = gap.end_utc.min(requested.end);
+        if g_start > cursor {
+            subs.push(TimeRange {
+                start_utc: cursor,
+                end_utc: g_start,
+            });
+        }
+        if g_end > cursor {
+            cursor = g_end;
+        }
+    }
+    if cursor < requested.end {
+        subs.push(TimeRange {
+            start_utc: cursor,
+            end_utc: requested.end,
+        });
+    }
+    GapDispatch::SubRanges(subs)
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::findings::TimeRange;
+    use crate::gap::{GapReason, GapSpan};
+    use crate::reader::Side;
+    use chrono::{DateTime, TimeZone, Utc};
+    use proptest::prelude::*;
+
+    fn t(h: u32) -> DateTime<Utc> {
+        // Helper: an hour-of-day on 2024-01-01 UTC. Hour 24 maps to
+        // 2024-01-02 00:00:00 UTC (chrono rejects literal hour 24); this
+        // lets the proptest sweep range endpoints up to 24 inclusive.
+        if h >= 24 {
+            Utc.with_ymd_and_hms(2024, 1, 2, h - 24, 0, 0).unwrap()
+        } else {
+            Utc.with_ymd_and_hms(2024, 1, 1, h, 0, 0).unwrap()
+        }
+    }
+
+    fn empty_manifest() -> GapManifest {
+        GapManifest {
+            source_id: "dukascopy".into(),
+            symbol: "EURUSD".into(),
+            side: Side::Bid,
+            queried_range: TimeRange {
+                start_utc: t(0),
+                end_utc: t(6),
+            },
+            gaps: Vec::new(),
+        }
+    }
+
+    fn manifest_with_gaps(gaps: Vec<GapSpan>) -> GapManifest {
+        GapManifest {
+            source_id: "dukascopy".into(),
+            symbol: "EURUSD".into(),
+            side: Side::Bid,
+            queried_range: TimeRange {
+                start_utc: t(0),
+                end_utc: t(6),
+            },
+            gaps,
+        }
+    }
+
+    fn gap(start: DateTime<Utc>, end: DateTime<Utc>) -> GapSpan {
+        GapSpan {
+            start_utc: start,
+            end_utc: end,
+            reason: GapReason::IntraDayGap {
+                affected_minutes: 1,
+            },
+        }
+    }
+
+    fn requested(start: DateTime<Utc>, end: DateTime<Utc>) -> ClosedRangeUtc {
+        ClosedRangeUtc { start, end }
+    }
+
+    // -----------------------------------------------------------------------
+    // strict policy
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn strict_with_gaps_aborts() {
+        let m = manifest_with_gaps(vec![gap(t(2), t(3))]);
+        let d = dispatch(&m, requested(t(0), t(6)), GapPolicyKind::Strict);
+        match d {
+            GapDispatch::Aborted(returned) => assert_eq!(returned, m),
+            other => panic!("expected Aborted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn strict_zero_gaps_passes_through() {
+        let m = empty_manifest();
+        let req = requested(t(0), t(6));
+        let d = dispatch(&m, req, GapPolicyKind::Strict);
+        match d {
+            GapDispatch::SubRanges(v) => {
+                assert_eq!(v.len(), 1);
+                assert_eq!(
+                    v[0],
+                    TimeRange {
+                        start_utc: req.start,
+                        end_utc: req.end,
+                    }
+                );
+            }
+            other => panic!("expected SubRanges, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // continuous_only policy
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn continuous_only_partitions_around_gaps() {
+        // Requested [0, 6), one gap [2, 3) -> SubRanges([0, 2), [3, 6)).
+        let m = manifest_with_gaps(vec![gap(t(2), t(3))]);
+        let req = requested(t(0), t(6));
+        let d = dispatch(&m, req, GapPolicyKind::ContinuousOnly);
+        match d {
+            GapDispatch::SubRanges(v) => {
+                assert_eq!(v.len(), 2, "expected two sub-ranges around the gap");
+                assert_eq!(
+                    v[0],
+                    TimeRange {
+                        start_utc: t(0),
+                        end_utc: t(2),
+                    }
+                );
+                assert_eq!(
+                    v[1],
+                    TimeRange {
+                        start_utc: t(3),
+                        end_utc: t(6),
+                    }
+                );
+            }
+            other => panic!("expected SubRanges, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn continuous_only_zero_gaps_fast_path() {
+        let m = empty_manifest();
+        let req = requested(t(0), t(6));
+        let d = dispatch(&m, req, GapPolicyKind::ContinuousOnly);
+        match d {
+            GapDispatch::SubRanges(v) => {
+                assert_eq!(v.len(), 1);
+                assert_eq!(
+                    v[0],
+                    TimeRange {
+                        start_utc: req.start,
+                        end_utc: req.end,
+                    }
+                );
+            }
+            other => panic!("expected SubRanges, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn continuous_only_gap_at_boundary() {
+        // Gap at start [0, 1), requested [0, 6) -> SubRanges([1, 6)).
+        let m = manifest_with_gaps(vec![gap(t(0), t(1))]);
+        let req = requested(t(0), t(6));
+        let d = dispatch(&m, req, GapPolicyKind::ContinuousOnly);
+        match d {
+            GapDispatch::SubRanges(v) => {
+                assert_eq!(v.len(), 1, "expected one sub-range after the leading gap");
+                assert_eq!(
+                    v[0],
+                    TimeRange {
+                        start_utc: t(1),
+                        end_utc: t(6),
+                    }
+                );
+            }
+            other => panic!("expected SubRanges, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn continuous_only_gap_consumes_whole_range() {
+        // Gap covering [0, 6), requested [0, 6) -> SubRanges([]).
+        let m = manifest_with_gaps(vec![gap(t(0), t(6))]);
+        let req = requested(t(0), t(6));
+        let d = dispatch(&m, req, GapPolicyKind::ContinuousOnly);
+        match d {
+            GapDispatch::SubRanges(v) => {
+                assert!(
+                    v.is_empty(),
+                    "expected zero sub-ranges when gap covers the whole range; got {v:?}"
+                );
+            }
+            other => panic!("expected SubRanges, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn continuous_only_multiple_gaps() {
+        // Gaps [1,2), [3,4) inside [0, 6) -> SubRanges([0,1), [2,3), [4,6)).
+        let m = manifest_with_gaps(vec![gap(t(1), t(2)), gap(t(3), t(4))]);
+        let req = requested(t(0), t(6));
+        let d = dispatch(&m, req, GapPolicyKind::ContinuousOnly);
+        match d {
+            GapDispatch::SubRanges(v) => {
+                assert_eq!(v.len(), 3);
+                assert_eq!(
+                    v[0],
+                    TimeRange {
+                        start_utc: t(0),
+                        end_utc: t(1),
+                    }
+                );
+                assert_eq!(
+                    v[1],
+                    TimeRange {
+                        start_utc: t(2),
+                        end_utc: t(3),
+                    }
+                );
+                assert_eq!(
+                    v[2],
+                    TimeRange {
+                        start_utc: t(4),
+                        end_utc: t(6),
+                    }
+                );
+            }
+            other => panic!("expected SubRanges, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn continuous_only_gap_outside_requested() {
+        // Gap [10, 11) is fully after requested [0, 6) — should be ignored.
+        let m = manifest_with_gaps(vec![gap(t(10), t(11))]);
+        let req = requested(t(0), t(6));
+        let d = dispatch(&m, req, GapPolicyKind::ContinuousOnly);
+        match d {
+            GapDispatch::SubRanges(v) => {
+                assert_eq!(v.len(), 1, "out-of-range gap must be ignored");
+                assert_eq!(
+                    v[0],
+                    TimeRange {
+                        start_utc: t(0),
+                        end_utc: t(6),
+                    }
+                );
+            }
+            other => panic!("expected SubRanges, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Proptest — under random sorted non-overlapping gaps, `dispatch` NEVER
+    // returns a SubRanges element overlapping a gap. (Strict + non-empty
+    // always returns Aborted; ContinuousOnly's union is a subset of
+    // requested - union(gaps).)
+    // -----------------------------------------------------------------------
+
+    proptest! {
+        #[test]
+        fn never_silently_emits_on_hole_proptest(
+            // Generate non-overlapping sorted gaps within [0, 24) hours and a
+            // requested range also within [0, 24). Using hour offsets keeps
+            // the values small and the proptest fast.
+            offsets in proptest::collection::vec(0u32..24, 0..6),
+            req_start_h in 0u32..23,
+            req_end_offset in 1u32..24,
+        ) {
+            // Build gaps from sorted unique offsets, pairing consecutive
+            // values as [g_start, g_end). This produces a valid sorted
+            // non-overlapping gap sequence.
+            let mut sorted: Vec<u32> = offsets;
+            sorted.sort_unstable();
+            sorted.dedup();
+            // Make sure pairs of consecutive offsets form valid half-open
+            // ranges; we discard the last unpaired element.
+            if sorted.len() % 2 == 1 {
+                sorted.pop();
+            }
+            let gap_spans: Vec<GapSpan> = sorted
+                .chunks_exact(2)
+                .filter(|c| c[0] < c[1])
+                .map(|c| gap(t(c[0]), t(c[1])))
+                .collect();
+            let manifest = manifest_with_gaps(gap_spans.clone());
+            let req_end_h = (req_start_h + req_end_offset).min(24);
+            if req_end_h <= req_start_h {
+                return Ok(());
+            }
+            let req = requested(t(req_start_h), t(req_end_h));
+
+            // Strict + non-empty -> always Aborted.
+            if !gap_spans.is_empty() {
+                let d_strict = dispatch(&manifest, req, GapPolicyKind::Strict);
+                prop_assert!(
+                    matches!(d_strict, GapDispatch::Aborted(_)),
+                    "Strict + non-empty gaps must abort"
+                );
+            }
+
+            // ContinuousOnly -> sub-ranges never overlap a gap.
+            let d_cont = dispatch(&manifest, req, GapPolicyKind::ContinuousOnly);
+            if let GapDispatch::SubRanges(subs) = d_cont {
+                for sub in &subs {
+                    // sub.start < sub.end (well-formed half-open range).
+                    prop_assert!(sub.start_utc < sub.end_utc, "subrange must be non-empty: {sub:?}");
+                    // sub does NOT overlap any gap.
+                    for g in &gap_spans {
+                        let clamped_start = g.start_utc.max(req.start);
+                        let clamped_end = g.end_utc.min(req.end);
+                        if clamped_start >= clamped_end {
+                            continue; // out of range
+                        }
+                        let overlaps = sub.start_utc < clamped_end && clamped_start < sub.end_utc;
+                        prop_assert!(
+                            !overlaps,
+                            "subrange {sub:?} overlaps gap [{clamped_start}, {clamped_end})"
+                        );
+                    }
+                    // sub is within requested range.
+                    prop_assert!(sub.start_utc >= req.start);
+                    prop_assert!(sub.end_utc <= req.end);
+                }
+            } else {
+                panic!("ContinuousOnly must always return SubRanges");
+            }
+        }
+    }
 }
