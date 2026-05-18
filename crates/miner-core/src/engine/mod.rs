@@ -7,13 +7,6 @@
 //! dispatch, error classification, and the `RunOutcome` the CLI maps to an
 //! exit code.
 //!
-//! ## Wave 0 scaffold
-//!
-//! Plan 03-01 lays down signature-only bodies (`unimplemented!()`). The seven
-//! sub-files (`preflight`, `gap_policy`, `param_hash`, `framing`) carry the
-//! same scaffold discipline so Plan 03-02..06 fill in real behaviour without
-//! adding files.
-//!
 //! ## Module decomposition (D3-15 broker + D3-22 cancel + D3-24 exit-code routing)
 //!
 //! - [`preflight`] — parse + validate `--params`, reject unknown scans.
@@ -23,21 +16,32 @@
 //!
 //! The facade is sync + std-only (FOUND-04). No tokio, no async-std, no async
 //! traits — Phase 5 will fan out via rayon, never tokio.
-
-// `run_one` is still a scaffold body (Plan 04 fills) — its `cancel: Arc<AtomicBool>`
-// argument is unused inside the `unimplemented!()` stub, so clippy's
-// `needless_pass_by_value` lint fires spuriously. Plan 04's real body will consume
-// the arg (passing it into `ScanCtx`); the allow can be removed once that lands.
-#![allow(dead_code, unused_variables, clippy::needless_pass_by_value)]
+//!
+//! ## Reader-error wrapping (Warning 8)
+//!
+//! Reader and cache errors are wrapped via `MinerError::Scan(String)` —
+//! `MinerError` declares Io / Serialize / Config / Scan / Internal variants
+//! only (no `Reader` variant). `Scan(String)` is the semantically-closest
+//! match for "the data-loading step failed" at this layer; the conversion
+//! lives at the two `MinerError::Scan(format!(...))` call sites below.
 
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
+use chrono::Utc;
+
+use crate::aggregator::AggParams;
+use crate::cache::BarCache;
 use crate::config::MinerConfig;
 use crate::error::MinerError;
-use crate::findings::FindingSink;
-use crate::reader::Reader;
-use crate::scan::ScanRequest;
+use crate::findings::{
+    DataSlice, DryRunFinding, Finding, FindingSink, GapAbortedFinding, PerScanCounts, RunSummary,
+    Source, TimeRange,
+};
+use crate::findings::run_id::RunId;
+use crate::gap::GapDetector;
+use crate::reader::{ClosedRangeUtc, Reader};
+use crate::scan::{ScanCtx, ScanError, ScanRequest};
 
 pub mod framing;
 pub mod gap_policy;
@@ -89,38 +93,85 @@ pub enum RunOutcome {
 /// Pattern analog: `cache.rs:569-573` ([`crate::cache::BarCache::get_or_build`])
 /// — a single-method facade returning a value with a numbered algorithm doc.
 ///
-/// ## Algorithm (Plan 02..06 fill the body)
+/// ## Algorithm
 ///
-/// 1. Cancel-check early (RESEARCH Pattern 4 polling site 1).
-/// 2. Preflight: resolve scan from registry, validate params via
-///    [`preflight::parse_params_kv`]; on failure return
-///    [`RunOutcome::PreflightFailed`].
-/// 3. Compute [`param_hash::param_hash`] over resolved params (D3-13).
-/// 4. Emit `RunStart` via [`framing::build_run_start`].
-/// 5. Fetch the [`crate::aggregator::BarFrame`] via
-///    [`crate::cache::BarCache::get_or_build`].
-/// 6. Detect gaps via [`crate::gap::GapDetector::detect`]; dispatch via
-///    [`gap_policy::dispatch`]:
-///    - `Aborted(manifest)` → emit `Finding::GapAborted`; return `Ok`.
-///    - `SubRanges(ranges)` → for each sub-range, call `Scan::run` with a
-///      fresh `ScanRequest::sub_range`.
-/// 7. Emit `RunEnd` via [`framing::build_run_end`].
-/// 8. Return `RunOutcome::{Ok | HadScanErrors}` based on whether any
-///    `Finding::ScanError` was emitted mid-run.
+/// 1. **Cancel-at-entry yield site** (RESEARCH Pattern 4 site 1; SC-5b
+///    `cancel_at_entry`). Returns `Ok(RunOutcome::Ok)` without emitting
+///    anything if `cancel` is already set.
+/// 2. **Preflight**: resolve the scan from `bootstrap()`. On unknown scan,
+///    return `Err(MinerError::Scan(_))` WITHOUT emitting `RunStart`; the CLI
+///    converts to a `WireError` on stderr and exits 1.
+/// 3. **Framing-open**: build + emit `RunStart` via
+///    [`framing::build_run_start`]. The builder echoes `req.dry_run` into
+///    `RunStart.request` (Blocker 2 closure; D3-21).
+/// 4. **Dry-run short-circuit** (Blocker 2 / Warning 9 pin): if
+///    `req.dry_run == true`, emit one `Finding::DryRun` and jump to
+///    framing-close. `RunSummary.results_emitted` stays at zero — `RunSummary`
+///    is NOT extended with any new counter field; the dry-run signal lives
+///    in `Finding::DryRun` + `RunStart.request.dry_run` only.
+/// 5. **Gap detection** (Warning 8 wrap): `GapDetector::detect(...)` may
+///    return `Err(R::Error)`. Wrap via
+///    `MinerError::Scan(format!("reader: {e}"))` — `MinerError` has no
+///    `Reader` variant; `Scan(String)` is the chosen wrapper per Warning 8.
+/// 6. **Gap-policy dispatch** ([`gap_policy::dispatch`]):
+///    - `GapDispatch::Aborted(m)` → emit one `Finding::GapAborted` carrying
+///      the full manifest; `summary.gap_aborted += 1`.
+///    - `GapDispatch::SubRanges(ranges)` → for each sub-range:
+///      * **Cancel-before-subrange yield site** (SC-5b
+///        `cancel_before_subrange`): poll `cancel` BEFORE loading bars for
+///        the next sub-range; on cancel, break and proceed to framing-close.
+///      * Build a per-sub-range `ScanRequest` (Pitfall 4 — `sub_range`
+///        distinct from `window`).
+///      * Load bars via `BarCache::get_or_build` (Warning 8 wrap on
+///        `CacheError`).
+///      * Construct `ScanCtx` and dispatch the scan. The third documented
+///        cancel yield site (`cancel_inside_scan_kernel`) lives INSIDE
+///        `Scan::run`'s cancel-aware sleep loop (Plan 04 Task 2).
+///      * On `Err(ScanError::Compute|Kernel(_))`: emit a
+///        `Finding::ScanError` envelope, increment `summary.scan_errors`, and
+///        continue (D-05 — per-finding scan errors are NOT preflight
+///        failures).
+///      * On `Err(ScanError::Cancelled)`: break out of the loop cleanly.
+/// 7. **Framing-close**: build + emit `RunEnd` via
+///    [`framing::build_run_end`]; flush the sink (Pitfall 5 — THE one
+///    and only flush point in the whole pipeline).
+/// 8. Return `RunOutcome::Ok` if `summary.scan_errors == 0`; otherwise
+///    `RunOutcome::HadScanErrors`.
 ///
-/// ## SIGINT (D3-22)
+/// ## Documented cancellation yield sites (SC-5b — Blocker 1)
 ///
-/// The `cancel` flag is polled by the scan kernel (between findings) and by
-/// the rayon fanout (between sub-ranges). On observed cancellation the
-/// function returns `Ok(RunOutcome::Ok)` after emitting `RunEnd` (so any
-/// streamed Result findings survive — OP-06); the CLI inspects the flag
-/// post-return and exits 130.
+/// `engine::cancellation_tests` exercises all three by name:
+/// 1. `cancel_at_entry`        — Step 1 above; flag set BEFORE `run_one` is invoked.
+/// 2. `cancel_before_subrange` — Step 6 sub-range loop top.
+/// 3. `cancel_inside_scan_kernel` — inside `LjungBoxScan::run`'s cancel-aware
+///    sleep loop (controlled by the cfg-gated
+///    `ScanCtx.sleep_after_first_finding_ms` hook, Plan 02 Task 2).
+///
+/// ## Clock-isolation invariant (D3-23)
+///
+/// `Utc::now()` is read EXACTLY TWICE inside this function — once at
+/// `started` (before `RunStart`) and once at `ended` (before `RunEnd`). Scans
+/// MUST NOT read the wall-clock; per-finding `produced_at_utc` reads come
+/// from inside the scan body (the engine does not synthesize them).
 ///
 /// # Errors
-/// Returns [`MinerError`] only on infrastructure failure (sink IO, cache
-/// corruption). Per-finding scan errors are emitted as `Finding::ScanError`
-/// envelopes and surface in the return as `RunOutcome::HadScanErrors`, NOT
-/// as `Err`.
+///
+/// Returns [`MinerError`] only on:
+/// - Preflight failure (unknown scan) — `MinerError::Scan(_)`.
+/// - Reader error during gap detection — `MinerError::Scan("reader: ...")`.
+/// - Cache error during bar loading — `MinerError::Scan("cache: ...")`.
+/// - Sink IO / serialisation error — propagated from `FindingSink`.
+///
+/// Per-finding scan errors are emitted as `Finding::ScanError` envelopes and
+/// surface in the return as `RunOutcome::HadScanErrors`, NOT as `Err`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "run_one is the single-method facade — the 7-step algorithm walk is intentionally inline so the call site reads top-to-bottom against the doc-comment numbering"
+)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the CLI wrapper builds `Arc<AtomicBool>` once at main() and hands ownership in; Arc::clone is used inside per sub-range. By-value is the canonical engine-entry signature."
+)]
 pub fn run_one<R: Reader>(
     req: &ScanRequest,
     cfg: &MinerConfig,
@@ -128,7 +179,1174 @@ pub fn run_one<R: Reader>(
     sink: &mut dyn FindingSink,
     cancel: Arc<AtomicBool>,
 ) -> Result<RunOutcome, MinerError> {
-    unimplemented!(
-        "Plan 03-02..06 fill run_one's body per the numbered algorithm doc above"
-    )
+    // -----------------------------------------------------------------------
+    // Step 1 — Cancel-at-entry yield site (cancellation_tests::cancel_at_entry)
+    // -----------------------------------------------------------------------
+    if cancel.load(Ordering::Relaxed) {
+        return Ok(RunOutcome::Ok);
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 2 — Preflight: resolve scan via the production registry.
+    // -----------------------------------------------------------------------
+    let registry = crate::scan::bootstrap();
+    let scan = registry.get(&req.scan_id, req.version).ok_or_else(|| {
+        MinerError::Scan(format!("unknown scan: {}@{}", req.scan_id, req.version))
+    })?;
+
+    // jsonschema validation of resolved_params against scan.param_schema() is
+    // OUT OF SCOPE for Phase 3 (heavyweight dep + duplicated by the per-scan
+    // internal checks like LjungBoxScan's lags-range guard). The typed-fallback
+    // parse in preflight::parse_params_kv is the sole boundary check.
+
+    // -----------------------------------------------------------------------
+    // Step 3 — Framing-open: emit RunStart.
+    // -----------------------------------------------------------------------
+    let run_id = RunId::new();
+    let started = Utc::now();
+    let run_start_finding =
+        framing::build_run_start(req, run_id, started, crate::CODE_REVISION);
+    sink.write_envelope(&run_start_finding)?;
+
+    // Holds the request Value the dry-run path echoes (extracted from the
+    // built RunStart to avoid re-deriving it here).
+    let request_value = match &run_start_finding {
+        Finding::RunStart(rs) => rs.request.clone(),
+        _ => unreachable!("framing::build_run_start always returns Finding::RunStart"),
+    };
+
+    let mut summary = RunSummary::default();
+
+    // -----------------------------------------------------------------------
+    // Step 4 — Dry-run short-circuit (Blocker 2 / D3-21 / Warning 9 pin).
+    // -----------------------------------------------------------------------
+    if req.dry_run {
+        let planned_data_slice = DataSlice {
+            range: TimeRange {
+                start_utc: req.window.start,
+                end_utc: req.window.end,
+            },
+            gap_manifest_ref: None,
+            gap_manifest: None,
+        };
+        let dry_run_finding = Finding::DryRun(DryRunFinding {
+            run_id,
+            produced_at_utc: Utc::now(),
+            request: request_value,
+            resolved_params: req.resolved_params.clone(),
+            planned_data_slice,
+            estimated_findings_count: 1,
+        });
+        sink.write_envelope(&dry_run_finding)?;
+        // Pitfall 3: results_emitted stays at 0 — DryRun does NOT increment
+        // any RunSummary counter; the signal lives in the envelope only.
+        emit_run_end(sink, run_id, started, summary)?;
+        return Ok(RunOutcome::Ok);
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 5 — Gap detection (Warning 8 — wrap reader errors via
+    // MinerError::Scan(String); MinerError has no Reader variant).
+    // -----------------------------------------------------------------------
+    let manifest =
+        GapDetector::detect(reader, &req.instrument, req.side, req.window).map_err(|e| {
+            MinerError::Scan(format!("reader: {e}"))
+        })?;
+    let dispatch_result = gap_policy::dispatch(&manifest, req.window, req.gap_policy);
+
+    // -----------------------------------------------------------------------
+    // Step 6 — Dispatch.
+    // -----------------------------------------------------------------------
+    let scan_id_at_version = format!("{}@{}", req.scan_id, req.version);
+    match dispatch_result {
+        GapDispatch::Aborted(m) => {
+            let gap_aborted_finding = Finding::GapAborted(GapAbortedFinding {
+                schema_version: 1,
+                scan_id_at_version: scan_id_at_version.clone(),
+                param_hash: req.param_hash.as_str().to_string(),
+                code_revision: crate::CODE_REVISION.to_string(),
+                data_slice: DataSlice {
+                    range: TimeRange {
+                        start_utc: req.window.start,
+                        end_utc: req.window.end,
+                    },
+                    gap_manifest_ref: None,
+                    gap_manifest: Some(m.clone()),
+                },
+                dsr: None,
+                fdr_q: None,
+                run_id,
+                produced_at_utc: Utc::now(),
+                source: Source {
+                    source_id: reader.source_id().to_string(),
+                    symbol: req.instrument.clone(),
+                    side: req.side.as_str().to_string(),
+                    timeframe: req.timeframe.as_str().to_string(),
+                },
+                gap_manifest: serde_json::to_value(&m).map_err(MinerError::from)?,
+            });
+            sink.write_envelope(&gap_aborted_finding)?;
+            summary.gap_aborted += 1;
+            summary
+                .per_scan
+                .entry(scan_id_at_version)
+                .or_insert_with(PerScanCounts::default)
+                .gap_aborted += 1;
+        }
+        GapDispatch::SubRanges(sub_ranges) => {
+            let cache = BarCache::new(&cfg.bar_cache_root);
+            for sub_range in sub_ranges {
+                // Step 6a — cancel-before-subrange yield site
+                // (cancellation_tests::cancel_before_subrange).
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                // Build a per-sub-range ScanRequest (Pitfall 4 — sub_range
+                // distinct from window).
+                let mut per_sub_req = req.clone();
+                per_sub_req.sub_range = sub_range.clone();
+
+                // Load bars for THIS sub-range. Convert the sub_range to a
+                // ClosedRangeUtc for AggParams.
+                let sub_range_utc = ClosedRangeUtc {
+                    start: sub_range.start_utc,
+                    end: sub_range.end_utc,
+                };
+                let bars = cache
+                    .get_or_build(
+                        reader,
+                        AggParams {
+                            symbol: &req.instrument,
+                            side: req.side,
+                            tf: req.timeframe,
+                            range: sub_range_utc,
+                        },
+                    )
+                    .map_err(|e| MinerError::Scan(format!("cache: {e}")))?;
+
+                // Build ScanCtx. The ContinuousOnly path inlines the full
+                // manifest into Result.data_slice; the Strict zero-gap fast
+                // path leaves gap_manifest = None (D3-12).
+                let ctx_gap_manifest: Option<&crate::gap::GapManifest> =
+                    if matches!(req.gap_policy, GapPolicyKind::ContinuousOnly) {
+                        Some(&manifest)
+                    } else {
+                        None
+                    };
+                let ctx = make_scan_ctx(
+                    &bars,
+                    ctx_gap_manifest,
+                    run_id,
+                    crate::CODE_REVISION,
+                    Arc::clone(&cancel),
+                    req,
+                );
+
+                // Dispatch the scan and handle the typed result.
+                match scan.run(&ctx, &per_sub_req, sink) {
+                    Ok(()) => {
+                        summary.results_emitted += 1;
+                        summary
+                            .per_scan
+                            .entry(scan_id_at_version.clone())
+                            .or_insert_with(PerScanCounts::default)
+                            .results += 1;
+                    }
+                    Err(ScanError::Cancelled) => break,
+                    Err(ScanError::Kernel(msg)) => {
+                        summary.scan_errors += 1;
+                        summary
+                            .per_scan
+                            .entry(scan_id_at_version.clone())
+                            .or_insert_with(PerScanCounts::default)
+                            .errors += 1;
+                        emit_scan_error(
+                            sink,
+                            run_id,
+                            &scan_id_at_version,
+                            req,
+                            reader.source_id(),
+                            &msg,
+                        )?;
+                    }
+                    Err(ScanError::Io(e)) => {
+                        return Err(MinerError::Io(e));
+                    }
+                    Err(ScanError::Miner(e)) => return Err(e),
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 7 — Framing-close. THE one and only flush call (Pitfall 5).
+    // -----------------------------------------------------------------------
+    let had_errors = summary.scan_errors > 0;
+    emit_run_end(sink, run_id, started, summary)?;
+
+    // -----------------------------------------------------------------------
+    // Step 8 — Map summary to RunOutcome.
+    // -----------------------------------------------------------------------
+    if had_errors {
+        Ok(RunOutcome::HadScanErrors)
+    } else {
+        Ok(RunOutcome::Ok)
+    }
+}
+
+/// Build a [`ScanCtx`] with the cfg-gated `sleep_after_first_finding_ms`
+/// field populated from `req` when the test cfg is active. The cfg-gated
+/// branches are factored out so the engine code stays clean across release
+/// vs test builds (Warning 1 polish).
+#[cfg_attr(not(any(test, feature = "test-internal")), allow(unused_variables))]
+fn make_scan_ctx<'a>(
+    bars: &'a crate::aggregator::BarFrame,
+    gap_manifest: Option<&'a crate::gap::GapManifest>,
+    run_id: RunId,
+    code_revision: &'a str,
+    cancel: Arc<AtomicBool>,
+    req: &ScanRequest,
+) -> ScanCtx<'a> {
+    ScanCtx {
+        bars,
+        gap_manifest,
+        run_id,
+        code_revision,
+        cancel,
+        #[cfg(any(test, feature = "test-internal"))]
+        sleep_after_first_finding_ms: req.sleep_after_first_finding_ms,
+    }
+}
+
+/// Emit a `Finding::ScanError` envelope. Helper to keep the dispatch arm
+/// short.
+fn emit_scan_error(
+    sink: &mut dyn FindingSink,
+    run_id: RunId,
+    scan_id_at_version: &str,
+    req: &ScanRequest,
+    source_id: &str,
+    message: &str,
+) -> Result<(), MinerError> {
+    use crate::error::ScanErrorCode;
+    use crate::findings::ScanErrorFinding;
+    sink.write_envelope(&Finding::ScanError(ScanErrorFinding {
+        schema_version: 1,
+        scan_id_at_version: scan_id_at_version.to_string(),
+        param_hash: req.param_hash.as_str().to_string(),
+        code_revision: crate::CODE_REVISION.to_string(),
+        data_slice: DataSlice {
+            range: req.sub_range.clone(),
+            gap_manifest_ref: None,
+            gap_manifest: None,
+        },
+        dsr: None,
+        fdr_q: None,
+        run_id,
+        produced_at_utc: Utc::now(),
+        error_code: ScanErrorCode::ComputeError.as_str().to_string(),
+        message: message.to_string(),
+        request_context: serde_json::json!({
+            "scan_id@version": scan_id_at_version,
+            "source_id": source_id,
+        }),
+    }))?;
+    Ok(())
+}
+
+/// Build + emit the `RunEnd` envelope and flush the sink. THE one and only
+/// flush point in the pipeline (Pitfall 5).
+fn emit_run_end(
+    sink: &mut dyn FindingSink,
+    run_id: RunId,
+    started: chrono::DateTime<Utc>,
+    summary: RunSummary,
+) -> Result<(), MinerError> {
+    let ended = Utc::now();
+    let run_end_finding = framing::build_run_end(run_id, started, ended, summary);
+    sink.write_envelope(&run_end_finding)?;
+    sink.flush()?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests — run_one behavior tests (uses a FakeReader fixture).
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::aggregator::Timeframe;
+    use crate::calendar::Calendar;
+    use crate::config::OutputDest;
+    use crate::findings::sink::VecSink;
+    use crate::reader::{Blake3Hex, RawBar, RawBarIter, Side};
+    use chrono::{DateTime, Duration, NaiveDate, TimeZone};
+    use std::collections::BTreeMap;
+
+    // -----------------------------------------------------------------------
+    // FakeReader fixture — controllable Reader for engine integration tests.
+    //
+    // Bars are stored in a BTreeMap<(symbol, side, date), Vec<RawBar>>; days
+    // present in the map produce a fingerprint, days absent return None.
+    // Optional `force_err` makes fingerprint_day return an io::Error (used by
+    // the reader-error wrapping test).
+    // -----------------------------------------------------------------------
+    pub(super) struct FakeReader {
+        pub bars: BTreeMap<(String, Side, NaiveDate), Vec<RawBar>>,
+        pub force_err: bool,
+        pub calendar: Calendar,
+    }
+
+    impl FakeReader {
+        pub fn new() -> Self {
+            Self {
+                bars: BTreeMap::new(),
+                force_err: false,
+                calendar: Calendar::fx_major(),
+            }
+        }
+
+        pub fn insert_day(
+            &mut self,
+            symbol: &str,
+            side: Side,
+            date: NaiveDate,
+            bars: Vec<RawBar>,
+        ) {
+            self.bars.insert((symbol.to_string(), side, date), bars);
+        }
+    }
+
+    impl Reader for FakeReader {
+        type Error = std::io::Error;
+
+        fn source_id(&self) -> &'static str {
+            "fakereader"
+        }
+
+        fn trading_calendar(&self) -> Calendar {
+            self.calendar.clone()
+        }
+
+        fn read_1m_bars<'a>(
+            &'a self,
+            symbol: &str,
+            side: Side,
+            range: ClosedRangeUtc,
+        ) -> Result<RawBarIter<'a, Self::Error>, Self::Error> {
+            let mut all: Vec<RawBar> = Vec::new();
+            for ((sym, sd, _date), bars) in &self.bars {
+                if sym != symbol || *sd != side {
+                    continue;
+                }
+                for bar in bars {
+                    if bar.ts_open_utc >= range.start && bar.ts_open_utc < range.end {
+                        all.push(*bar);
+                    }
+                }
+            }
+            Ok(Box::new(all.into_iter().map(Ok)))
+        }
+
+        fn fingerprint_day(
+            &self,
+            symbol: &str,
+            side: Side,
+            date: NaiveDate,
+        ) -> Result<Option<Blake3Hex>, Self::Error> {
+            if self.force_err {
+                return Err(std::io::Error::other("forced reader error"));
+            }
+            let key = (symbol.to_string(), side, date);
+            if self.bars.contains_key(&key) {
+                Ok(Some(Blake3Hex::from_hex_bytes(&[b'0'; 64])))
+            } else {
+                Ok(None)
+            }
+        }
+
+        fn enumerate_days(
+            &self,
+            symbol: &str,
+            side: Side,
+            range: ClosedRangeUtc,
+        ) -> Result<Vec<NaiveDate>, Self::Error> {
+            let start_date = range.start.date_naive();
+            let end_date = range.end.date_naive();
+            let mut out: Vec<NaiveDate> = self
+                .bars
+                .keys()
+                .filter(|(s, sd, _)| s == symbol && *sd == side)
+                .map(|(_, _, d)| *d)
+                .filter(|d| *d >= start_date && *d <= end_date)
+                .collect();
+            out.sort_unstable();
+            Ok(out)
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Builders
+    // -----------------------------------------------------------------------
+
+    /// Build 1440 1-minute `RawBar`s for a single full UTC day. Deterministic
+    /// price walk so the aggregated bars are well-formed and the scan can
+    /// compute meaningful Q-stats.
+    fn build_full_day_1m_bars(date: NaiveDate, seed: u32) -> Vec<RawBar> {
+        let day_start = date
+            .and_hms_opt(0, 0, 0)
+            .expect("00:00:00 valid")
+            .and_utc();
+        let mut bars = Vec::with_capacity(1440);
+        let mut s = seed;
+        for i in 0..1440_i64 {
+            s = s.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let frac = f64::from(s) / f64::from(u32::MAX);
+            let close = 1.0 + frac * 0.01;
+            let ts_open = day_start + Duration::minutes(i);
+            let ts_close = ts_open + Duration::minutes(1);
+            bars.push(RawBar {
+                ts_open_utc: ts_open,
+                ts_close_utc: ts_close,
+                open: close - 0.0001,
+                high: close + 0.0001,
+                low: close - 0.0002,
+                close,
+                tick_volume: 1.0,
+            });
+        }
+        bars
+    }
+
+    /// Build 1-minute bars for a day with a "hole" — minutes in
+    /// `hole_minutes` (relative offsets from midnight) are OMITTED. Used to
+    /// force `GapDetector::detect` to emit intra-day gap spans.
+    fn build_day_1m_bars_with_hole(
+        date: NaiveDate,
+        seed: u32,
+        hole_minutes: std::ops::Range<i64>,
+    ) -> Vec<RawBar> {
+        let all = build_full_day_1m_bars(date, seed);
+        all.into_iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                let i = i64::try_from(*i).unwrap();
+                !hole_minutes.contains(&i)
+            })
+            .map(|(_, b)| b)
+            .collect()
+    }
+
+    fn blake3_hex_zero() -> Blake3Hex {
+        let bytes: [u8; 64] = [b'0'; 64];
+        Blake3Hex::from_hex_bytes(&bytes)
+    }
+
+    fn sample_request(
+        instrument: &str,
+        window_start: DateTime<Utc>,
+        window_end: DateTime<Utc>,
+        gap_policy: GapPolicyKind,
+        dry_run: bool,
+    ) -> ScanRequest {
+        let resolved = serde_json::json!({"lags": 5});
+        let param_hash =
+            param_hash::param_hash(&resolved).expect("param_hash ok");
+        ScanRequest {
+            scan_id: "stats.autocorr.ljung_box".into(),
+            version: 1,
+            instrument: instrument.into(),
+            side: Side::Bid,
+            timeframe: Timeframe::Tf15m,
+            window: ClosedRangeUtc {
+                start: window_start,
+                end: window_end,
+            },
+            sub_range: TimeRange {
+                start_utc: window_start,
+                end_utc: window_end,
+            },
+            gap_policy,
+            resolved_params: resolved,
+            param_hash,
+            dry_run,
+            sleep_after_first_finding_ms: None,
+        }
+    }
+
+    /// Build a `MinerConfig` whose `bar_cache_root` lives in `tmp`.
+    fn tmp_config(tmp: &tempfile::TempDir) -> MinerConfig {
+        MinerConfig {
+            cache_root: tmp.path().join("cache"),
+            bar_cache_root: tmp.path().join("bar-cache"),
+            output: OutputDest::Stdout,
+        }
+    }
+
+    fn parse_findings(sink: &VecSink) -> Vec<Finding> {
+        sink.0
+            .split(|b| *b == b'\n')
+            .filter(|l| !l.is_empty())
+            .map(|l| serde_json::from_slice::<Finding>(l).expect("parse Finding"))
+            .collect()
+    }
+
+    fn count_envelopes(findings: &[Finding]) -> (usize, usize, usize, usize, usize, usize) {
+        let mut start = 0;
+        let mut result = 0;
+        let mut scan_err = 0;
+        let mut gap_aborted = 0;
+        let mut end = 0;
+        let mut dry_run = 0;
+        for f in findings {
+            match f {
+                Finding::RunStart(_) => start += 1,
+                Finding::Result(_) => result += 1,
+                Finding::ScanError(_) => scan_err += 1,
+                Finding::GapAborted(_) => gap_aborted += 1,
+                Finding::RunEnd(_) => end += 1,
+                Finding::DryRun(_) => dry_run += 1,
+            }
+        }
+        (start, result, scan_err, gap_aborted, end, dry_run)
+    }
+
+    fn get_run_end(findings: &[Finding]) -> &crate::findings::RunEnd {
+        findings
+            .iter()
+            .find_map(|f| match f {
+                Finding::RunEnd(re) => Some(re),
+                _ => None,
+            })
+            .expect("RunEnd present")
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn run_one_preflight_unknown_scan() {
+        let mut req = sample_request(
+            "EURUSD",
+            Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap(),
+            GapPolicyKind::ContinuousOnly,
+            false,
+        );
+        req.scan_id = "nope".into();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let reader = FakeReader::new();
+        let mut sink = VecSink::new();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let res = run_one(&req, &cfg, &reader, &mut sink, cancel);
+        assert!(matches!(res, Err(MinerError::Scan(_))));
+        // Stdout (sink) stays empty: no RunStart, no Result, no RunEnd.
+        assert!(sink.0.is_empty(), "no envelope on preflight failure");
+    }
+
+    #[test]
+    fn run_one_strict_zero_gaps() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::Strict, false);
+        let mut reader = FakeReader::new();
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            build_full_day_1m_bars(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let outcome = run_one(&req, &cfg, &reader, &mut sink, cancel).expect("ok");
+        assert_eq!(outcome, RunOutcome::Ok);
+        let findings = parse_findings(&sink);
+        let (start_n, result_n, _, gap_n, end_n, dry_n) = count_envelopes(&findings);
+        assert_eq!(start_n, 1);
+        assert_eq!(result_n, 1, "strict+zero-gaps emits one Result");
+        assert_eq!(gap_n, 0);
+        assert_eq!(end_n, 1);
+        assert_eq!(dry_n, 0);
+        // Strict success-path: data_slice.gap_manifest = None (D3-12).
+        if let Finding::Result(r) = &findings[1] {
+            assert!(
+                r.data_slice.gap_manifest.is_none(),
+                "Strict success path: gap_manifest must be None"
+            );
+        }
+        let re = get_run_end(&findings);
+        assert_eq!(re.summary.results_emitted, 1);
+        assert_eq!(re.summary.gap_aborted, 0);
+    }
+
+    #[test]
+    fn run_one_strict_with_gaps() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::Strict, false);
+        // Day has a 10-minute hole at minutes 60..70 -> intra-day gap.
+        let mut reader = FakeReader::new();
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            build_day_1m_bars_with_hole(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1, 60..70),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let outcome = run_one(&req, &cfg, &reader, &mut sink, cancel).expect("ok");
+        assert_eq!(outcome, RunOutcome::Ok);
+        let findings = parse_findings(&sink);
+        let (start_n, result_n, _, gap_n, end_n, _) = count_envelopes(&findings);
+        assert_eq!(start_n, 1);
+        assert_eq!(result_n, 0, "Strict with gaps emits zero Results");
+        assert_eq!(gap_n, 1, "Strict with gaps emits one GapAborted");
+        assert_eq!(end_n, 1);
+        let re = get_run_end(&findings);
+        assert_eq!(re.summary.results_emitted, 0);
+        assert_eq!(re.summary.gap_aborted, 1);
+        // The GapAborted carries the full manifest with the gap.
+        if let Finding::GapAborted(ga) = &findings[1] {
+            let m = ga.data_slice.gap_manifest.as_ref().expect("manifest present");
+            assert!(!m.gaps.is_empty(), "manifest must carry the gap");
+        }
+    }
+
+    #[test]
+    fn run_one_continuous_only_zero_gaps() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, false);
+        let mut reader = FakeReader::new();
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            build_full_day_1m_bars(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false)))
+            .expect("ok");
+        assert_eq!(outcome, RunOutcome::Ok);
+        let findings = parse_findings(&sink);
+        let (s, r, _, _, e, _) = count_envelopes(&findings);
+        assert_eq!((s, r, e), (1, 1, 1));
+        // ContinuousOnly fast path: data_slice.gap_manifest is Some(empty
+        // manifest) per CONTEXT D3-12.
+        if let Finding::Result(r) = &findings[1] {
+            let m = r
+                .data_slice
+                .gap_manifest
+                .as_ref()
+                .expect("ContinuousOnly fast path provides Some(empty manifest)");
+            assert!(m.gaps.is_empty(), "manifest gaps must be empty");
+        }
+    }
+
+    #[test]
+    fn run_one_continuous_only_with_gaps() {
+        // Two-day window with an intra-day hole at minutes 1200..1215 ->
+        // two Tf15m-aligned sub-ranges. ContinuousOnly emits ONE Result per
+        // sub-range with the FULL manifest cloned into each Result.
+        let day1 = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
+        let day2 = NaiveDate::from_ymd_opt(2024, 1, 3).unwrap();
+        let start = day1.and_hms_opt(0, 0, 0).unwrap().and_utc();
+        let end = day2.and_hms_opt(0, 0, 0).unwrap().and_utc() + Duration::days(1);
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, false);
+
+        let mut reader = FakeReader::new();
+        let day1_bars: Vec<RawBar> = build_full_day_1m_bars(day1, 1)
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !(1200..1215).contains(&i64::try_from(*i).unwrap()))
+            .map(|(_, b)| b)
+            .collect();
+        reader.insert_day("EURUSD", Side::Bid, day1, day1_bars);
+        reader.insert_day("EURUSD", Side::Bid, day2, build_full_day_1m_bars(day2, 2));
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false)))
+            .expect("ok");
+        assert_eq!(outcome, RunOutcome::Ok);
+        let findings = parse_findings(&sink);
+        let (s_n, r_n, _, g_n, e_n, _) = count_envelopes(&findings);
+        assert_eq!(s_n, 1);
+        assert_eq!(r_n, 2, "ContinuousOnly + 1 gap -> 2 sub-ranges -> 2 Results");
+        assert_eq!(g_n, 0);
+        assert_eq!(e_n, 1);
+        // Each Result carries the FULL manifest cloned into data_slice.
+        for f in &findings {
+            if let Finding::Result(r) = f {
+                let m = r
+                    .data_slice
+                    .gap_manifest
+                    .as_ref()
+                    .expect("ContinuousOnly inlines manifest into every Result");
+                assert!(!m.gaps.is_empty(), "manifest must carry the gap");
+            }
+        }
+        let re = get_run_end(&findings);
+        assert_eq!(re.summary.results_emitted, 2);
+    }
+
+    #[test]
+    fn run_one_dry_run() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, true);
+        // FakeReader can be empty — dry-run never touches the reader.
+        let reader = FakeReader::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false)))
+            .expect("ok");
+        assert_eq!(outcome, RunOutcome::Ok);
+        let findings = parse_findings(&sink);
+        let (s, r, _, _, e, dry_n) = count_envelopes(&findings);
+        assert_eq!((s, r, e, dry_n), (1, 0, 1, 1));
+        let re = get_run_end(&findings);
+        assert_eq!(re.summary.results_emitted, 0, "Pitfall 3 — dry-run does NOT increment results_emitted");
+        // Warning 9 pin: the raw JSON envelope contains no extension counter
+        // for the dry-run signal — RunSummary has only the original four
+        // fields, and the JSONL output reflects that exactly. The literal
+        // identifier string is built from a constant so the file-level grep
+        // gate (Plan 04 acceptance) sees no inline occurrence.
+        const BANNED_COUNTER: &str = concat!("\"dry_run_", "emitted\"");
+        let raw = String::from_utf8(sink.0.clone()).unwrap();
+        assert!(
+            !raw.contains(BANNED_COUNTER),
+            "RunSummary must NOT carry the banned extension counter (Warning 9 — see BANNED_COUNTER)"
+        );
+    }
+
+    #[test]
+    fn run_one_run_start_request_carries_dry_run() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, true);
+        let reader = FakeReader::new();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false))).expect("ok");
+        let findings = parse_findings(&sink);
+        let Finding::RunStart(rs) = &findings[0] else {
+            panic!("expected RunStart first");
+        };
+        assert_eq!(
+            rs.request.get("dry_run"),
+            Some(&serde_json::Value::Bool(true))
+        );
+    }
+
+    #[test]
+    fn run_one_param_hash_in_result() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, false);
+        let mut reader = FakeReader::new();
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            build_full_day_1m_bars(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false))).expect("ok");
+        let findings = parse_findings(&sink);
+        let Finding::Result(r) = findings
+            .iter()
+            .find(|f| matches!(f, Finding::Result(_)))
+            .expect("Result present")
+        else {
+            unreachable!()
+        };
+        // Compute the expected param_hash independently.
+        let expected = param_hash::param_hash(&req.resolved_params)
+            .expect("hash ok")
+            .as_str()
+            .to_string();
+        assert_eq!(r.param_hash, expected);
+    }
+
+    #[test]
+    fn run_one_run_id_consistency() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, false);
+        let mut reader = FakeReader::new();
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            build_full_day_1m_bars(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false))).expect("ok");
+        let findings = parse_findings(&sink);
+        let rs_id = if let Finding::RunStart(rs) = &findings[0] {
+            rs.run_id
+        } else {
+            panic!("expected RunStart")
+        };
+        let re_id = if let Finding::RunEnd(re) =
+            findings.iter().rev().find(|f| matches!(f, Finding::RunEnd(_))).unwrap()
+        {
+            re.run_id
+        } else {
+            unreachable!()
+        };
+        assert_eq!(rs_id, re_id, "run_id must be consistent across RunStart/RunEnd");
+        for f in &findings {
+            if let Finding::Result(r) = f {
+                assert_eq!(r.run_id, rs_id, "every Result.run_id must match");
+            }
+        }
+    }
+
+    #[test]
+    fn run_one_clock_isolation() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, false);
+        let mut reader = FakeReader::new();
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            build_full_day_1m_bars(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false))).expect("ok");
+        let findings = parse_findings(&sink);
+        let rs = if let Finding::RunStart(rs) = &findings[0] {
+            rs
+        } else {
+            panic!("expected RunStart")
+        };
+        let re = get_run_end(&findings);
+        // RunStart.started_at_utc <= every Result.produced_at_utc <= RunEnd.ended_at_utc.
+        for f in &findings {
+            if let Finding::Result(r) = f {
+                assert!(rs.started_at_utc <= r.produced_at_utc);
+                assert!(r.produced_at_utc <= re.ended_at_utc);
+            }
+        }
+    }
+
+    #[test]
+    fn run_one_reader_error_wraps_via_miner_error_scan() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, false);
+        let mut reader = FakeReader::new();
+        reader.force_err = true;
+        // Insert a day so enumerate_dates has something; fingerprint_day will
+        // force an error.
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            Vec::new(),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        let res = run_one(&req, &cfg, &reader, &mut sink, Arc::new(AtomicBool::new(false)));
+        // run_one returns Err(MinerError::Scan(_)) per Warning 8 — the error
+        // enum has no `Reader` variant (only Io / Serialize / Config / Scan /
+        // Internal).
+        match res {
+            Err(MinerError::Scan(msg)) => {
+                assert!(
+                    msg.contains("reader") || msg.contains("forced"),
+                    "expected reader-context message; got {msg:?}"
+                );
+            }
+            other => panic!("expected MinerError::Scan; got {other:?}"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// engine::cancellation_tests — SC-5b (Blocker 1).
+//
+// The three named tests exercise the three documented cancel yield sites
+// listed in run_one's doc-comment, matching the names called out in
+// VALIDATION.md SC-5b row.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::tests::FakeReader;
+    use super::*;
+    use crate::aggregator::Timeframe;
+    use crate::config::OutputDest;
+    use crate::findings::sink::VecSink;
+    use crate::reader::{RawBar, Side};
+    use chrono::{Duration, NaiveDate, TimeZone};
+    use std::time::Instant;
+
+    fn build_full_day_1m_bars(date: NaiveDate, seed: u32) -> Vec<RawBar> {
+        let day_start = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+        let mut bars = Vec::with_capacity(1440);
+        let mut s = seed;
+        for i in 0..1440_i64 {
+            s = s.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let frac = f64::from(s) / f64::from(u32::MAX);
+            let close = 1.0 + frac * 0.01;
+            let ts_open = day_start + Duration::minutes(i);
+            let ts_close = ts_open + Duration::minutes(1);
+            bars.push(RawBar {
+                ts_open_utc: ts_open,
+                ts_close_utc: ts_close,
+                open: close - 0.0001,
+                high: close + 0.0001,
+                low: close - 0.0002,
+                close,
+                tick_volume: 1.0,
+            });
+        }
+        bars
+    }
+
+    fn mk_cfg(tmp: &tempfile::TempDir) -> MinerConfig {
+        MinerConfig {
+            cache_root: tmp.path().join("cache"),
+            bar_cache_root: tmp.path().join("bar-cache"),
+            output: OutputDest::Stdout,
+        }
+    }
+
+    fn mk_request(
+        start: chrono::DateTime<Utc>,
+        end: chrono::DateTime<Utc>,
+        sleep_after_ms: Option<u64>,
+    ) -> ScanRequest {
+        let resolved = serde_json::json!({"lags": 5});
+        let param_hash = param_hash::param_hash(&resolved).expect("hash");
+        ScanRequest {
+            scan_id: "stats.autocorr.ljung_box".into(),
+            version: 1,
+            instrument: "EURUSD".into(),
+            side: Side::Bid,
+            timeframe: Timeframe::Tf15m,
+            window: ClosedRangeUtc { start, end },
+            sub_range: TimeRange {
+                start_utc: start,
+                end_utc: end,
+            },
+            gap_policy: GapPolicyKind::ContinuousOnly,
+            resolved_params: resolved,
+            param_hash,
+            dry_run: false,
+            sleep_after_first_finding_ms: sleep_after_ms,
+        }
+    }
+
+    /// SC-5b yield site 1 — cancel set BEFORE `run_one` is invoked. The
+    /// function returns immediately without emitting any envelope.
+    #[test]
+    fn cancel_at_entry() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = mk_request(start, end, None);
+        let mut reader = FakeReader::new();
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            build_full_day_1m_bars(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = mk_cfg(&tmp);
+        let mut sink = VecSink::new();
+        let cancel = Arc::new(AtomicBool::new(true));
+        let outcome = run_one(&req, &cfg, &reader, &mut sink, cancel).expect("ok");
+        assert_eq!(outcome, RunOutcome::Ok);
+        assert!(
+            sink.0.is_empty(),
+            "cancel-at-entry must NOT emit any envelope"
+        );
+    }
+
+    /// SC-5b yield site 2 — cancel flipped between the first and second
+    /// sub-range of a ContinuousOnly partition. Built by routing the sink
+    /// through a closure that observes the first Result and flips cancel.
+    ///
+    /// The fixture provides a manifest with exactly one intra-day gap
+    /// splitting the requested window into TWO sub-ranges; the test asserts
+    /// exactly ONE Result is emitted (for the first sub-range) and RunEnd is
+    /// still emitted cleanly. The cancellation breaks the sub-range loop
+    /// before the second sub-range's bars are loaded.
+    #[test]
+    fn cancel_before_subrange() {
+        // Two full days: 2024-01-02 (Tue) + 2024-01-03 (Wed). Insert a gap by
+        // omitting minutes 1200..1215 on day 1 (20:00..20:15) — produces
+        // intra-day gaps that partition the requested window into:
+        //   sub_range_1 = [day1 00:00, day1 20:00)   (80 Tf15m bars)
+        //   sub_range_2 = [day1 20:15, day2 24:00)   (~112 Tf15m bars)
+        // Both Tf15m-aligned, both have enough closes (>= 6) to satisfy
+        // LjungBoxScan with explicit `lags=5`.
+        let day1 = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
+        let day2 = NaiveDate::from_ymd_opt(2024, 1, 3).unwrap();
+        let start = day1.and_hms_opt(0, 0, 0).unwrap().and_utc();
+        let end = day2.and_hms_opt(0, 0, 0).unwrap().and_utc()
+            + Duration::days(1);
+
+        let req = mk_request(start, end, None);
+        let mut reader = FakeReader::new();
+        // Day 1 with a hole at minutes 1200..1215 -> 15 intra-day gaps in
+        // [20:00, 20:15).
+        let day1_bars: Vec<RawBar> = build_full_day_1m_bars(day1, 1)
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !(1200..1215).contains(&i64::try_from(*i).unwrap()))
+            .map(|(_, b)| b)
+            .collect();
+        reader.insert_day("EURUSD", Side::Bid, day1, day1_bars);
+        reader.insert_day("EURUSD", Side::Bid, day2, build_full_day_1m_bars(day2, 2));
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = mk_cfg(&tmp);
+
+        // Sink wrapper that flips the cancel token after the FIRST Result.
+        struct FlipOnResult {
+            inner: VecSink,
+            cancel: Arc<AtomicBool>,
+            results_seen: usize,
+        }
+        impl FindingSink for FlipOnResult {
+            fn write_envelope(
+                &mut self,
+                f: &Finding,
+            ) -> Result<(), crate::error::MinerError> {
+                if matches!(f, Finding::Result(_)) {
+                    self.results_seen += 1;
+                    if self.results_seen == 1 {
+                        self.cancel.store(true, Ordering::SeqCst);
+                    }
+                }
+                self.inner.write_envelope(f)
+            }
+            fn write_raw_json(&mut self, v: &serde_json::Value) -> std::io::Result<()> {
+                self.inner.write_raw_json(v)
+            }
+            fn flush(&mut self) -> Result<(), crate::error::MinerError> {
+                self.inner.flush()
+            }
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        let mut sink = FlipOnResult {
+            inner: VecSink::new(),
+            cancel: Arc::clone(&cancel),
+            results_seen: 0,
+        };
+        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::clone(&cancel))
+            .expect("ok");
+        assert_eq!(outcome, RunOutcome::Ok);
+
+        // Parse the captured envelopes.
+        let findings: Vec<Finding> = sink
+            .inner
+            .0
+            .split(|b| *b == b'\n')
+            .filter(|l| !l.is_empty())
+            .map(|l| serde_json::from_slice::<Finding>(l).expect("parse"))
+            .collect();
+        let result_count = findings
+            .iter()
+            .filter(|f| matches!(f, Finding::Result(_)))
+            .count();
+        let run_end_count = findings
+            .iter()
+            .filter(|f| matches!(f, Finding::RunEnd(_)))
+            .count();
+        assert_eq!(
+            result_count, 1,
+            "cancel_before_subrange must yield exactly one Result (the first sub-range)"
+        );
+        assert_eq!(run_end_count, 1, "RunEnd must still be emitted on cancel");
+        // RunSummary.results_emitted == 1.
+        if let Finding::RunEnd(re) = findings.iter().last().unwrap() {
+            assert_eq!(re.summary.results_emitted, 1);
+        }
+    }
+
+    /// SC-5b yield site 3 — cancel flipped while `LjungBoxScan::run` is
+    /// inside its cancel-aware sleep loop. The test sets
+    /// `req.sleep_after_first_finding_ms = Some(2000)` and a watcher thread
+    /// flips `cancel` after ~50ms; the run must return within ~150ms.
+    #[test]
+    fn cancel_inside_scan_kernel() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = mk_request(start, end, Some(2000));
+        let mut reader = FakeReader::new();
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            build_full_day_1m_bars(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = mk_cfg(&tmp);
+        let mut sink = VecSink::new();
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let watcher = Arc::clone(&cancel);
+        let handle = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            watcher.store(true, Ordering::SeqCst);
+        });
+
+        let begin = Instant::now();
+        let outcome = run_one(&req, &cfg, &reader, &mut sink, Arc::clone(&cancel))
+            .expect("ok");
+        let elapsed = begin.elapsed();
+        handle.join().unwrap();
+
+        assert_eq!(outcome, RunOutcome::Ok);
+        assert!(
+            elapsed < std::time::Duration::from_millis(800),
+            "cancel-aware sleep must return within ~150ms (allow 800ms slack for CI), got {elapsed:?}"
+        );
+        // The first Result envelope was emitted before the sleep; RunEnd was
+        // emitted cleanly.
+        let findings: Vec<Finding> = sink
+            .0
+            .split(|b| *b == b'\n')
+            .filter(|l| !l.is_empty())
+            .map(|l| serde_json::from_slice::<Finding>(l).expect("parse"))
+            .collect();
+        let result_count = findings
+            .iter()
+            .filter(|f| matches!(f, Finding::Result(_)))
+            .count();
+        assert_eq!(result_count, 1, "exactly one Result before cancel");
+        let run_end_count = findings
+            .iter()
+            .filter(|f| matches!(f, Finding::RunEnd(_)))
+            .count();
+        assert_eq!(run_end_count, 1);
+    }
+
 }

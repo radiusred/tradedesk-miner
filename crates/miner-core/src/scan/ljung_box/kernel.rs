@@ -14,7 +14,8 @@
 
 #![cfg_attr(any(test, debug_assertions), allow(clippy::float_cmp))]
 
-use statrs::distribution::{ChiSquared, ContinuousCDF};
+use statrs::distribution::ChiSquared;
+use statrs::distribution::ContinuousCDF;
 
 /// Compute log returns from a `close` price series: `returns[t] = ln(close[t] / close[t-1])`
 /// for `t = 1..n`. Returns a `Vec<f64>` of length `n - 1` (empty when `n < 2`).
