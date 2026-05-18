@@ -83,6 +83,16 @@ serde_json.workspace = true
 # integration test file gates with `#![cfg(unix)]`. See RESEARCH line 76 + 03-PATTERNS
 # lines 1027-1048.
 nix          = { version = "0.31", default-features = false, features = ["signal"] }
+# Plan 03-06: SyntheticCache writes synthetic Dukascopy .csv.zst day files
+# via the same path layout the production reader expects (mirrors
+# crates/miner-core/tests/full_determinism.rs::write_synthetic_day).
+zstd.workspace = true
+# Plan 03-06: SyntheticCache builder + miner-reader-dukascopy::day_csv_zst
+# (the public path-layout helper) — same dev-dep cycle pattern miner-core
+# uses (T-02-21 accepted).
+miner-reader-dukascopy = { path = "../miner-reader-dukascopy" }
+# Plan 03-06: chrono is already in miner-cli's runtime deps via [dependencies],
+# but the tests need NaiveDate which lives behind the same workspace pin.
 
 [lints]
 workspace = true
