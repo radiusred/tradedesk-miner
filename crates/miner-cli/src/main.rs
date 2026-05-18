@@ -105,7 +105,27 @@ fn main() -> anyhow::Result<()> {
         Command::EmitFixture => emit_fixture(&mut *sink)?,
         Command::Scans => handle_scans_subcommand(&mut *sink)?,
         Command::Scan(scan_args) => {
-            let outcome = handle_scan_subcommand(scan_args, &cfg, &mut *sink, Arc::clone(&cancel))?;
+            // Plan 03-07 CR-02 fix: match the Result without `?`. The
+            // previous `?` short-circuited `compute_exit_code` on the Err
+            // arm — anyhow's Termination prints the error and exits 1,
+            // ignoring the cancel flag. D3-24 mandates `cancelled → 130
+            // regardless of tier`. Now we log the error via `tracing::error!`
+            // then map to RunOutcome::PreflightFailed (NOT HadScanErrors).
+            let result = handle_scan_subcommand(scan_args, &cfg, &mut *sink, Arc::clone(&cancel));
+            let outcome = match result {
+                Ok(o) => o,
+                Err(e) => {
+                    tracing::error!(error = %e, "scan dispatch failed");
+                    // Map catch-all Err to PreflightFailed (NOT
+                    // HadScanErrors) to preserve the historical "exit 1 on
+                    // engine non-preflight error" semantics per D3-24.
+                    // Phase 6 wrappers consume this exit code and must see
+                    // no behaviour change for catch-all engine errors.
+                    // Cancel=true still wins via compute_exit_code's
+                    // short-circuit → 130.
+                    RunOutcome::PreflightFailed
+                }
+            };
             let code = compute_exit_code(cancel.load(Ordering::SeqCst), &outcome);
             std::process::exit(code);
         }
@@ -254,6 +274,24 @@ fn handle_scans_subcommand(sink: &mut dyn FindingSink) -> std::io::Result<()> {
 /// verified by `handle_scan_subcommand_forwards_sleep_hook_to_scan_request`
 /// below (test-only seam: `build_scan_request_for_tests`).
 ///
+/// **Plan 03-07 CR-03 (typed-preflight dispatch):** preflight unknown-scan
+/// errors arrive here as `Err(MinerError::Preflight(WireError))` carrying the
+/// typed `PreflightCode::UnknownScan`; we emit the wire-form to stderr and
+/// signal `PreflightFailed`. The previous `MinerError::Scan(_)` plus a
+/// fragile prefix-match on the format-string dispatch is gone — the engine
+/// routes through `engine::preflight::resolve_scan` which builds the typed
+/// `WireError` directly.
+///
+/// **Plan 03-07 Blocker 1 (`MINER_FORCE_ENGINE_ERROR` test hook):** Under
+/// `cfg(any(test, feature = "test-internal"))`, if the env var
+/// `MINER_FORCE_ENGINE_ERROR` is set, the function returns an
+/// `anyhow::Error` immediately after `to_scan_request` succeeds. This is a
+/// deterministic regression hook used by `cancel_overrides_error_exit_130.rs`
+/// to exercise the CR-02 cancel-overrides-Err contract without depending on
+/// production reader/cache error paths. Mirrors the
+/// `sleep_after_first_finding_ms` cfg-gating pattern from Plan 03-02 Task 2
+/// / Plan 03-05 Task 1.
+///
 /// # Errors
 /// Returns the underlying `WireError`-wrapped failure on preflight rejection
 /// (mapped to `RunOutcome::PreflightFailed`) or an `anyhow::Error` on
@@ -279,22 +317,58 @@ fn handle_scan_subcommand(
         }
     };
 
+    // Step 1.5 — Plan 03-07 Blocker 1: cfg-gated `MINER_FORCE_ENGINE_ERROR`
+    // env hook for the CR-02 regression test. Mirrors the
+    // `--sleep-after-first-finding-ms` cfg-gating pattern from Plan 03-02
+    // Task 2 / Plan 03-05 Task 1. ABSENT from release builds; reachable
+    // under `cfg(test)` for in-process unit tests and under
+    // `feature = "test-internal"` for integration-test subprocess builds.
+    //
+    // Before returning the forced error, the hook sleeps in a cancel-aware
+    // loop so the test's SIGINT (delivered ~30ms after spawn) has a window
+    // to flip the cancel flag BEFORE main() reaches `compute_exit_code`.
+    // If cancel flips during the sleep we yield early (still returning Err)
+    // — `compute_exit_code(cancel=true, &PreflightFailed)` short-circuits
+    // to 130 per D3-24. Without this window, compute_exit_code completes in
+    // microseconds and the child exits 1 before SIGINT lands.
+    #[cfg(any(test, feature = "test-internal"))]
+    {
+        if std::env::var("MINER_FORCE_ENGINE_ERROR").is_ok() {
+            // Cancel-aware sleep loop — poll the cancel flag every ~5ms for
+            // up to ~500ms total. Mirrors the LjungBoxScan cancel-aware
+            // sleep pattern (Plan 03-02 Task 2). 500ms is well within
+            // cargo's per-test timeout AND well beyond the test's 30ms
+            // pre-SIGINT delay, so SIGINT always wins this race in practice.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+            while std::time::Instant::now() < deadline {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            return Err(anyhow::anyhow!(
+                "MINER_FORCE_ENGINE_ERROR: forced engine error for CR-02 regression test"
+            ));
+        }
+    }
+
     // Step 2 — build a DukascopyReader at the binary edge (RESEARCH Open
     // Question 6 — readers are NEVER carried by MinerConfig; the CLI owns
     // construction).
     let reader = DukascopyReader::new(cfg.cache_root.clone());
 
     // Step 3 — call the facade. The Result<RunOutcome, MinerError> propagates
-    // through anyhow; preflight unknown-scan errors arrive here as
-    // Err(MinerError::Scan(_)) per Plan 04's run_one contract, which we
-    // demote to PreflightFailed.
+    // through anyhow. Plan 03-07 CR-03 fix: preflight unknown-scan errors now
+    // arrive here as `Err(MinerError::Preflight(WireError))` carrying the
+    // typed `PreflightCode::UnknownScan` — no substring-match dispatch.
     match run_one(&req, cfg, &reader, sink, cancel) {
         Ok(outcome) => Ok(outcome),
-        Err(miner_core::error::MinerError::Scan(msg)) if msg.starts_with("unknown scan:") => {
-            // Map the run_one preflight rejection into a structured WireError
-            // on stderr; stdout stays empty (T-01-03 stdout discipline).
-            let err = WireError::preflight(PreflightCode::UnknownScan, msg);
-            let _ = emit_to_stderr(&err);
+        Err(miner_core::error::MinerError::Preflight(wire_err)) => {
+            // Emit the typed WireError verbatim to stderr; stdout stays empty
+            // (T-01-03 stdout discipline). The `code: "unknown_scan"` field
+            // is preserved by construction because `resolve_scan` built it
+            // with `PreflightCode::UnknownScan`.
+            let _ = emit_to_stderr(&wire_err);
             Ok(RunOutcome::PreflightFailed)
         }
         Err(e) => Err(anyhow::anyhow!("engine::run_one: {e}")),
@@ -379,6 +453,12 @@ mod tests {
     }
 
     /// Exit-code routing covers the four-tier matrix from CONTEXT D3-24.
+    ///
+    /// NOTE: the `PreflightFailed` tier is now ALSO the destination for the
+    /// catch-all `Err(e)` arm of `handle_scan_subcommand` per CR-02 fix
+    /// (Plan 03-07 Task 3 Step 1). See
+    /// `dispatch_scan_command_no_cancel_anyhow_err_returns_1_not_2` for the
+    /// routing assertion pinning that mapping.
     #[test]
     fn exit_code_routing_all_four_tiers() {
         // SIGINT overrides every outcome → 130.
@@ -389,6 +469,61 @@ mod tests {
         assert_eq!(compute_exit_code(false, &RunOutcome::Ok), 0);
         assert_eq!(compute_exit_code(false, &RunOutcome::HadScanErrors), 2);
         assert_eq!(compute_exit_code(false, &RunOutcome::PreflightFailed), 1);
+    }
+
+    /// Plan 03-07 Task 3 — test-only helper that mirrors the production
+    /// `Command::Scan` arm's match + `compute_exit_code` routing. Keeps the
+    /// CR-02 contract pin (cancel-overrides-Err → 130) AND the Warning 4
+    /// contract pin (catch-all Err → `PreflightFailed` → exit 1)
+    /// deterministic at the function level — no subprocess timing, no
+    /// env-var injection.
+    ///
+    /// Structurally identical to the production block in `main()` — same
+    /// `tracing::error!` call, same `RunOutcome::PreflightFailed` tier. If
+    /// the production code changes, this helper MUST change in lockstep.
+    fn dispatch_scan_command_for_test(
+        outcome_or_err: anyhow::Result<RunOutcome>,
+        cancel: bool,
+    ) -> i32 {
+        let outcome = match outcome_or_err {
+            Ok(o) => o,
+            Err(e) => {
+                tracing::error!(error = %e, "scan dispatch failed");
+                RunOutcome::PreflightFailed
+            }
+        };
+        compute_exit_code(cancel, &outcome)
+    }
+
+    /// Plan 03-07 CR-02 regression — function-level pin.
+    ///
+    /// Simulates the CR-02 fix path: `handle_scan_subcommand` returns Err,
+    /// the `Command::Scan` arm logs + maps to `PreflightFailed`,
+    /// `compute_exit_code` observes cancel=true and short-circuits to 130.
+    /// Deterministic (no subprocess, no SIGINT race).
+    #[test]
+    fn dispatch_scan_command_cancel_overrides_anyhow_err_returns_130() {
+        let err = anyhow::anyhow!("simulated engine catch-all error");
+        let code = dispatch_scan_command_for_test(Err(err), /*cancel=*/ true);
+        assert_eq!(
+            code, 130,
+            "cancel must override anyhow err — CR-02 regression"
+        );
+    }
+
+    /// Plan 03-07 Warning 4 regression — Err arm maps to `PreflightFailed`,
+    /// NOT `HadScanErrors`. Under cancel=false the exit code must be 1 (not
+    /// 2), preserving the historical "exit 1 on engine non-preflight error"
+    /// semantics for Phase 6 MCP/HTTP wrappers per D3-24.
+    #[test]
+    fn dispatch_scan_command_no_cancel_anyhow_err_returns_1_not_2() {
+        let err = anyhow::anyhow!("simulated engine catch-all error");
+        let code = dispatch_scan_command_for_test(Err(err), /*cancel=*/ false);
+        assert_eq!(
+            code, 1,
+            "catch-all engine err must map to exit 1 (PreflightFailed tier), \
+             not 2 (HadScanErrors)"
+        );
     }
 
     /// `miner scans` emits ONE JSONL line per registered scan; for Phase 3
