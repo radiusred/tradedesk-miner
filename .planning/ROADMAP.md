@@ -80,7 +80,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md — Wave 0 scaffold: ctrlc/statrs/nix deps + 13 new source files + 9 integration test files (all stubs, #[ignore] markers) (OP-01, OP-05, OP-06, OP-07, OP-08, OUT-04)
-- [ ] 03-02-PLAN.md — Extend Finding envelope (DataSlice.gap_manifest + Finding::DryRun) + Registry::bootstrap + FindingSink::write_raw_json + regen schemas additively (OP-07, OP-08, OUT-04)
+- [x] 03-02-PLAN.md — Extend Finding envelope (DataSlice.gap_manifest + Finding::DryRun) + Registry::bootstrap + FindingSink::write_raw_json + regen schemas additively (OP-07, OP-08, OUT-04)
 - [ ] 03-03-PLAN.md — Engine sub-modules: param_hash + framing builders + preflight (scan resolver, params parser, window parser) + gap_policy dispatch (OP-08, OUT-04)
 - [ ] 03-04-PLAN.md — Ljung-Box kernel + LjungBoxScan: Scan impl + engine::run_one facade body (preflight → framing → dry-run → gap-policy → scan → cancel polling → RunSummary) (OP-01, OP-05, OP-06, OP-08, OUT-04)
 - [ ] 03-05-PLAN.md — CLI wiring: ScanArgs clap-derive + ctrlc handler install (Pitfall 2) + four-tier exit-code routing + miner scans via write_raw_json + miner-core public-surface extension (OP-01, OP-05, OP-06, OP-07, OP-08)
