@@ -80,3 +80,15 @@ zstd.workspace       = true
 
 [lints]
 workspace = true
+
+# Phase 3 Plan 02 additions:
+# `test-internal` exposes test-only hooks (e.g., `ScanCtx.sleep_after_first_finding_ms`,
+# `--sleep-after-first-finding-ms` CLI flag) without polluting production builds. NEVER
+# enable in release profiles. The feature is purely a cfg-flag toggle (empty list) — the
+# matching `#[cfg(any(test, feature = "test-internal"))]` gates compile under any of:
+#   1. `cargo test` (test cfg auto-activates),
+#   2. `cargo build --features test-internal` (explicit opt-in for non-test consumers).
+# A default `cargo build` / `cargo build --release` activates NEITHER and the cfg-gated
+# fields are absent from the release surface (T-03-02-05 mitigation).
+[features]
+test-internal = []

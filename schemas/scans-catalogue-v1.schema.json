@@ -1,0 +1,57 @@
+{
+  "$defs": {
+    "ScanFindingShape": {
+      "description": "Declarative shape declaration: the `effect.extra` keys and `raw.series`\nkeys a scan WILL emit on success.\n\nUsed by:\n- `miner scans` catalogue introspection (one JSONL line per registered scan).\n- The per-scan integration tests (compile-time gate that the production scan\n  actually emits every declared key).\n\n`&'static [&'static str]` because every scan's emitted-key set is a\ncompile-time constant — there is no dynamic dispatch on these values.",
+      "properties": {
+        "effect_extra_keys": {
+          "description": "Names of the `effect.extra.<key>` arrays the scan emits (e.g.,\n`[\"lags\", \"q_stats\", \"p_values\", \"acf\"]` for Ljung-Box per D3-04).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "raw_series_keys": {
+          "description": "Names of the `raw.series.<key>` arrays the scan emits (e.g.,\n`[\"returns\", \"timestamps_ms\"]` for Ljung-Box). `timestamps_ms` MUST\nappear whenever `raw` is present (D-03).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "effect_extra_keys",
+        "raw_series_keys"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "xtask-local shim describing one line of `miner scans` introspection output\nper CONTEXT D3-20:\n\n```text\n{\"scan_id\":\"stats.autocorr.ljung_box\",\"version\":1,\n \"params\":{...JSON Schema fragment...},\n \"finding_fields\":{\"effect_extra_keys\":[...],\"raw_series_keys\":[...]}}\n```\n\nLives inside xtask (not `miner-core::scan`) because nothing in the runtime\nengine constructs `ScansCatalogueEntry` — it is purely the wire shape the\n`miner scans` subcommand emits via `FindingSink::write_raw_json` (Plan 05\nwires the subcommand body). Per RESEARCH Open Question 8 resolution, the\nsibling schema documents this shape so MCP/HTTP wrappers in Phase 6 can\nvalidate catalogue lines without coupling to `miner-core`'s internal types.",
+  "properties": {
+    "finding_fields": {
+      "$ref": "#/$defs/ScanFindingShape",
+      "description": "Declarative `effect.extra` + `raw.series` key list (the\n`Scan::finding_fields()` output, embedded verbatim)."
+    },
+    "params": {
+      "description": "JSON Schema fragment for the scan's `--params` (the\n`Scan::param_schema()` output, embedded verbatim)."
+    },
+    "scan_id": {
+      "description": "Stable scan id — `<family>.<subfamily>.<scan_name>` (D3-17).",
+      "type": "string"
+    },
+    "version": {
+      "description": "Major version of the scan's output shape.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "scan_id",
+    "version",
+    "params",
+    "finding_fields"
+  ],
+  "title": "ScansCatalogueEntry",
+  "type": "object"
+}

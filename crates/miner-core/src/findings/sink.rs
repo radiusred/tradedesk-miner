@@ -42,6 +42,25 @@ pub trait FindingSink: Send {
     /// [`MinerError::Serialize`] if `serde_json` cannot serialise the envelope.
     fn write_envelope(&mut self, finding: &Finding) -> Result<(), MinerError>;
 
+    /// Write a raw `serde_json::Value` as a JSONL line.
+    ///
+    /// **ONLY for non-Finding introspection lines** (e.g. `miner scans` catalogue —
+    /// per CONTEXT D3-20 / RESEARCH Open Question 8 resolution / 03-RESEARCH Pitfall 7
+    /// option 3). Validate against a sibling schema such as
+    /// `schemas/scans-catalogue-v1.schema.json`. **Production scan output MUST use
+    /// `Self::write_envelope`** — the typed `Finding` path enforces the locked
+    /// envelope contract.
+    ///
+    /// Implementations follow the same per-envelope flush discipline as
+    /// `write_envelope` (PITFALLS #4 — a panic mid-emit loses at most the in-flight
+    /// value; the consumer never sees a torn JSON value).
+    ///
+    /// # Errors
+    /// Returns `std::io::Result::Err` if the underlying writer fails. Serialisation
+    /// of a `serde_json::Value` cannot fail (it is already a JSON DOM), so no
+    /// `MinerError::Serialize` is needed in the signature.
+    fn write_raw_json(&mut self, v: &serde_json::Value) -> std::io::Result<()>;
+
     /// Explicit flush. Called at the close of a run (post `RunEnd`).
     ///
     /// # Errors
@@ -95,6 +114,16 @@ impl FindingSink for StdoutSink {
         // Per-envelope flush — closes PITFALLS #4. A panic mid-sweep loses at most
         // the in-flight finding; the consumer never sees a torn JSON value.
         self.writer.flush().map_err(MinerError::Io)?;
+        Ok(())
+    }
+
+    fn write_raw_json(&mut self, v: &serde_json::Value) -> std::io::Result<()> {
+        // Mirror write_envelope's framing: serde_json -> '\n' -> flush. ONLY used by
+        // `miner scans` (and equivalent introspection commands); production scan
+        // output MUST use write_envelope.
+        serde_json::to_writer(&mut self.writer, v).map_err(std::io::Error::other)?;
+        self.writer.write_all(b"\n")?;
+        self.writer.flush()?;
         Ok(())
     }
 
@@ -170,6 +199,15 @@ impl FindingSink for FileSink {
         Ok(())
     }
 
+    fn write_raw_json(&mut self, v: &serde_json::Value) -> std::io::Result<()> {
+        // Same framing as StdoutSink::write_raw_json. ONLY used by introspection
+        // (`miner scans`); production scan output MUST use write_envelope.
+        serde_json::to_writer(&mut self.writer, v).map_err(std::io::Error::other)?;
+        self.writer.write_all(b"\n")?;
+        self.writer.flush()?;
+        Ok(())
+    }
+
     fn flush(&mut self) -> Result<(), MinerError> {
         self.writer.flush().map_err(MinerError::Io)
     }
@@ -206,6 +244,14 @@ impl Default for VecSink {
 impl FindingSink for VecSink {
     fn write_envelope(&mut self, finding: &Finding) -> Result<(), MinerError> {
         let bytes = serde_json::to_vec(finding).map_err(MinerError::Serialize)?;
+        self.0.extend_from_slice(&bytes);
+        self.0.push(b'\n');
+        Ok(())
+    }
+    fn write_raw_json(&mut self, v: &serde_json::Value) -> std::io::Result<()> {
+        // Mirror write_envelope's in-memory framing: bytes + '\n'. ONLY used by
+        // introspection-style tests; production scan output uses write_envelope.
+        let bytes = serde_json::to_vec(v).map_err(std::io::Error::other)?;
         self.0.extend_from_slice(&bytes);
         self.0.push(b'\n');
         Ok(())
@@ -278,6 +324,12 @@ mod tests {
             serde_json::to_writer(&mut self.writer, finding).map_err(MinerError::Serialize)?;
             self.writer.write_all(b"\n").map_err(MinerError::Io)?;
             self.writer.flush().map_err(MinerError::Io)?;
+            Ok(())
+        }
+        fn write_raw_json(&mut self, v: &serde_json::Value) -> std::io::Result<()> {
+            serde_json::to_writer(&mut self.writer, v).map_err(std::io::Error::other)?;
+            self.writer.write_all(b"\n")?;
+            self.writer.flush()?;
             Ok(())
         }
         fn flush(&mut self) -> Result<(), MinerError> {
@@ -416,5 +468,57 @@ mod tests {
     fn stdoutsink_constructs_via_new_and_default() {
         let _sink1 = StdoutSink::new();
         let _sink2: StdoutSink = StdoutSink::default();
+    }
+
+    // ---------------------------------------------------------------------------
+    // Plan 03-02 Task 2 tests — FindingSink::write_raw_json (Pitfall 7 option 3).
+    // ---------------------------------------------------------------------------
+
+    /// Plan 03-02 Task 2 — `write_raw_json_to_vec_sink_emits_jsonl_line`.
+    ///
+    /// Constructs a fresh `VecSink`, calls `write_raw_json` with a small JSON value,
+    /// then asserts:
+    ///   * the captured byte stream ends with a single `\n` terminator,
+    ///   * stripping the terminator yields a payload that parses back to a
+    ///     `serde_json::Value` byte-equal to the input.
+    ///
+    /// This is the canonical JSONL-line invariant for the `miner scans` introspection
+    /// path (CONTEXT D3-20, RESEARCH Open Question 8). Production scan output stays
+    /// on the typed `write_envelope` path; this method is reserved for non-Finding
+    /// catalogue lines.
+    #[test]
+    fn write_raw_json_to_vec_sink_emits_jsonl_line() {
+        let mut sink = VecSink::default();
+        let input = serde_json::json!({
+            "scan_id": "stats.autocorr.ljung_box",
+            "version": 1,
+            "params": {"type": "object"},
+            "finding_fields": {
+                "effect_extra_keys": ["lags", "q_stats"],
+                "raw_series_keys": ["returns", "timestamps_ms"],
+            },
+        });
+        sink.write_raw_json(&input).expect("write_raw_json ok");
+
+        // Exactly one newline, at the tail.
+        assert!(
+            sink.0.ends_with(b"\n"),
+            "VecSink output must end with the JSONL '\\n' terminator"
+        );
+        let newlines = sink.0.iter().filter(|&&b| b == b'\n').count();
+        assert_eq!(
+            newlines, 1,
+            "expected exactly one '\\n' (single-line JSONL); got {newlines}"
+        );
+
+        // Strip the terminator; the remainder must parse back to the input value
+        // byte-equally (BTreeMap-backed serde_json::Map; no preserve_order).
+        let payload = sink.0.strip_suffix(b"\n").expect("trailing newline");
+        let parsed: serde_json::Value =
+            serde_json::from_slice(payload).expect("payload parses as JSON");
+        assert_eq!(
+            parsed, input,
+            "round-trip mismatch — input vs parsed:\n  input: {input}\n parsed: {parsed}"
+        );
     }
 }

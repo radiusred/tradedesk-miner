@@ -5,10 +5,13 @@
 //! introspection. `miner scans` reads one per registered scan and emits a JSONL
 //! line so MCP/HTTP wrappers can render the catalogue without executing a scan.
 //!
-//! Wave 0 scaffold: signature only — bodies / constructors will be wired by
-//! later plans when scan impls populate their declared key lists.
+//! Plan 03-02 added `Serialize` / `Deserialize` / `JsonSchema` derives so the
+//! struct can be embedded directly inside the `miner scans` catalogue JSONL line
+//! AND can be the root type of the sibling `schemas/scans-catalogue-v1.schema.json`
+//! (per CONTEXT D3-20 + RESEARCH Open Question 8 resolution).
 
-#![allow(dead_code, unused_variables)]
+use schemars::JsonSchema;
+use serde::Serialize;
 
 /// Declarative shape declaration: the `effect.extra` keys and `raw.series`
 /// keys a scan WILL emit on success.
@@ -20,7 +23,7 @@
 ///
 /// `&'static [&'static str]` because every scan's emitted-key set is a
 /// compile-time constant — there is no dynamic dispatch on these values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct ScanFindingShape {
     /// Names of the `effect.extra.<key>` arrays the scan emits (e.g.,
     /// `["lags", "q_stats", "p_values", "acf"]` for Ljung-Box per D3-04).

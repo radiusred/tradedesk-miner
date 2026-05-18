@@ -6,22 +6,17 @@
 //! line 204 — the only Phase 3 map type) so iteration order is deterministic
 //! and lexicographic on the `(id, version)` key (OUT-03).
 //!
-//! Pattern analog (BTreeMap discipline): `findings/mod.rs:101-103`
+//! Pattern analog (`BTreeMap` discipline): `findings/mod.rs:101-103`
 //! — every map in a `Serialize` path is `BTreeMap` (NEVER `HashMap`).
 //! `Registry::scans` is NOT in a `Serialize` path, but it IS in the iteration
 //! order that `miner scans` emits as JSONL — same determinism requirement.
 //!
-//! Wave 0 scaffold: signature only. Plan 02 fills bodies.
-
-#![allow(dead_code, unused_variables)]
+//! Plan 03-02 fills the bodies (Plan 03-01 laid down `unimplemented!()` scaffold).
 
 use std::collections::BTreeMap;
 
 use super::Scan;
-// `LjungBoxScan` is referenced by `bootstrap()` once Plan 03-02 wires the body.
-// Wave 0 omits the `use` to avoid an unused-import warning on the scaffold;
-// the doc-comment on `bootstrap()` mentions the fully-qualified path so the
-// follow-on plan can find it via grep.
+use super::ljung_box::LjungBoxScan;
 
 /// Versioned `(id, version)`-keyed catalogue of registered scans.
 ///
@@ -35,47 +30,148 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// Construct an empty registry. Plan 02 fills the body.
+    /// Construct an empty registry.
     #[must_use]
     pub fn new() -> Self {
-        unimplemented!("Plan 02 (03-02-PLAN) wires Registry::new")
+        Self {
+            scans: BTreeMap::new(),
+        }
     }
 
-    /// Register a scan. Plan 02 fills the body.
+    /// Register a scan. The key is `(scan.id().to_string(), scan.version())`.
+    /// Inserting a duplicate key replaces the previous registration (last-write
+    /// wins) — Phase 3 ships exactly one scan via [`bootstrap`] so the
+    /// behaviour is academic; Phase 4 plans extend `bootstrap` linearly.
     pub fn register(&mut self, scan: Box<dyn Scan>) {
-        unimplemented!("Plan 02 (03-02-PLAN) wires Registry::register")
+        let key = (scan.id().to_string(), scan.version());
+        self.scans.insert(key, scan);
     }
 
-    /// Look up a scan by `(id, version)`. Plan 02 fills the body.
+    /// Look up a scan by `(id, version)`. Returns `None` for unknown scan-id
+    /// OR unknown version (preflight rejects both as
+    /// `PreflightCode::UnknownScan`).
     #[must_use]
     pub fn get(&self, id: &str, version: u32) -> Option<&dyn Scan> {
-        unimplemented!("Plan 02 (03-02-PLAN) wires Registry::get")
+        // `BTreeMap::get` accepts the key by reference; we build a tuple of
+        // owned `String` because the key type is `(String, u32)`. The .to_string()
+        // allocation is fine — this is the preflight path, not the kernel.
+        self.scans.get(&(id.to_string(), version)).map(std::convert::AsRef::as_ref)
     }
 
     /// Iterate registered scans in `(id, version)` lexicographic order
-    /// (BTreeMap iteration order — OUT-03). Plan 02 fills the body.
+    /// (`BTreeMap` iteration order — OUT-03). Used by `miner scans` to emit one
+    /// JSONL line per registered scan in deterministic order.
     pub fn iter(&self) -> impl Iterator<Item = &dyn Scan> + '_ {
-        // Compile-only stub — Plan 02 wires the real iterator.
-        self.scans.values().map(|boxed| &**boxed as &dyn Scan)
+        self.scans.values().map(std::convert::AsRef::as_ref)
     }
 }
 
 impl Default for Registry {
     fn default() -> Self {
-        unimplemented!("Plan 02 (03-02-PLAN) wires Registry::default")
+        Self::new()
     }
 }
 
 /// Construct the production registry with every Phase 3+ scan registered.
 ///
 /// Pattern: explicit `bootstrap()` factory (D3-16) — rejected `inventory`'s
-/// compile-time magic. Phase 4 plans extend this with one line per scan.
-///
-/// Wave 0 scaffold: signature only. Plan 02 fills the body.
+/// compile-time magic. Phase 4 plans extend this with one line per scan
+/// in alphabetical scan-id order so the registration sequence stays grep-able.
 #[must_use]
 pub fn bootstrap() -> Registry {
-    unimplemented!(
-        "Plan 02 (03-02-PLAN) wires bootstrap(); will: \
-         let mut r = Registry::new(); r.register(Box::new(LjungBoxScan)); r"
-    )
+    let mut r = Registry::new();
+    r.register(Box::new(LjungBoxScan));
+    // Phase 4 will add lines here, one per additional scan, alphabetical by id.
+    r
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Plan 03-02 Task 2 Test 1 — `registry_starts_empty`. A freshly-constructed
+    /// `Registry::new()` has no registered scans.
+    #[test]
+    fn registry_starts_empty() {
+        let r = Registry::new();
+        assert!(r.scans.is_empty(), "Registry::new() must start empty");
+        assert!(r.iter().next().is_none(), "iter() must yield nothing");
+    }
+
+    /// Plan 03-02 Task 2 Test 2 — `registry_register_and_get`. After registering
+    /// `LjungBoxScan`, `get` returns Some for the matching key and None for
+    /// unknown scan-id / unknown version.
+    #[test]
+    fn registry_register_and_get() {
+        let mut r = Registry::new();
+        r.register(Box::new(LjungBoxScan));
+
+        // Exact match.
+        let found = r.get("stats.autocorr.ljung_box", 1);
+        assert!(found.is_some(), "exact (id, version) must resolve");
+        let s = found.unwrap();
+        assert_eq!(s.id(), "stats.autocorr.ljung_box");
+        assert_eq!(s.version(), 1);
+
+        // Unknown scan-id.
+        assert!(
+            r.get("nonexistent", 1).is_none(),
+            "unknown scan-id must return None"
+        );
+
+        // Known scan-id but wrong version.
+        assert!(
+            r.get("stats.autocorr.ljung_box", 99).is_none(),
+            "wrong version must return None"
+        );
+    }
+
+    /// Plan 03-02 Task 2 Test 3 — `registry_uses_btreemap`. Compile-time type
+    /// assertion via reference binding (mirrors `findings/mod.rs:526`
+    /// `raw_series_uses_btreemap`). If a future commit swaps the inner map
+    /// to `HashMap`, this line stops compiling — OUT-03 regression gate.
+    #[test]
+    fn registry_uses_btreemap() {
+        let r = Registry::new();
+        let _: &BTreeMap<(String, u32), Box<dyn Scan>> = &r.scans;
+    }
+
+    /// Plan 03-02 Task 2 Test 4 — `bootstrap_registers_ljung_box_scan`. The
+    /// `bootstrap()` factory returns a registry containing exactly ONE entry
+    /// keyed `("stats.autocorr.ljung_box", 1)`. Phase 4 extends — this count
+    /// will bump.
+    #[test]
+    fn bootstrap_registers_ljung_box_scan() {
+        let r = bootstrap();
+        assert_eq!(
+            r.scans.len(),
+            1,
+            "Phase 3 bootstrap must register exactly one scan; got {}",
+            r.scans.len()
+        );
+        assert!(
+            r.get("stats.autocorr.ljung_box", 1).is_some(),
+            "bootstrap must include LjungBoxScan@1"
+        );
+    }
+
+    /// Plan 03-02 Task 2 Test 5 — `registry_iter_lex_order`. `Registry::iter()`
+    /// yields scans in `(id, version)` lexicographic order — the BTreeMap
+    /// iteration contract. Phase 3 has one scan so the assertion is trivial;
+    /// the test pins the contract for Phase 4 plans that register multiple
+    /// scans.
+    #[test]
+    fn registry_iter_lex_order() {
+        let r = bootstrap();
+        let ids: Vec<&'static str> = r.iter().map(|s| s.id()).collect();
+        // For Phase 3 the single-element vec is trivially sorted; the test pins
+        // the contract.
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted, "iter() must yield ids in lexicographic order");
+    }
 }

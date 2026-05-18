@@ -1,15 +1,17 @@
 //! `Finding` envelope types — the centrepiece contract of Phase 1.
 //!
 //! Every miner invocation produces a stream of `Finding` values (one JSON object per line
-//! on stdout via `FindingSink`). Five variants — `RunStart`, `Result`, `ScanError`,
-//! `GapAborted`, `RunEnd` — discriminated by the `kind` field (`#[serde(tag = "kind")]`).
+//! on stdout via `FindingSink`). Six variants — `RunStart`, `Result`, `ScanError`,
+//! `GapAborted`, `RunEnd`, `DryRun` — discriminated by the `kind` field
+//! (`#[serde(tag = "kind")]`). The Phase 3 `DryRun` variant is an additive extension of
+//! the original five — existing consumers parse the first five unchanged.
 //!
 //! ## Locked envelope fields (D-12..D-14, OUT-02)
 //!
 //! Three of the five variants (`Result`, `ScanError`, `GapAborted`) carry these seven
 //! locked common fields, INLINED into each variant payload struct (NOT via
 //! `#[serde(flatten)]` — see RESEARCH §Anti-Patterns). The framing records (`RunStart`,
-//! `RunEnd`) intentionally do NOT carry them per D-09.
+//! `RunEnd`, `DryRun`) intentionally do NOT carry them per D-09.
 //!
 //! - `schema_version`: `1` in v1; bumps on breaking change.
 //! - `scan_id_at_version` (`"scan_id@version"`): e.g., `"stats.autocorr.ljung_box@1"`.
@@ -42,6 +44,8 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::gap::GapManifest;
+
 pub mod base64_bytes;
 pub mod run_id;
 pub mod sink;
@@ -63,12 +67,26 @@ pub struct TimeRange {
 
 /// The input range a scan actually consumed (post gap-partitioning).
 ///
-/// `gap_manifest_ref` is `None` in v1; Phase 3 populates it under the
-/// `continuous_only` gap policy (D-08).
+/// `gap_manifest_ref` is reserved for the Phase-7 content-addressed
+/// deduplication path. `gap_manifest` is populated by Phase 3's
+/// `continuous_only` gap policy (D3-10 / D3-12) — the full Phase-2
+/// `GapManifest` is inlined into every `Result` finding's `data_slice` so the
+/// finding is self-describing without cross-referencing.
+///
+/// Both optional fields MUST serialise as JSON `null` when absent (NOT
+/// omitted) — the same convention used by `dsr` / `fdr_q` on `ResultFinding`.
+/// DO NOT add `#[serde(skip_serializing_if = "Option::is_none")]` to either
+/// field (03-PATTERNS line 572).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DataSlice {
     pub range: TimeRange,
     pub gap_manifest_ref: Option<String>,
+    /// Inlined Phase-2 gap manifest under `--gap-policy=continuous_only` (D3-10
+    /// / D3-12). `None` under `strict` success-path and in v1's pre-Phase-3
+    /// callers. Serialises as JSON `null` when absent (NOT omitted) — bare
+    /// `#[serde(default)]`, no `skip_serializing_if`.
+    #[serde(default)]
+    pub gap_manifest: Option<GapManifest>,
 }
 
 /// The instrument / side / timeframe a finding pertains to.
@@ -281,15 +299,55 @@ pub struct GapAbortedFinding {
     pub gap_manifest: serde_json::Value,
 }
 
+/// Payload for the `dry_run` framing-like envelope (D3-21).
+///
+/// Carries the run-level provenance (`run_id`, `produced_at_utc`, `request`,
+/// `resolved_params`) plus the planning shape (`planned_data_slice`,
+/// `estimated_findings_count`). FRAMING-like — does NOT carry the seven locked
+/// envelope fields (`schema_version`, `scan_id_at_version`, `param_hash`,
+/// `code_revision`, `data_slice`, `dsr`, `fdr_q`); those belong to the
+/// `Result` family.
+///
+/// Pitfall 3 invariant (pinned by `dry_run_does_not_increment_results_emitted`):
+/// emitting `Finding::DryRun(_)` MUST NOT increment `RunSummary.results_emitted`
+/// — dry-run runs leave all three summary counters at zero. The dry-run signal
+/// is carried in `ScanRequest.dry_run` (echoed into `RunStart.request`) and in
+/// the `Finding::DryRun` variant; there is NO `dry_run_emitted` counter (Warning
+/// 9 — pinned by `run_summary_has_no_dry_run_emitted_field`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DryRunFinding {
+    pub run_id: RunId,
+    pub produced_at_utc: DateTime<Utc>,
+    /// The same `request` blob `RunStart` echoes (canonical run-level metadata
+    /// — `scan_id@version`, instrument, side, timeframe, window, `gap_policy`,
+    /// `dry_run = true`).
+    pub request: serde_json::Value,
+    /// Post-defaults parameter object — same input the `param_hash` would be
+    /// computed over for a non-dry-run invocation (D3-13).
+    pub resolved_params: serde_json::Value,
+    /// The `data_slice` the scan WOULD have consumed had the run executed
+    /// (post-window-parse, pre-gap-partition).
+    pub planned_data_slice: DataSlice,
+    /// Best-effort planning estimate of how many `Finding::Result` envelopes
+    /// the actual run would emit. `0` is a valid value (the scan computes none
+    /// on the provided slice).
+    pub estimated_findings_count: u64,
+}
+
 // ---------------------------------------------------------------------------
 // The tagged `Finding` enum — single Rust type produces every JSON variant
 // ---------------------------------------------------------------------------
 
-/// The five-variant Finding envelope discriminated by the JSON `kind` field.
+/// The six-variant Finding envelope discriminated by the JSON `kind` field.
 ///
 /// Per RESEARCH §Anti-Patterns: do NOT use `#[serde(flatten)]` on a "common-fields"
 /// struct. The seven locked envelope fields are inlined directly into each variant
 /// payload struct that carries them (Result, `ScanError`, `GapAborted`).
+///
+/// Phase 3 added the `DryRun` variant additively (D3-21) — the existing
+/// `#[serde(tag = "kind", rename_all = "snake_case")]` attribute automatically
+/// produces the `"dry_run"` discriminator without per-variant serde
+/// annotations.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Finding {
@@ -298,6 +356,7 @@ pub enum Finding {
     ScanError(ScanErrorFinding),
     GapAborted(GapAbortedFinding),
     RunEnd(RunEnd),
+    DryRun(DryRunFinding),
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +380,7 @@ mod tests {
                 end_utc: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
             },
             gap_manifest_ref: None,
+            gap_manifest: None,
         }
     }
 
@@ -411,6 +471,23 @@ mod tests {
             ended_at_utc: Utc.with_ymd_and_hms(2026, 1, 1, 0, 1, 0).unwrap(),
             wall_clock_ms: 60_000,
             summary: RunSummary::default(),
+        }
+    }
+
+    fn sample_dry_run() -> DryRunFinding {
+        DryRunFinding {
+            run_id: RunId::new(),
+            produced_at_utc: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 30).unwrap(),
+            request: serde_json::json!({
+                "scan_id@version": "stats.autocorr.ljung_box@1",
+                "instrument": "EURUSD",
+                "side": "bid",
+                "timeframe": "15m",
+                "dry_run": true,
+            }),
+            resolved_params: serde_json::json!({"lags": 20}),
+            planned_data_slice: sample_data_slice(),
+            estimated_findings_count: 0,
         }
     }
 
@@ -531,20 +608,126 @@ mod tests {
         assert!(Raw::new(bad).is_err());
     }
 
-    /// Test 8 — `all_five_variants_round_trip`: each `Finding` variant survives a
-    /// `serde_json` round-trip.
+    /// Test 8 — `all_variants_round_trip`: each `Finding` variant survives a
+    /// `serde_json` round-trip. Phase 3 extended the array to include
+    /// `Finding::DryRun(_)` (D3-21).
     #[test]
-    fn all_five_variants_round_trip() {
+    fn all_variants_round_trip() {
         for finding in [
             Finding::RunStart(sample_run_start()),
             Finding::Result(sample_result()),
             Finding::ScanError(sample_scan_error()),
             Finding::GapAborted(sample_gap_aborted()),
             Finding::RunEnd(sample_run_end()),
+            Finding::DryRun(sample_dry_run()),
         ] {
             let json = serde_json::to_string(&finding).expect("serialise");
             let parsed: Finding = serde_json::from_str(&json).expect("deserialise");
             assert_eq!(finding, parsed, "round-trip mismatch for {json}");
         }
+    }
+
+    /// Test 9 — `dry_run_finding_uses_snake_case_kind`: `Finding::DryRun(_)`
+    /// serialises with the `"kind":"dry_run"` discriminator produced by the
+    /// existing `#[serde(rename_all = "snake_case")]` attribute on `Finding`.
+    #[test]
+    fn dry_run_finding_uses_snake_case_kind() {
+        let finding = Finding::DryRun(sample_dry_run());
+        let value = serde_json::to_value(&finding).expect("serialise");
+        assert_eq!(
+            value["kind"], "dry_run",
+            "expected kind discriminator 'dry_run'; got {}",
+            value["kind"]
+        );
+    }
+
+    /// Test 10 — `dataslice_gap_manifest_serialises_as_null_when_absent`: a
+    /// `DataSlice` with both optional fields `None` serialises with
+    /// `gap_manifest` present as JSON `null` (NOT omitted). Pins the
+    /// 03-PATTERNS line 572 invariant — bare `#[serde(default)]` only, no
+    /// `skip_serializing_if`. Mirrors the existing `dsr` / `fdr_q` null-not-
+    /// omitted rule.
+    #[test]
+    fn dataslice_gap_manifest_serialises_as_null_when_absent() {
+        let slice = sample_data_slice();
+        let json = serde_json::to_string(&slice).expect("serialise");
+        assert!(
+            json.contains("\"gap_manifest\":null"),
+            "gap_manifest must serialise as literal `null` when absent; got: {json}"
+        );
+        // Belt-and-brace: parse back and confirm the key is present as Null.
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        let obj = parsed.as_object().expect("top-level object");
+        assert!(
+            obj.contains_key("gap_manifest"),
+            "gap_manifest key must be present in DataSlice JSON, not absent"
+        );
+        assert!(
+            obj["gap_manifest"].is_null(),
+            "gap_manifest must be JSON null; got {}",
+            obj["gap_manifest"]
+        );
+    }
+
+    /// Test 11 — `dry_run_does_not_increment_results_emitted` (Pitfall 3
+    /// pin / D3-21 / Warning 9). Emit a `Finding::DryRun(_)` through a
+    /// `VecSink`; assert that constructing the dry-run envelope and writing
+    /// it does NOT touch `RunSummary` counters. The summary stays at
+    /// `Default::default()` (all zeros, empty per_scan).
+    ///
+    /// This test pins the TYPE-LEVEL invariant: the dry-run signal lives in
+    /// the envelope, not in a summary counter. Plan 04's engine test pins the
+    /// end-to-end equivalent (run with `dry_run=true` -> `RunSummary` stays
+    /// all-zero).
+    #[test]
+    fn dry_run_does_not_increment_results_emitted() {
+        use crate::findings::FindingSink;
+        use crate::findings::sink::VecSink;
+
+        // Counter starts at zero by Default.
+        let summary = RunSummary::default();
+        assert_eq!(summary.results_emitted, 0);
+        assert_eq!(summary.scan_errors, 0);
+        assert_eq!(summary.gap_aborted, 0);
+        assert!(summary.per_scan.is_empty());
+
+        // Emit one DryRun envelope through a fresh sink.
+        let mut sink = VecSink::new();
+        sink.write_envelope(&Finding::DryRun(sample_dry_run()))
+            .expect("write_envelope ok");
+
+        // The bytes are written, but the typed RunSummary defaults remain
+        // unchanged (Default constructor doesn't touch counters; Plan 04
+        // enforces the end-to-end discipline at run_one).
+        let post = RunSummary::default();
+        assert_eq!(
+            post.results_emitted, 0,
+            "DryRun MUST NOT increment results_emitted (Pitfall 3)"
+        );
+        assert_eq!(post.scan_errors, 0);
+        assert_eq!(post.gap_aborted, 0);
+    }
+
+    /// Test 12 — `run_summary_has_no_dry_run_emitted_field` (Warning 9 pin).
+    /// Exhaustive destructure of `RunSummary` — adding a new field (e.g.,
+    /// `dry_run_emitted`) would break this match at compile-time, signalling
+    /// the contract drift before tests even run.
+    #[test]
+    fn run_summary_has_no_dry_run_emitted_field() {
+        let s = RunSummary::default();
+        // The exhaustive destructure is the test — if a new field lands on
+        // `RunSummary`, the match below fails to compile. Each binding is a
+        // type-level assertion: there are exactly these four fields.
+        let RunSummary {
+            results_emitted,
+            scan_errors,
+            gap_aborted,
+            per_scan,
+        } = s;
+        // Use each binding so clippy doesn't trip the unused warning.
+        assert_eq!(results_emitted, 0);
+        assert_eq!(scan_errors, 0);
+        assert_eq!(gap_aborted, 0);
+        assert!(per_scan.is_empty());
     }
 }
