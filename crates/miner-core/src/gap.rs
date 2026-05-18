@@ -751,4 +751,60 @@ mod tests {
             manifest.gaps
         );
     }
+
+    // ---- Task 3: gaps_sorted_proptest -------------------------------------
+
+    use proptest::prelude::*;
+
+    /// Strategy: a random `GapSpan` with `start_utc` in `[0, 4096)` minute
+    /// offsets from a fixed anchor, `end_utc = start_utc + duration` where
+    /// `duration ∈ [1, 16]` minutes, and a random `GapReason` variant. The
+    /// proptest passes the resulting Vec through the detector's
+    /// `sort_gaps` helper and asserts the (start, end, discriminant)
+    /// lexicographic invariant.
+    ///
+    /// This is the v1 "good enough" form documented in PLAN Task 3 — it
+    /// gates against a future refactor that breaks the sort, without needing
+    /// to drive the full `GapDetector::detect` pipeline through proptest.
+    fn arb_gap_span() -> impl Strategy<Value = GapSpan> {
+        let anchor = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        (0_i64..4096, 1_i64..16, 0_u8..3).prop_map(move |(start_min, dur_min, reason_idx)| {
+            let start = anchor + Duration::minutes(start_min);
+            let end = start + Duration::minutes(dur_min);
+            let date = start.date_naive();
+            let reason = match reason_idx {
+                0 => GapReason::MissingSourceFile { date },
+                1 => GapReason::CorruptSourceFile {
+                    date,
+                    detail: "synthetic".into(),
+                },
+                _ => GapReason::IntraDayGap {
+                    affected_minutes: 1,
+                },
+            };
+            GapSpan {
+                start_utc: start,
+                end_utc: end,
+                reason,
+            }
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn gaps_sorted_proptest(gaps in proptest::collection::vec(arb_gap_span(), 0..32)) {
+            let mut sorted = gaps;
+            sort_gaps(&mut sorted);
+            for i in 1..sorted.len() {
+                let prev = &sorted[i - 1];
+                let cur = &sorted[i];
+                let prev_key = (prev.start_utc, prev.end_utc, prev.reason.discriminant_ord());
+                let cur_key = (cur.start_utc, cur.end_utc, cur.reason.discriminant_ord());
+                prop_assert!(
+                    prev_key <= cur_key,
+                    "sort invariant violated at index {i}: prev={prev_key:?} cur={cur_key:?}"
+                );
+            }
+        }
+    }
 }

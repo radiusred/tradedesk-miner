@@ -61,7 +61,8 @@ serial_test          = "3"
 # `proptest` — aggregator / path-layout property tests (path_round_trip_proptest etc.)
 # `insta`    — gap-manifest + Arrow IPC schema snapshot tests
 proptest             = "1.11"
-insta                = "1.47"
+# `json` feature exposes `insta::assert_json_snapshot!` (Plan 02-04 Task 3 gate).
+insta                = { version = "1.47", features = ["json"] }
 
 [lints]
 workspace = true

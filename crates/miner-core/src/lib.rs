@@ -45,3 +45,6 @@ pub use reader::{Blake3Hex, ClosedRangeUtc, RawBar, Reader, Side};
 pub use aggregator::{
     AGGREGATOR_VERSION, AggParams, AggregateError, BarFrame, Timeframe, aggregate,
 };
+
+// Phase 2 (Plan 02-04) extensions:
+pub use gap::{GapDetector, GapManifest, GapReason, GapSpan};
