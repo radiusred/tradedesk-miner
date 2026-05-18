@@ -234,7 +234,7 @@ pub struct ScanRequest {
 impl ScanRequest {
     /// Construct a `ScanRequest` with the 10 universally-available fields.
     ///
-    /// Plan 03-05 chains this with [`Self::with_sleep_after_first_finding_ms`]
+    /// Plan 03-05 chains this with `with_sleep_after_first_finding_ms`
     /// (cfg-gated under `test` / `feature = "test-internal"`) to forward the
     /// CLI's `--sleep-after-first-finding-ms` hook into the request without
     /// per-field cfg in struct literals.
@@ -276,8 +276,8 @@ impl ScanRequest {
 
     /// Chained setter for the cfg-gated `sleep_after_first_finding_ms` hook
     /// (Plan 03-02 / Pitfall 8). Forwards the value into `ScanRequest`; the
-    /// method itself is `#[cfg]`-gated so the call site in [`Plan 05
-    /// ScanArgs::to_scan_request`] must also be cfg-gated when invoking it.
+    /// method itself is `#[cfg]`-gated so the call site in Plan 03-05's
+    /// `ScanArgs::to_scan_request` must also be cfg-gated when invoking it.
     ///
     /// NEVER reachable in release production builds — the cfg gate matches the
     /// matching field gate (`#[cfg(any(test, feature = "test-internal"))]`).
