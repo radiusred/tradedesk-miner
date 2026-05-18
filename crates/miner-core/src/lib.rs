@@ -10,6 +10,7 @@ pub mod calendar;
 pub mod config;
 pub mod error;
 pub mod findings;
+pub mod gap;
 pub mod reader;
 
 /// Git SHA of the source revision that produced this build; `dirty-<sha>` when the tree
