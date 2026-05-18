@@ -6,6 +6,7 @@
 //! on top.
 
 pub mod aggregator;
+pub mod cache;
 pub mod calendar;
 pub mod config;
 pub mod error;
@@ -48,3 +49,8 @@ pub use aggregator::{
 
 // Phase 2 (Plan 02-04) extensions:
 pub use gap::{GapDetector, GapManifest, GapReason, GapSpan};
+
+// Phase 2 (Plan 02-05) extensions:
+pub use cache::{
+    ARROW_SCHEMA_VERSION, BarCache, CacheError, FingerprintSidecar, build_arrow_schema,
+};
