@@ -1593,6 +1593,7 @@ dependencies = [
  "figment",
  "insta",
  "jsonschema",
+ "miner-core",
  "miner-reader-dukascopy",
  "proptest",
  "schemars",
