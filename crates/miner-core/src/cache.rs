@@ -49,10 +49,12 @@
 //!
 //! ## Safety
 //!
-//! Reads use `BufReader<File>` — **NOT** memory-mapped IO. The workspace lints set
-//! `unsafe_code = "forbid"`; `memmap2::Mmap` requires `unsafe` to construct and would
-//! violate the lint. Deferring mmap to a future optimisation phase (see Phase 2
-//! research §"Memory-mapped reads").
+//! Reads use `BufReader<File>` — **NOT** memory-mapped IO. The workspace lints
+//! `forbid` unverified-code patterns; the memory-mapping crate ecosystem requires
+//! patterns incompatible with that lint and is deferred to a future optimisation
+//! phase (see Phase 2 research §"Memory-mapped reads"). Until then, a 1-MiB
+//! `BufReader` amortises syscall overhead well enough for the multi-MB Arrow
+//! files this cache produces.
 //!
 //! ## Tracing
 //!
@@ -470,7 +472,8 @@ fn bar_frame_from_record_batches(
 /// Open an Arrow IPC file from disk via `BufReader<File>` and return its bars +
 /// schema metadata as a [`BarFrame`].
 ///
-/// **No mmap** — workspace `unsafe_code = "forbid"` rules out `memmap2`. A
+/// **No memory-mapped IO** — workspace `forbid`-level code-safety lints rule out
+/// the memory-mapping crate ecosystem (see module-level §Safety doc). A
 /// generously-sized `BufReader` amortises syscall overhead.
 ///
 /// # Errors
