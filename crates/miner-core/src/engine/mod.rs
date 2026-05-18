@@ -179,6 +179,43 @@ pub fn run_one<R: Reader>(
     sink: &mut dyn FindingSink,
     cancel: Arc<AtomicBool>,
 ) -> Result<RunOutcome, MinerError> {
+    // Plan 03-07 Task 2 (CR-01 refactor): public `run_one` is a thin wrapper
+    // over `run_one_with_registry` so the engine integration tests can inject
+    // a `FailingIoScan` / `FailingMinerScan` fixture into the registry
+    // without going through the production `bootstrap()` path. Binary callers
+    // (CLI / MCP / HTTP wrappers) continue to use this signature; the inner
+    // function carries the same algorithm verbatim.
+    let registry = crate::scan::bootstrap();
+    run_one_with_registry(req, cfg, reader, sink, cancel, &registry)
+}
+
+/// Internal `run_one` body, parameterised on the scan registry.
+///
+/// Plan 03-07 Task 2 (CR-01) extracted this from `run_one` so the engine
+/// tests can inject a per-test registry containing a `FailingIoScan` /
+/// `FailingMinerScan` fixture. The algorithm is identical to the
+/// previously-inlined `run_one` body; the public `run_one` is now a thin
+/// wrapper passing `&crate::scan::bootstrap()`.
+///
+/// Crate-visibility (`pub(crate)`) so the engine tests reach it without
+/// widening the public API surface (the CLI / MCP / HTTP wrappers continue
+/// to call `run_one`).
+#[allow(
+    clippy::too_many_lines,
+    reason = "see run_one's clippy::too_many_lines justification — this is the algorithm-walk function"
+)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "see run_one's clippy::needless_pass_by_value justification — Arc<AtomicBool> is the cancellation-flag handoff"
+)]
+pub(crate) fn run_one_with_registry<R: Reader>(
+    req: &ScanRequest,
+    cfg: &MinerConfig,
+    reader: &R,
+    sink: &mut dyn FindingSink,
+    cancel: Arc<AtomicBool>,
+    registry: &crate::scan::Registry,
+) -> Result<RunOutcome, MinerError> {
     // -----------------------------------------------------------------------
     // Step 1 — Cancel-at-entry yield site (cancellation_tests::cancel_at_entry)
     // -----------------------------------------------------------------------
@@ -187,7 +224,7 @@ pub fn run_one<R: Reader>(
     }
 
     // -----------------------------------------------------------------------
-    // Step 2 — Preflight: resolve scan via the production registry.
+    // Step 2 — Preflight: resolve scan via the supplied registry.
     //
     // Plan 03-07 CR-03 fix: route through the typed
     // `engine::preflight::resolve_scan` helper which returns
@@ -199,12 +236,9 @@ pub fn run_one<R: Reader>(
     // `MinerError::Preflight(WireError)` which the CLI dispatches on via a
     // typed match.
     // -----------------------------------------------------------------------
-    let registry = crate::scan::bootstrap();
-    let scan = preflight::resolve_scan(
-        &format!("{}@{}", req.scan_id, req.version),
-        &registry,
-    )
-    .map_err(MinerError::Preflight)?;
+    let scan =
+        preflight::resolve_scan(&format!("{}@{}", req.scan_id, req.version), registry)
+            .map_err(MinerError::Preflight)?;
 
     // jsonschema validation of resolved_params against scan.param_schema() is
     // OUT OF SCOPE for Phase 3 (heavyweight dep + duplicated by the per-scan
@@ -255,18 +289,51 @@ pub fn run_one<R: Reader>(
         return Ok(RunOutcome::Ok);
     }
 
+    // Plan 03-07 CR-01: hoist `scan_id_at_version` above step 5 so the new
+    // error-handling blocks for the reader, cache, scan-IO, and
+    // scan-miner-error arms can build a `Finding::ScanError` envelope before
+    // returning. The string was originally constructed inside step 6's match,
+    // but the wrapped error paths need it earlier.
+    let scan_id_at_version = format!("{}@{}", req.scan_id, req.version);
+
     // -----------------------------------------------------------------------
-    // Step 5 — Gap detection (Warning 8 — wrap reader errors via
-    // MinerError::Scan(String); MinerError has no Reader variant).
+    // Step 5 — Gap detection.
+    //
+    // Plan 03-07 CR-01: on reader error, emit `Finding::ScanError` +
+    // `Finding::RunEnd` BEFORE returning `Ok(RunOutcome::HadScanErrors)` so
+    // consumers never see an orphaned RunStart. The reader-context message
+    // ("reader: ...") survives into the ScanError envelope's `message`
+    // field; the envelope's `error_code` is `ScanErrorCode::ComputeError`
+    // (mirrors the existing kernel-error arm). Tests:
+    // `run_one_reader_error_emits_run_start_and_run_end_with_scan_error`.
     // -----------------------------------------------------------------------
-    let manifest = GapDetector::detect(reader, &req.instrument, req.side, req.window)
-        .map_err(|e| MinerError::Scan(format!("reader: {e}")))?;
+    let manifest = match GapDetector::detect(reader, &req.instrument, req.side, req.window) {
+        Ok(m) => m,
+        Err(e) => {
+            let msg = format!("reader: {e}");
+            emit_scan_error(
+                sink,
+                run_id,
+                &scan_id_at_version,
+                req,
+                reader.source_id(),
+                &msg,
+            )?;
+            summary.scan_errors += 1;
+            summary
+                .per_scan
+                .entry(scan_id_at_version.clone())
+                .or_insert_with(PerScanCounts::default)
+                .errors += 1;
+            emit_run_end(sink, run_id, started, summary)?;
+            return Ok(RunOutcome::HadScanErrors);
+        }
+    };
     let dispatch_result = gap_policy::dispatch(&manifest, req.window, req.gap_policy);
 
     // -----------------------------------------------------------------------
     // Step 6 — Dispatch.
     // -----------------------------------------------------------------------
-    let scan_id_at_version = format!("{}@{}", req.scan_id, req.version);
     match dispatch_result {
         GapDispatch::Aborted(m) => {
             let gap_aborted_finding = Finding::GapAborted(GapAbortedFinding {
@@ -322,17 +389,41 @@ pub fn run_one<R: Reader>(
                     start: sub_range.start_utc,
                     end: sub_range.end_utc,
                 };
-                let bars = cache
-                    .get_or_build(
-                        reader,
-                        AggParams {
-                            symbol: &req.instrument,
-                            side: req.side,
-                            tf: req.timeframe,
-                            range: sub_range_utc,
-                        },
-                    )
-                    .map_err(|e| MinerError::Scan(format!("cache: {e}")))?;
+                // Plan 03-07 CR-01: on cache error, emit Finding::ScanError
+                // + Finding::RunEnd BEFORE returning HadScanErrors so the
+                // RunStart already streamed at step 3 has its closing
+                // envelope pair. Test:
+                // `run_one_cache_error_emits_run_start_and_run_end_with_scan_error`.
+                let bars = match cache.get_or_build(
+                    reader,
+                    AggParams {
+                        symbol: &req.instrument,
+                        side: req.side,
+                        tf: req.timeframe,
+                        range: sub_range_utc,
+                    },
+                ) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        let msg = format!("cache: {e}");
+                        emit_scan_error(
+                            sink,
+                            run_id,
+                            &scan_id_at_version,
+                            req,
+                            reader.source_id(),
+                            &msg,
+                        )?;
+                        summary.scan_errors += 1;
+                        summary
+                            .per_scan
+                            .entry(scan_id_at_version.clone())
+                            .or_insert_with(PerScanCounts::default)
+                            .errors += 1;
+                        emit_run_end(sink, run_id, started, summary)?;
+                        return Ok(RunOutcome::HadScanErrors);
+                    }
+                };
 
                 // Build ScanCtx. The ContinuousOnly path inlines the full
                 // manifest into Result.data_slice; the Strict zero-gap fast
@@ -380,9 +471,53 @@ pub fn run_one<R: Reader>(
                         )?;
                     }
                     Err(ScanError::Io(e)) => {
-                        return Err(MinerError::Io(e));
+                        // Plan 03-07 CR-01: wrap mid-stream scan-IO errors —
+                        // emit Finding::ScanError + Finding::RunEnd BEFORE
+                        // returning HadScanErrors so the RunStart already
+                        // streamed at step 3 has its closing envelope pair.
+                        // Test:
+                        // run_one_scan_io_error_emits_run_start_and_run_end_with_scan_error
+                        let msg = format!("scan io: {e}");
+                        emit_scan_error(
+                            sink,
+                            run_id,
+                            &scan_id_at_version,
+                            req,
+                            reader.source_id(),
+                            &msg,
+                        )?;
+                        summary.scan_errors += 1;
+                        summary
+                            .per_scan
+                            .entry(scan_id_at_version.clone())
+                            .or_insert_with(PerScanCounts::default)
+                            .errors += 1;
+                        emit_run_end(sink, run_id, started, summary)?;
+                        return Ok(RunOutcome::HadScanErrors);
                     }
-                    Err(ScanError::Miner(e)) => return Err(e),
+                    Err(ScanError::Miner(e)) => {
+                        // Plan 03-07 CR-01: same wrapping treatment as the
+                        // ScanError::Io arm above — preserve framing on
+                        // mid-stream MinerError failures. Test:
+                        // run_one_scan_miner_error_emits_run_start_and_run_end_with_scan_error
+                        let msg = format!("scan miner-error: {e}");
+                        emit_scan_error(
+                            sink,
+                            run_id,
+                            &scan_id_at_version,
+                            req,
+                            reader.source_id(),
+                            &msg,
+                        )?;
+                        summary.scan_errors += 1;
+                        summary
+                            .per_scan
+                            .entry(scan_id_at_version.clone())
+                            .or_insert_with(PerScanCounts::default)
+                            .errors += 1;
+                        emit_run_end(sink, run_id, started, summary)?;
+                        return Ok(RunOutcome::HadScanErrors);
+                    }
                 }
             }
         }
@@ -1138,8 +1273,15 @@ mod tests {
         }
     }
 
+    /// Plan 03-07 CR-01 regression — on reader error during gap detection,
+    /// the engine MUST emit `Finding::ScanError` + `Finding::RunEnd` before
+    /// returning `Ok(RunOutcome::HadScanErrors)`. The previous contract
+    /// returned `Err(MinerError::Scan(_))` and left an orphaned `RunStart`
+    /// envelope on stdout (D-09 / OUT-04 framing invariant violation). The
+    /// previous reader-error wraps-via-MinerError-Scan test name is
+    /// deliberately gone — see CR-01 closure notes in 03-07-PLAN.md.
     #[test]
-    fn run_one_reader_error_wraps_via_miner_error_scan() {
+    fn run_one_reader_error_emits_run_start_and_run_end_with_scan_error() {
         let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
         let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, false);
@@ -1156,25 +1298,305 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp_config(&tmp);
         let mut sink = VecSink::new();
-        let res = run_one(
+        let outcome = run_one(
             &req,
             &cfg,
             &reader,
             &mut sink,
             Arc::new(AtomicBool::new(false)),
+        )
+        .expect("ok — error path now returns Ok(HadScanErrors), not Err");
+        assert_eq!(outcome, RunOutcome::HadScanErrors);
+
+        let findings = parse_findings(&sink);
+        assert!(
+            findings.len() >= 3,
+            "expected at least RunStart + ScanError + RunEnd; got {} findings",
+            findings.len()
         );
-        // run_one returns Err(MinerError::Scan(_)) per Warning 8 — the error
-        // enum has no `Reader` variant (only Io / Serialize / Config / Scan /
-        // Internal).
-        match res {
-            Err(MinerError::Scan(msg)) => {
-                assert!(
-                    msg.contains("reader") || msg.contains("forced"),
-                    "expected reader-context message; got {msg:?}"
-                );
-            }
-            other => panic!("expected MinerError::Scan; got {other:?}"),
+        // CR-01 pin: RunStart present at the head.
+        assert!(
+            matches!(findings.first(), Some(Finding::RunStart(_))),
+            "first envelope must be RunStart; got {:?}",
+            findings.first()
+        );
+        // CR-01 pin: RunEnd present at the tail — closes the framing pair
+        // that the orphan-RunStart bug used to leave open.
+        assert!(
+            matches!(findings.last(), Some(Finding::RunEnd(_))),
+            "last envelope must be RunEnd; got {:?}",
+            findings.last()
+        );
+        // A ScanError envelope with the reader-context message is emitted.
+        let scan_err = findings
+            .iter()
+            .find_map(|f| match f {
+                Finding::ScanError(se) => Some(se),
+                _ => None,
+            })
+            .expect("ScanError envelope present");
+        assert_eq!(
+            scan_err.error_code, "compute_error",
+            "wrapped reader-error uses ScanErrorCode::ComputeError; got {:?}",
+            scan_err.error_code
+        );
+        assert!(
+            scan_err.message.contains("reader") || scan_err.message.contains("forced"),
+            "ScanError message must surface the reader context; got {:?}",
+            scan_err.message
+        );
+        // RunSummary.scan_errors >= 1.
+        let re = get_run_end(&findings);
+        assert!(
+            re.summary.scan_errors >= 1,
+            "RunEnd.summary.scan_errors must reflect the wrapped error; got {}",
+            re.summary.scan_errors
+        );
+    }
+
+    /// Plan 03-07 CR-01 regression — cache-error arm. Forces
+    /// `BarCache::get_or_build` to fail by pointing `cfg.bar_cache_root` at
+    /// a regular file (not a directory); subsequent `create_dir_all` under
+    /// it fails with "Not a directory" / similar `io::Error`.
+    #[test]
+    fn run_one_cache_error_emits_run_start_and_run_end_with_scan_error() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, false);
+        // Happy-path reader so step 5 (gap detection) succeeds — the test
+        // exercises step 6's cache-load arm.
+        let mut reader = FakeReader::new();
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            build_full_day_1m_bars(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut cfg = tmp_config(&tmp);
+        // Replace `bar_cache_root` with a regular file so `create_dir_all`
+        // under it fails — a portable way to force cache::get_or_build to
+        // return Err(CacheError::Io).
+        let bar_cache_path = tmp.path().join("bar-cache-as-file");
+        std::fs::write(&bar_cache_path, b"not a dir").expect("write file");
+        cfg.bar_cache_root = bar_cache_path;
+
+        let mut sink = VecSink::new();
+        let outcome = run_one(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("ok — cache-error path returns Ok(HadScanErrors)");
+        assert_eq!(outcome, RunOutcome::HadScanErrors);
+
+        let findings = parse_findings(&sink);
+        assert!(
+            matches!(findings.first(), Some(Finding::RunStart(_))),
+            "first envelope must be RunStart"
+        );
+        assert!(
+            matches!(findings.last(), Some(Finding::RunEnd(_))),
+            "last envelope must be RunEnd"
+        );
+        let scan_err = findings
+            .iter()
+            .find_map(|f| match f {
+                Finding::ScanError(se) => Some(se),
+                _ => None,
+            })
+            .expect("ScanError envelope present");
+        assert!(
+            scan_err.message.contains("cache"),
+            "ScanError message must surface the cache context; got {:?}",
+            scan_err.message
+        );
+        let re = get_run_end(&findings);
+        assert!(re.summary.scan_errors >= 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // FailingIoScan / FailingMinerScan fixtures for the two scan-dispatch
+    // error arms. Both fixtures construct `ScanFindingShape` via EXPLICIT
+    // struct literal because the type does not derive `Default` (Warning 2).
+    // The empty `&[]` const-literals are valid `&'static [&'static str]`
+    // empty slices.
+    // -----------------------------------------------------------------------
+    struct FailingIoScan;
+    impl crate::scan::Scan for FailingIoScan {
+        fn id(&self) -> &'static str {
+            "test.failing_io"
         }
+        fn version(&self) -> u32 {
+            1
+        }
+        fn param_schema(&self) -> serde_json::Value {
+            serde_json::json!({"type":"object"})
+        }
+        fn finding_fields(&self) -> crate::scan::ScanFindingShape {
+            crate::scan::ScanFindingShape {
+                effect_extra_keys: &[],
+                raw_series_keys: &[],
+            }
+        }
+        fn run(
+            &self,
+            _ctx: &crate::scan::ScanCtx<'_>,
+            _req: &crate::scan::ScanRequest,
+            _sink: &mut dyn FindingSink,
+        ) -> Result<(), crate::scan::ScanError> {
+            Err(crate::scan::ScanError::Io(std::io::Error::other(
+                "forced scan-IO error",
+            )))
+        }
+    }
+
+    struct FailingMinerScan;
+    impl crate::scan::Scan for FailingMinerScan {
+        fn id(&self) -> &'static str {
+            "test.failing_miner"
+        }
+        fn version(&self) -> u32 {
+            1
+        }
+        fn param_schema(&self) -> serde_json::Value {
+            serde_json::json!({"type":"object"})
+        }
+        fn finding_fields(&self) -> crate::scan::ScanFindingShape {
+            crate::scan::ScanFindingShape {
+                effect_extra_keys: &[],
+                raw_series_keys: &[],
+            }
+        }
+        fn run(
+            &self,
+            _ctx: &crate::scan::ScanCtx<'_>,
+            _req: &crate::scan::ScanRequest,
+            _sink: &mut dyn FindingSink,
+        ) -> Result<(), crate::scan::ScanError> {
+            Err(crate::scan::ScanError::Miner(MinerError::Internal(
+                "forced scan miner-error".to_string(),
+            )))
+        }
+    }
+
+    fn happy_reader_one_day() -> (FakeReader, NaiveDate) {
+        let date = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
+        let mut reader = FakeReader::new();
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            date,
+            build_full_day_1m_bars(date, 1),
+        );
+        (reader, date)
+    }
+
+    fn request_for_scan(scan_id: &str) -> ScanRequest {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let mut req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, false);
+        req.scan_id = scan_id.to_string();
+        req
+    }
+
+    /// Plan 03-07 CR-01 regression — ScanError::Io arm of the dispatch.
+    #[test]
+    fn run_one_scan_io_error_emits_run_start_and_run_end_with_scan_error() {
+        let (reader, _date) = happy_reader_one_day();
+        let req = request_for_scan("test.failing_io");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        let mut registry = crate::scan::Registry::new();
+        registry.register(Box::new(FailingIoScan));
+        let outcome = crate::engine::run_one_with_registry(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+            &registry,
+        )
+        .expect("ok — scan-IO error path returns Ok(HadScanErrors)");
+        assert_eq!(outcome, RunOutcome::HadScanErrors);
+
+        let findings = parse_findings(&sink);
+        assert!(
+            matches!(findings.first(), Some(Finding::RunStart(_))),
+            "first envelope must be RunStart"
+        );
+        assert!(
+            matches!(findings.last(), Some(Finding::RunEnd(_))),
+            "last envelope must be RunEnd"
+        );
+        let scan_err = findings
+            .iter()
+            .find_map(|f| match f {
+                Finding::ScanError(se) => Some(se),
+                _ => None,
+            })
+            .expect("ScanError envelope present");
+        assert!(
+            scan_err.message.contains("scan io"),
+            "ScanError message must surface the 'scan io' context; got {:?}",
+            scan_err.message
+        );
+        assert!(
+            scan_err.message.contains("forced scan-IO error"),
+            "ScanError message must echo the fixture error text; got {:?}",
+            scan_err.message
+        );
+        let re = get_run_end(&findings);
+        assert!(re.summary.scan_errors >= 1);
+    }
+
+    /// Plan 03-07 CR-01 regression — ScanError::Miner arm of the dispatch.
+    #[test]
+    fn run_one_scan_miner_error_emits_run_start_and_run_end_with_scan_error() {
+        let (reader, _date) = happy_reader_one_day();
+        let req = request_for_scan("test.failing_miner");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        let mut registry = crate::scan::Registry::new();
+        registry.register(Box::new(FailingMinerScan));
+        let outcome = crate::engine::run_one_with_registry(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+            &registry,
+        )
+        .expect("ok — scan-miner-error path returns Ok(HadScanErrors)");
+        assert_eq!(outcome, RunOutcome::HadScanErrors);
+
+        let findings = parse_findings(&sink);
+        assert!(
+            matches!(findings.first(), Some(Finding::RunStart(_))),
+            "first envelope must be RunStart"
+        );
+        assert!(
+            matches!(findings.last(), Some(Finding::RunEnd(_))),
+            "last envelope must be RunEnd"
+        );
+        let scan_err = findings
+            .iter()
+            .find_map(|f| match f {
+                Finding::ScanError(se) => Some(se),
+                _ => None,
+            })
+            .expect("ScanError envelope present");
+        assert!(
+            scan_err.message.contains("scan miner-error"),
+            "ScanError message must surface the 'scan miner-error' context; got {:?}",
+            scan_err.message
+        );
+        let re = get_run_end(&findings);
+        assert!(re.summary.scan_errors >= 1);
     }
 }
 
