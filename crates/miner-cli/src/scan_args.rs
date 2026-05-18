@@ -17,14 +17,23 @@
 //! - `--gap-policy`: `continuous_only` (D3-19 — the policy that "does
 //!   something" by default; `strict` is opt-in).
 //!
-//! Wave 0 scaffold: signature only. Plan 03-05 fills `parse_window` + Plan 03-02
-//! fills `to_scan_request`.
-
-#![allow(dead_code, unused_variables)]
+//! ## Cfg-gated test-only hook (Blocker 1 — Pitfall 8)
+//!
+//! Under `#[cfg(any(test, feature = "test-internal"))]` `ScanArgs` gains a
+//! `--sleep-after-first-finding-ms <ms>` flag (`hide = true` on `--help`) that
+//! Plan 03-06's `sigint_preserves_stream` integration test uses to make the
+//! SIGINT race deterministic. The value is forwarded into
+//! `ScanRequest.sleep_after_first_finding_ms` (also cfg-gated) via
+//! `ScanRequest::with_sleep_after_first_finding_ms`. Release builds (default
+//! features, no `test-internal`) do NOT compile the flag in.
 
 use clap::Args;
-use miner_core::error::WireError;
-use miner_core::reader::ClosedRangeUtc;
+use miner_core::aggregator::Timeframe;
+use miner_core::engine::gap_policy::GapPolicyKind;
+use miner_core::engine::preflight;
+use miner_core::error::{PreflightCode, WireError};
+use miner_core::findings::TimeRange;
+use miner_core::reader::{ClosedRangeUtc, Side};
 use miner_core::scan::ScanRequest;
 
 /// `miner scan` subcommand arguments.
@@ -52,9 +61,6 @@ pub struct ScanArgs {
     pub timeframe: String,
 
     /// `START:END` half-open ISO 8601 window, UTC-only (D3-07).
-    ///
-    /// Plan 03-05 wires `parse_window`; Wave 0 ships an `unimplemented!()` body
-    /// so cargo `--help` shows the flag.
     #[arg(long, value_parser = parse_window)]
     pub window: ClosedRangeUtc,
 
@@ -71,18 +77,44 @@ pub struct ScanArgs {
     #[arg(long)]
     pub dry_run: bool,
 
-    /// Repeatable `KEY=VAL` typed scan parameters. Plan 03-02 parses RHS as
-    /// JSON via `parse_params_kv` (so `lags=20` → `{"lags": 20}`).
+    /// Repeatable `KEY=VAL` typed scan parameters. Parsed via
+    /// `engine::preflight::parse_params_kv` with A9 typed-fallback (so
+    /// `lags=20` resolves to `{"lags": 20}` without quoting).
     #[arg(long = "params", action = clap::ArgAction::Append)]
     pub params: Vec<String>,
+
+    /// **Test-only Pitfall 8 hook** (Blocker 1 — Plan 03-06 SIGINT integration
+    /// test ingress). When `Some(ms)`, `LjungBoxScan::run` performs a
+    /// cancel-aware sleep loop after emitting the first `Finding::Result`
+    /// envelope, making the SIGINT race deterministic in
+    /// `sigint_preserves_stream`. Hidden from `--help`; gated to `cfg(test)` or
+    /// `feature = "test-internal"`. NEVER reachable in release production
+    /// builds — confirmed by Plan 03-06's release-binary `--help` inspection
+    /// gate (threat T-03-06-03).
+    ///
+    /// Mirrors the cfg-gated `ScanCtx.sleep_after_first_finding_ms` and
+    /// `ScanRequest.sleep_after_first_finding_ms` fields declared by Plan
+    /// 03-02 in `crates/miner-core/src/scan/mod.rs`.
+    #[cfg(any(test, feature = "test-internal"))]
+    #[arg(long = "sleep-after-first-finding-ms", hide = true)]
+    pub sleep_after_first_finding_ms: Option<u64>,
 }
 
 impl ScanArgs {
+    // Plan 03-05 Task 2 (next commit) consumes `to_scan_request` from
+    // `main.rs::handle_scan_subcommand`; until then the symbol is dead in the
+    // binary's `Command::Scan` arm.
+    #[allow(dead_code, reason = "Task 1 lands the constructor; Task 2 wires the call site in main.rs")]
     /// Convert clap-parsed args into a typed [`ScanRequest`] (the post-preflight
     /// resolved request the facade consumes).
     ///
     /// Pattern: `cli.rs:70-83` (`Cli::overrides` — clap struct → typed-domain
-    /// struct via a `#[must_use]` method).
+    /// struct via a `#[must_use]` method). The cfg-gated
+    /// `sleep_after_first_finding_ms` field is forwarded via the chained
+    /// constructor pattern `ScanRequest::new(...).with_sleep_after_first_finding_ms(...)`
+    /// so the call-site struct literal stays cfg-free (Warning 1 polish) and the
+    /// cfg gate lives on the chained method itself (Plan 03-05 step 4 —
+    /// recommended route, Blocker 1).
     ///
     /// `code_revision` is `miner_core::CODE_REVISION` at the call site (the
     /// CLI's `main()` injects it so tests can substitute a stable string).
@@ -91,17 +123,88 @@ impl ScanArgs {
     /// Returns a [`WireError`] with code
     /// [`miner_core::error::PreflightCode::InvalidParameter`] on any
     /// `--params KEY=VAL` parse failure, unknown `--side`, unknown
-    /// `--timeframe`, or unknown `--gap-policy` value.
-    ///
-    /// Wave 0 scaffold: signature only. Plan 03-02 fills the body.
-    pub fn to_scan_request(&self, code_revision: &str) -> Result<ScanRequest, WireError> {
-        unimplemented!(
-            "Plan 03-02 wires to_scan_request; will: \
-             1) split scan_id_at_version on '@'; 2) parse side via Side::try_from_str; \
-             3) parse gap_policy via GapPolicyKind::try_from_str; \
-             4) call engine::preflight::parse_params_kv(&self.params); \
-             5) return ScanRequest {{ ... }}"
-        )
+    /// `--timeframe`, unknown `--gap-policy` value, or unknown
+    /// `--scan-id@version` form.
+    pub fn to_scan_request(&self, _code_revision: &str) -> Result<ScanRequest, WireError> {
+        // 1. id@version split (engine::preflight is the canonical helper —
+        // mirrors Plan 03-03's symmetric MCP/HTTP usage in Phase 6).
+        let (scan_id, version) =
+            preflight::resolve_scan_id_at_version(&self.scan_id_at_version)?;
+
+        // 2. side / timeframe / gap_policy enum parses.
+        let side = Side::from_str(&self.side).map_err(|bad| {
+            WireError::preflight(
+                PreflightCode::InvalidParameter,
+                format!("side must be one of \"bid\" / \"ask\"; got {bad:?}"),
+            )
+            .with_context("side", serde_json::Value::String(self.side.clone()))
+        })?;
+        let timeframe = Timeframe::from_str(&self.timeframe).map_err(|bad| {
+            WireError::preflight(
+                PreflightCode::InvalidParameter,
+                format!(
+                    "timeframe must be one of \"15m\" / \"1h\" / \"1d\"; got {bad:?}"
+                ),
+            )
+            .with_context(
+                "timeframe",
+                serde_json::Value::String(self.timeframe.clone()),
+            )
+        })?;
+        let gap_policy = GapPolicyKind::from_str(&self.gap_policy).map_err(|bad| {
+            WireError::preflight(
+                PreflightCode::InvalidParameter,
+                format!(
+                    "gap_policy must be one of \"strict\" / \"continuous_only\"; got {bad:?}"
+                ),
+            )
+            .with_context(
+                "gap_policy",
+                serde_json::Value::String(self.gap_policy.clone()),
+            )
+        })?;
+
+        // 3. params KEY=VAL with A9 typed-fallback.
+        let resolved_params = preflight::parse_params_kv(&self.params)?;
+
+        // 4. param_hash over canonical resolved-params blob (D3-13).
+        let param_hash = miner_core::engine::param_hash::param_hash(&resolved_params)
+            .map_err(|e| {
+                WireError::preflight(
+                    PreflightCode::InvalidParameter,
+                    format!("param hash failed: {e}"),
+                )
+            })?;
+
+        // 5. Construct ScanRequest via the chained-constructor pattern (Plan
+        // 03-05 step 4 — recommended route). Single-shot today (D3-18); Phase
+        // 5's sweep manifest fans out at a higher layer.
+        let sub_range = TimeRange {
+            start_utc: self.window.start,
+            end_utc: self.window.end,
+        };
+        let req = ScanRequest::new(
+            scan_id,
+            version,
+            self.instrument.clone(),
+            side,
+            timeframe,
+            self.window,
+            sub_range,
+            gap_policy,
+            self.dry_run,
+            resolved_params,
+            param_hash,
+        );
+
+        // 6. Forward the cfg-gated --sleep-after-first-finding-ms hook into
+        // ScanRequest.sleep_after_first_finding_ms (Blocker 1 — Pitfall 8
+        // ingress wiring). The chained method is cfg-gated to match the field
+        // gate; release builds skip this line entirely.
+        #[cfg(any(test, feature = "test-internal"))]
+        let req = req.with_sleep_after_first_finding_ms(self.sleep_after_first_finding_ms);
+
+        Ok(req)
     }
 }
 
@@ -114,18 +217,233 @@ impl ScanArgs {
 /// - `"2024-01-01T00:00:00Z:2024-12-31T00:00:00Z"` → same as above (explicit
 ///   datetime form).
 ///
+/// Delegates to [`miner_core::engine::preflight::parse_iso_utc_window`] so
+/// MCP / HTTP wrappers in Phase 6 share the same window parser; on failure the
+/// inner `WireError.message` is surfaced as a user-facing `String` (clap's
+/// `value_parser` expects `Result<T, String>` and renders the error to stderr
+/// at parse time).
+///
 /// # Errors
 ///
-/// Returns a user-facing `String` error (clap renders it to stderr at parse
-/// time) when:
+/// Returns a user-facing `String` error when:
 /// - The argument lacks a `:` separator.
 /// - Either side fails ISO 8601 parsing.
+/// - Either side carries a non-`Z` timezone suffix (A3).
 /// - End is not strictly after start.
-///
-/// Wave 0 scaffold: signature only. Plan 03-05 fills the body verbatim per
-/// 03-RESEARCH §Pattern 5 lines 466-489.
-fn parse_window(s: &str) -> Result<ClosedRangeUtc, String> {
-    unimplemented!(
-        "Plan 03-05 wires parse_window per 03-RESEARCH §Pattern 5 lines 466-489"
-    )
+pub fn parse_window(s: &str) -> Result<ClosedRangeUtc, String> {
+    preflight::parse_iso_utc_window(s).map_err(|wire_err| wire_err.message)
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::{Cli, Command};
+    use clap::Parser;
+    use miner_core::aggregator::Timeframe;
+    use miner_core::engine::gap_policy::GapPolicyKind;
+    use miner_core::reader::Side;
+
+    /// Parse a complete `miner scan ...` argv vector for use in tests.
+    fn parse_argv(extra: &[&str]) -> Cli {
+        // Always provide the four required base args; `extra` appends.
+        let mut argv: Vec<&str> = vec![
+            "miner",
+            "scan",
+            "stats.autocorr.ljung_box@1",
+            "--instrument",
+            "EURUSD",
+            "--timeframe",
+            "15m",
+            "--window",
+            "2024-01-01:2024-01-02",
+        ];
+        argv.extend_from_slice(extra);
+        Cli::try_parse_from(argv).expect("parse ok")
+    }
+
+    fn unwrap_scan_args(cli: &Cli) -> &ScanArgs {
+        match &cli.command {
+            Command::Scan(args) => args,
+            other => panic!("expected Command::Scan; got {other:?}"),
+        }
+    }
+
+    // ScanArgs_defaults: --side defaults to bid, --gap-policy defaults to
+    // continuous_only, --dry-run false, --params empty (D3-19).
+    #[test]
+    fn scan_args_defaults_per_d3_19_local() {
+        let cli = parse_argv(&[]);
+        let args = unwrap_scan_args(&cli);
+        assert_eq!(args.side, "bid");
+        assert_eq!(args.gap_policy, "continuous_only");
+        assert!(!args.dry_run);
+        assert!(args.params.is_empty());
+        assert_eq!(args.timeframe, "15m");
+        assert_eq!(args.instrument, "EURUSD");
+        assert_eq!(args.scan_id_at_version, "stats.autocorr.ljung_box@1");
+    }
+
+    #[test]
+    fn scan_args_to_scan_request_happy() {
+        let cli = parse_argv(&[]);
+        let args = unwrap_scan_args(&cli);
+        let req = args
+            .to_scan_request("test-rev")
+            .expect("happy-path conversion ok");
+        assert_eq!(req.scan_id, "stats.autocorr.ljung_box");
+        assert_eq!(req.version, 1);
+        assert_eq!(req.instrument, "EURUSD");
+        assert_eq!(req.side, Side::Bid);
+        assert_eq!(req.timeframe, Timeframe::Tf15m);
+        assert_eq!(req.gap_policy, GapPolicyKind::ContinuousOnly);
+        assert!(!req.dry_run);
+        // Empty params -> resolved_params is an empty Object.
+        assert!(matches!(&req.resolved_params, serde_json::Value::Object(m) if m.is_empty()));
+        // param_hash is the 64-char blake3 of `{}`.
+        assert_eq!(req.param_hash.as_str().len(), 64);
+    }
+
+    #[test]
+    fn scan_args_to_scan_request_with_params() {
+        let cli = parse_argv(&["--params", "lags=20"]);
+        let args = unwrap_scan_args(&cli);
+        let req = args.to_scan_request("rev").expect("conversion ok");
+        // A9 typed-fallback: lags=20 -> {"lags": 20} (i64 inferred).
+        match &req.resolved_params {
+            serde_json::Value::Object(m) => {
+                let v = m.get("lags").expect("lags key present");
+                assert_eq!(v, &serde_json::json!(20));
+            }
+            other => panic!("expected Object; got {other:?}"),
+        }
+        // param_hash matches engine::param_hash::param_hash over the same blob.
+        let expected = miner_core::engine::param_hash::param_hash(&req.resolved_params)
+            .expect("hash ok");
+        assert_eq!(req.param_hash.as_str(), expected.as_str());
+    }
+
+    #[test]
+    fn scan_args_invalid_scan_id() {
+        // scan_id without '@' must reject at to_scan_request.
+        let cli = Cli::try_parse_from([
+            "miner",
+            "scan",
+            "bad-no-at",
+            "--instrument",
+            "EURUSD",
+            "--timeframe",
+            "15m",
+            "--window",
+            "2024-01-01:2024-01-02",
+        ])
+        .expect("clap parse ok");
+        let args = unwrap_scan_args(&cli);
+        let err = args.to_scan_request("rev").expect_err("must reject");
+        assert_eq!(err.code, "invalid_parameter");
+    }
+
+    #[test]
+    fn scan_args_invalid_side() {
+        let cli = parse_argv(&["--side", "middle"]);
+        let args = unwrap_scan_args(&cli);
+        let err = args.to_scan_request("rev").expect_err("must reject");
+        assert_eq!(err.code, "invalid_parameter");
+    }
+
+    #[test]
+    fn scan_args_invalid_timeframe() {
+        let cli = Cli::try_parse_from([
+            "miner",
+            "scan",
+            "stats.autocorr.ljung_box@1",
+            "--instrument",
+            "EURUSD",
+            "--timeframe",
+            "2h",
+            "--window",
+            "2024-01-01:2024-01-02",
+        ])
+        .expect("clap ok");
+        let args = unwrap_scan_args(&cli);
+        let err = args.to_scan_request("rev").expect_err("must reject");
+        assert_eq!(err.code, "invalid_parameter");
+    }
+
+    #[test]
+    fn scan_args_invalid_gap_policy() {
+        let cli = parse_argv(&["--gap-policy", "lax"]);
+        let args = unwrap_scan_args(&cli);
+        let err = args.to_scan_request("rev").expect_err("must reject");
+        assert_eq!(err.code, "invalid_parameter");
+    }
+
+    #[test]
+    fn parse_window_strict_z() {
+        // +02:00 offset rejected (A3 strict-Z enforcement). The
+        // engine::preflight::parse_iso_utc_window splitter recognises the
+        // datetime only via the `Z` terminator, so any non-`Z`-terminated
+        // form is rejected (either by the splitter or by the per-side
+        // strict-Z check). We only assert rejection occurred.
+        assert!(
+            parse_window("2024-01-01T00:00:00+02:00:2024-12-31T00:00:00+02:00").is_err(),
+            "non-Z timezone must reject (A3)"
+        );
+        // Strict-Z UTC accepted.
+        let r = parse_window("2024-01-01T00:00:00Z:2024-12-31T00:00:00Z")
+            .expect("strict-Z accepted");
+        assert!(r.start < r.end);
+    }
+
+    #[test]
+    fn parse_window_date_only() {
+        let r = parse_window("2024-01-01:2024-12-31").expect("date-only accepted");
+        // Date-only forms midnight UTC bounds.
+        assert_eq!(r.start.format("%H:%M:%S").to_string(), "00:00:00");
+        assert_eq!(r.end.format("%H:%M:%S").to_string(), "00:00:00");
+    }
+
+    #[test]
+    fn parse_window_invalid_returns_err() {
+        assert!(parse_window("not-a-window").is_err());
+    }
+
+    /// Blocker 1 — Pitfall 8 ingress: under `cfg(test)` the cfg-gated
+    /// `--sleep-after-first-finding-ms <ms>` flag is parseable by clap and the
+    /// value lands on `ScanArgs.sleep_after_first_finding_ms` as `Some(ms)`.
+    #[test]
+    #[cfg(any(test, feature = "test-internal"))]
+    fn scan_args_sleep_after_first_finding_ms_present_under_test_cfg() {
+        let cli = parse_argv(&["--sleep-after-first-finding-ms", "2000"]);
+        let args = unwrap_scan_args(&cli);
+        assert_eq!(args.sleep_after_first_finding_ms, Some(2000));
+    }
+
+    /// Blocker 1 — to_scan_request forwards the cfg-gated sleep-hook value
+    /// into `ScanRequest.sleep_after_first_finding_ms` via the chained
+    /// constructor pattern, so Plan 03-06's SIGINT integration test does NOT
+    /// need to re-derive the wiring.
+    #[test]
+    #[cfg(any(test, feature = "test-internal"))]
+    fn scan_args_to_scan_request_forwards_sleep_hook() {
+        let cli = parse_argv(&["--sleep-after-first-finding-ms", "2000"]);
+        let args = unwrap_scan_args(&cli);
+        let req = args.to_scan_request("rev").expect("conversion ok");
+        assert_eq!(req.sleep_after_first_finding_ms, Some(2000));
+    }
+
+    /// Sleep-hook value defaults to `None` when the flag is absent (still
+    /// under `cfg(test)` — the field exists but no value was supplied).
+    #[test]
+    #[cfg(any(test, feature = "test-internal"))]
+    fn scan_args_sleep_hook_defaults_to_none() {
+        let cli = parse_argv(&[]);
+        let args = unwrap_scan_args(&cli);
+        assert!(args.sleep_after_first_finding_ms.is_none());
+        let req = args.to_scan_request("rev").expect("conversion ok");
+        assert!(req.sleep_after_first_finding_ms.is_none());
+    }
 }

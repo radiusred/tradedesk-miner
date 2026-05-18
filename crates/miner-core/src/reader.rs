@@ -61,6 +61,31 @@ impl Side {
             Self::Ask => "ask",
         }
     }
+
+    /// Inverse of [`Side::as_str`] — parse the canonical filename / CLI / wire
+    /// form (`"bid"` / `"ask"`) into a [`Side`]. Used by Plan 03-05 to convert
+    /// the clap-parsed `--side` string into the typed enum at the CLI
+    /// preflight boundary.
+    ///
+    /// # Errors
+    /// Returns the input `&str` unchanged when it is not one of the two
+    /// canonical forms; callers convert the error into a typed `WireError`
+    /// with appropriate context.
+    ///
+    /// Named `from_str` (not `from_canonical`) to match the symmetric
+    /// `Timeframe::from_str` / `GapPolicyKind::from_str` pattern; we
+    /// intentionally do NOT implement `std::str::FromStr` because that trait's
+    /// `Err: Display` requirement would force allocation of an owned error
+    /// type and the call site doesn't need it (preflight wraps the `&str`
+    /// directly into a `WireError`).
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Result<Self, &str> {
+        match s {
+            "bid" => Ok(Self::Bid),
+            "ask" => Ok(Self::Ask),
+            _ => Err(s),
+        }
+    }
 }
 
 /// Half-open UTC range `[start, end)`, matching Phase 1 `TimeRange` semantics.
@@ -279,6 +304,20 @@ mod tests {
     fn side_as_str_roundtrip() {
         assert_eq!(Side::Bid.as_str(), "bid");
         assert_eq!(Side::Ask.as_str(), "ask");
+    }
+
+    #[test]
+    fn side_from_str_round_trip() {
+        // Round-trip equivalence: as_str -> from_str -> original variant.
+        for s in [Side::Bid, Side::Ask] {
+            assert_eq!(Side::from_str(s.as_str()).unwrap(), s);
+        }
+    }
+
+    #[test]
+    fn side_from_str_rejects_unknown() {
+        let err = Side::from_str("middle").expect_err("must reject");
+        assert_eq!(err, "middle");
     }
 
     #[test]

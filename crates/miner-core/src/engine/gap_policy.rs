@@ -58,6 +58,28 @@ impl GapPolicyKind {
             GapPolicyKind::ContinuousOnly => "continuous_only",
         }
     }
+
+    /// Inverse of [`GapPolicyKind::as_str`] — parse the canonical CLI / wire
+    /// form (`"strict"` / `"continuous_only"`) into a [`GapPolicyKind`]. Used
+    /// by Plan 03-05 to convert the clap-parsed `--gap-policy` string into
+    /// the typed enum at the CLI preflight boundary.
+    ///
+    /// # Errors
+    /// Returns the input `&str` unchanged when it is not one of the two
+    /// canonical forms; callers convert the error into a typed `WireError`
+    /// with appropriate context.
+    ///
+    /// We do NOT implement `std::str::FromStr` because that trait's
+    /// `Err: Display` requirement would force allocation; the borrowed `&str`
+    /// is exactly what the preflight wrapper site needs.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Result<Self, &str> {
+        match s {
+            "strict" => Ok(Self::Strict),
+            "continuous_only" => Ok(Self::ContinuousOnly),
+            _ => Err(s),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +245,23 @@ mod tests {
 
     fn requested(start: DateTime<Utc>, end: DateTime<Utc>) -> ClosedRangeUtc {
         ClosedRangeUtc { start, end }
+    }
+
+    // -----------------------------------------------------------------------
+    // GapPolicyKind::from_str round-trip (Plan 03-05)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn gap_policy_kind_from_str_round_trip() {
+        for k in [GapPolicyKind::Strict, GapPolicyKind::ContinuousOnly] {
+            assert_eq!(GapPolicyKind::from_str(k.as_str()).unwrap(), k);
+        }
+    }
+
+    #[test]
+    fn gap_policy_kind_from_str_rejects_unknown() {
+        let err = GapPolicyKind::from_str("lax").expect_err("must reject");
+        assert_eq!(err, "lax");
     }
 
     // -----------------------------------------------------------------------

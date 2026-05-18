@@ -73,6 +73,11 @@ fn main() -> anyhow::Result<()> {
 
     match parsed.command {
         Command::EmitFixture => emit_fixture(&mut *sink)?,
+        // Plan 03-05 Task 2 fills the real bodies here; Task 1 lands the
+        // Command enum variants so the parser surface is consistent.
+        Command::Scan(_) | Command::Scans => {
+            anyhow::bail!("scan / scans subcommands are wired in Plan 03-05 Task 2")
+        }
     }
 
     Ok(())
