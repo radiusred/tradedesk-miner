@@ -101,10 +101,6 @@ pub struct ScanArgs {
 }
 
 impl ScanArgs {
-    // Plan 03-05 Task 2 (next commit) consumes `to_scan_request` from
-    // `main.rs::handle_scan_subcommand`; until then the symbol is dead in the
-    // binary's `Command::Scan` arm.
-    #[allow(dead_code, reason = "Task 1 lands the constructor; Task 2 wires the call site in main.rs")]
     /// Convert clap-parsed args into a typed [`ScanRequest`] (the post-preflight
     /// resolved request the facade consumes).
     ///
@@ -422,7 +418,7 @@ mod tests {
         assert_eq!(args.sleep_after_first_finding_ms, Some(2000));
     }
 
-    /// Blocker 1 — to_scan_request forwards the cfg-gated sleep-hook value
+    /// Blocker 1 — `to_scan_request` forwards the cfg-gated sleep-hook value
     /// into `ScanRequest.sleep_after_first_finding_ms` via the chained
     /// constructor pattern, so Plan 03-06's SIGINT integration test does NOT
     /// need to re-derive the wiring.
