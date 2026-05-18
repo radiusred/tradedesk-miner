@@ -3441,6 +3441,7 @@ dependencies = [
  "clap",
  "miner-core",
  "schemars",
+ "serde",
  "serde_json",
 ]
 

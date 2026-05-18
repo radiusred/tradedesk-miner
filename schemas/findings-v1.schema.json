@@ -7,8 +7,20 @@
       "type": "string"
     },
     "DataSlice": {
-      "description": "The input range a scan actually consumed (post gap-partitioning).\n\n`gap_manifest_ref` is `None` in v1; Phase 3 populates it under the\n`continuous_only` gap policy (D-08).",
+      "description": "The input range a scan actually consumed (post gap-partitioning).\n\n`gap_manifest_ref` is reserved for the Phase-7 content-addressed\ndeduplication path. `gap_manifest` is populated by Phase 3's\n`continuous_only` gap policy (D3-10 / D3-12) — the full Phase-2\n`GapManifest` is inlined into every `Result` finding's `data_slice` so the\nfinding is self-describing without cross-referencing.\n\nBoth optional fields MUST serialise as JSON `null` when absent (NOT\nomitted) — the same convention used by `dsr` / `fdr_q` on `ResultFinding`.\nDO NOT add `#[serde(skip_serializing_if = \"Option::is_none\")]` to either\nfield (03-PATTERNS line 572).",
       "properties": {
+        "gap_manifest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GapManifest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Inlined Phase-2 gap manifest under `--gap-policy=continuous_only` (D3-10\n/ D3-12). `None` under `strict` success-path and in v1's pre-Phase-3\ncallers. Serialises as JSON `null` when absent (NOT omitted) — bare\n`#[serde(default)]`, no `skip_serializing_if`."
+        },
         "gap_manifest_ref": {
           "type": [
             "string",
@@ -21,6 +33,43 @@
       },
       "required": [
         "range"
+      ],
+      "type": "object"
+    },
+    "DryRunFinding": {
+      "description": "Payload for the `dry_run` framing-like envelope (D3-21).\n\nCarries the run-level provenance (`run_id`, `produced_at_utc`, `request`,\n`resolved_params`) plus the planning shape (`planned_data_slice`,\n`estimated_findings_count`). FRAMING-like — does NOT carry the seven locked\nenvelope fields (`schema_version`, `scan_id_at_version`, `param_hash`,\n`code_revision`, `data_slice`, `dsr`, `fdr_q`); those belong to the\n`Result` family.\n\nPitfall 3 invariant (pinned by `dry_run_does_not_increment_results_emitted`):\nemitting `Finding::DryRun(_)` MUST NOT increment `RunSummary.results_emitted`\n— dry-run runs leave all three summary counters at zero. The dry-run signal\nis carried in `ScanRequest.dry_run` (echoed into `RunStart.request`) and in\nthe `Finding::DryRun` variant; there is NO `dry_run_emitted` counter (Warning\n9 — pinned by `run_summary_has_no_dry_run_emitted_field`).",
+      "properties": {
+        "estimated_findings_count": {
+          "description": "Best-effort planning estimate of how many `Finding::Result` envelopes\nthe actual run would emit. `0` is a valid value (the scan computes none\non the provided slice).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "planned_data_slice": {
+          "$ref": "#/$defs/DataSlice",
+          "description": "The `data_slice` the scan WOULD have consumed had the run executed\n(post-window-parse, pre-gap-partition)."
+        },
+        "produced_at_utc": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "request": {
+          "description": "The same `request` blob `RunStart` echoes (canonical run-level metadata\n— `scan_id@version`, instrument, side, timeframe, window, `gap_policy`,\n`dry_run = true`)."
+        },
+        "resolved_params": {
+          "description": "Post-defaults parameter object — same input the `param_hash` would be\ncomputed over for a non-dry-run invocation (D3-13)."
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        }
+      },
+      "required": [
+        "run_id",
+        "produced_at_utc",
+        "request",
+        "resolved_params",
+        "planned_data_slice",
+        "estimated_findings_count"
       ],
       "type": "object"
     },
@@ -142,6 +191,128 @@
         "produced_at_utc",
         "source",
         "gap_manifest"
+      ],
+      "type": "object"
+    },
+    "GapManifest": {
+      "description": "Pre-scan gap report keyed by `(source_id, symbol, side, queried_range)`.\n\nPhase 3's gap-policy enforcer wraps this into a `GapAbortedFinding` under\nthe `strict` policy. Phase 2 ships the data; Phase 3 ships the emission.\n\n`queried_range` reuses Phase 1's [`TimeRange`] (which already derives\n`JsonSchema` + `Serialize`); the detector translates the input\n[`ClosedRangeUtc`] at the boundary.\n\n`gaps` is sorted by `start_utc` ascending, ties broken by `end_utc`, then\nby [`GapReason::discriminant_ord`] — the `gaps_sorted_proptest` proves the\ninvariant on random input. Empty when no gaps are detected.",
+      "properties": {
+        "gaps": {
+          "description": "Sorted by `start_utc` ascending, ties broken by `end_utc`, then by\n[`GapReason::discriminant_ord`]. Empty when no gaps are detected.",
+          "items": {
+            "$ref": "#/$defs/GapSpan"
+          },
+          "type": "array"
+        },
+        "queried_range": {
+          "$ref": "#/$defs/TimeRange",
+          "description": "The half-open UTC range the detector was queried with."
+        },
+        "side": {
+          "$ref": "#/$defs/Side",
+          "description": "Bid/ask side the manifest pertains to."
+        },
+        "source_id": {
+          "description": "Stable identifier of the data source (e.g. `\"dukascopy\"`).",
+          "type": "string"
+        },
+        "symbol": {
+          "description": "Symbol the manifest pertains to (e.g. `\"EURUSD\"`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "symbol",
+        "side",
+        "queried_range",
+        "gaps"
+      ],
+      "type": "object"
+    },
+    "GapReason": {
+      "description": "Why a gap exists. Tagged-enum JSON shape per Phase 1 idiom\n(`#[serde(tag = \"kind\", rename_all = \"snake_case\")]`):\n\n- `{ \"kind\": \"missing_source_file\", \"date\": \"2024-06-15\" }`\n- `{ \"kind\": \"corrupt_source_file\", \"date\": \"2024-06-15\", \"detail\": \"...\" }`\n- `{ \"kind\": \"intra_day_gap\", \"affected_minutes\": 1 }`\n\n`Eq` is safe because no variant payload contains `f64` (NaN-unequal).",
+      "oneOf": [
+        {
+          "description": "The daily source file is absent for an open-hours day. Range covers the\nwhole day `[day 00:00 UTC, day+1 00:00 UTC)`.",
+          "properties": {
+            "date": {
+              "format": "date",
+              "type": "string"
+            },
+            "kind": {
+              "const": "missing_source_file",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "date"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The daily source file is present but unreadable. `detail` is the\nreader's `Error::to_string()` — vetted to be path + message only\n(T-02-11). Range covers the whole day.",
+          "properties": {
+            "date": {
+              "format": "date",
+              "type": "string"
+            },
+            "detail": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "corrupt_source_file",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "date",
+            "detail"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Sub-minute hole during open hours. v1 emits one entry per missing\nminute (no coalescing); `affected_minutes` is always `1` in v1.",
+          "properties": {
+            "affected_minutes": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "intra_day_gap",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "affected_minutes"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "GapSpan": {
+      "description": "A single contiguous gap span — `[start_utc, end_utc)` plus its\nclassification.\n\nHalf-open per Phase 1's [`TimeRange`] convention (`start_utc` inclusive,\n`end_utc` exclusive).",
+      "properties": {
+        "end_utc": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/GapReason"
+        },
+        "start_utc": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_utc",
+        "end_utc",
+        "reason"
       ],
       "type": "object"
     },
@@ -448,6 +619,14 @@
       ],
       "type": "object"
     },
+    "Side": {
+      "description": "Bid or ask side. `#[serde(rename_all = \"lowercase\")]` so wire form matches the\nDukascopy filename suffix (`<DD>_bid.csv.zst` / `<DD>_ask.csv.zst`).",
+      "enum": [
+        "bid",
+        "ask"
+      ],
+      "type": "string"
+    },
     "Source": {
       "description": "The instrument / side / timeframe a finding pertains to.\n\nString-typed in Phase 1. Phase 2 introduces typed `Side` / `Symbol` / `Timeframe`\nenums and these field types will be tightened.",
       "properties": {
@@ -492,7 +671,7 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The five-variant Finding envelope discriminated by the JSON `kind` field.\n\nPer RESEARCH §Anti-Patterns: do NOT use `#[serde(flatten)]` on a \"common-fields\"\nstruct. The seven locked envelope fields are inlined directly into each variant\npayload struct that carries them (Result, `ScanError`, `GapAborted`).",
+  "description": "The six-variant Finding envelope discriminated by the JSON `kind` field.\n\nPer RESEARCH §Anti-Patterns: do NOT use `#[serde(flatten)]` on a \"common-fields\"\nstruct. The seven locked envelope fields are inlined directly into each variant\npayload struct that carries them (Result, `ScanError`, `GapAborted`).\n\nPhase 3 added the `DryRun` variant additively (D3-21) — the existing\n`#[serde(tag = \"kind\", rename_all = \"snake_case\")]` attribute automatically\nproduces the `\"dry_run\"` discriminator without per-variant serde\nannotations.",
   "oneOf": [
     {
       "$ref": "#/$defs/RunStart",
@@ -551,6 +730,19 @@
       "properties": {
         "kind": {
           "const": "run_end",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "$ref": "#/$defs/DryRunFinding",
+      "properties": {
+        "kind": {
+          "const": "dry_run",
           "type": "string"
         }
       },
