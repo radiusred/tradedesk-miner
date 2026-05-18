@@ -117,7 +117,10 @@ fn bars_evenly_spaced_across_spring_forward() {
         .iter()
         .position(|t| *t == transition)
         .expect("bar at 2024-03-31T01:00:00Z must be present");
-    assert!(idx + 1 < frame.len(), "transition bar must not be the last bar");
+    assert!(
+        idx + 1 < frame.len(),
+        "transition bar must not be the last bar"
+    );
     assert_eq!(
         frame.ts_open_utc[idx + 1],
         transition + Duration::minutes(15),
@@ -164,7 +167,10 @@ fn bars_evenly_spaced_across_spring_forward_1h() {
         .iter()
         .position(|t| *t == transition)
         .expect("1h bar at 2024-03-31T01:00:00Z must be present");
-    assert!(idx + 1 < frame.len(), "transition bar must not be the last 1h bar");
+    assert!(
+        idx + 1 < frame.len(),
+        "transition bar must not be the last 1h bar"
+    );
     assert_eq!(
         frame.ts_open_utc[idx + 1],
         transition + Duration::hours(1),

@@ -63,6 +63,15 @@ serial_test          = "3"
 proptest             = "1.11"
 # `json` feature exposes `insta::assert_json_snapshot!` (Plan 02-04 Task 3 gate).
 insta                = { version = "1.47", features = ["json"] }
+# Plan 02-06 Task 1: `full_determinism.rs` integration test drives the REAL
+# `DukascopyReader` (not a `MockReader`) against a `SyntheticCache` to prove
+# the end-to-end pipeline (zstd-CSV parse -> aggregate -> Arrow IPC write -> sidecar JSON)
+# is byte-identical across two runs. This introduces a dev-only dependency cycle
+# (`miner-core` dev-depends on `miner-reader-dukascopy` which depends on `miner-core`);
+# cargo permits dev-dep cycles because dev-deps are not part of the published API graph
+# (see Plan 02-06 threat model T-02-21 — accepted).
+miner-reader-dukascopy = { path = "../miner-reader-dukascopy" }
+zstd.workspace       = true
 
 [lints]
 workspace = true

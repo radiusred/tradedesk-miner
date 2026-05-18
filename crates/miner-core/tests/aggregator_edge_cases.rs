@@ -102,7 +102,10 @@ fn weekend_gap_emits_no_bars() {
 
     // NO bar exists with `ts_open_utc` inside the closed-hours window
     // `[Fri 22:00 UTC, Sun 22:00 UTC)`.
-    let friday_22 = Utc.with_ymd_and_hms(2024, 6, 14, 22, 0, 0).single().expect("valid");
+    let friday_22 = Utc
+        .with_ymd_and_hms(2024, 6, 14, 22, 0, 0)
+        .single()
+        .expect("valid");
     let sunday_22 = sunday_2200_utc;
     let closed_hits: Vec<_> = frame
         .ts_open_utc
@@ -117,7 +120,10 @@ fn weekend_gap_emits_no_bars() {
     );
 
     // Sanity: the last Friday bar (21:00 UTC) and the first Sunday bar (22:00 UTC) are present.
-    let fri_2100 = Utc.with_ymd_and_hms(2024, 6, 14, 21, 0, 0).single().expect("valid");
+    let fri_2100 = Utc
+        .with_ymd_and_hms(2024, 6, 14, 21, 0, 0)
+        .single()
+        .expect("valid");
     assert!(
         frame.ts_open_utc.contains(&fri_2100),
         "weekend gap: Friday 21:00 UTC bar must be present (last pre-close bar)"
@@ -277,8 +283,7 @@ fn instrument_last_cache_day() {
 
     // No bars for Jun 17..Jun 20 — post-history days are silently omitted.
     for d in 17..=20_u32 {
-        let day_open =
-            day_start_utc(NaiveDate::from_ymd_opt(2024, 6, d).expect("valid June date"));
+        let day_open = day_start_utc(NaiveDate::from_ymd_opt(2024, 6, d).expect("valid June date"));
         assert!(
             !frame.ts_open_utc.contains(&day_open),
             "last-cache-day: Jun {d} must NOT have a bar (post-history)"
@@ -314,7 +319,11 @@ fn partial_bar_session_open() {
         .single()
         .expect("valid");
     let partial_bars: Vec<RawBar> = build_partial_day_1m_bars(start_2208, 7, 1.0);
-    assert_eq!(partial_bars.len(), 7, "fixture sanity: 7 1m bars at 22:08..22:14");
+    assert_eq!(
+        partial_bars.len(),
+        7,
+        "fixture sanity: 7 1m bars at 22:08..22:14"
+    );
 
     let mut mock = MockReader::new();
     mock.insert_day("EURUSD", Side::Bid, sunday, partial_bars.clone());
@@ -362,8 +371,7 @@ fn partial_bar_session_open() {
     // open = first present bar's open (the 22:08 bar) per the OHLC reduction.
     // `build_partial_day_1m_bars` sets `bar[0].open = open + 0 * 0.0001 = 1.0`.
     assert_eq!(
-        frame.open[0],
-        partial_bars[0].open,
+        frame.open[0], partial_bars[0].open,
         "partial-bar: open must equal the first present 1m bar's open"
     );
 
@@ -389,5 +397,8 @@ fn partial_bar_session_open() {
         .fold(f64::INFINITY, f64::min);
     assert_eq!(frame.high[0], src_high);
     assert_eq!(frame.low[0], src_low);
-    assert_eq!(frame.close[0], partial_bars.last().expect("non-empty").close);
+    assert_eq!(
+        frame.close[0],
+        partial_bars.last().expect("non-empty").close
+    );
 }

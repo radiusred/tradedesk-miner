@@ -125,7 +125,10 @@ fn bars_evenly_spaced_across_fall_back() {
         .iter()
         .position(|t| *t == transition)
         .expect("bar at 2024-10-27T01:00:00Z must be present");
-    assert!(idx + 1 < frame.len(), "transition bar must not be the last bar");
+    assert!(
+        idx + 1 < frame.len(),
+        "transition bar must not be the last bar"
+    );
     assert_eq!(
         frame.ts_open_utc[idx + 1],
         transition + Duration::minutes(15),
@@ -181,7 +184,10 @@ fn bars_evenly_spaced_across_fall_back_1h() {
         .iter()
         .position(|t| *t == transition)
         .expect("1h bar at 2024-10-27T01:00:00Z must be present");
-    assert!(idx + 1 < frame.len(), "transition 1h bar must not be the last bar");
+    assert!(
+        idx + 1 < frame.len(),
+        "transition 1h bar must not be the last bar"
+    );
     assert_eq!(
         frame.ts_open_utc[idx + 1],
         transition + Duration::hours(1),
@@ -203,7 +209,11 @@ fn bars_evenly_spaced_across_fall_back_1d() {
     )
     .expect("aggregate ok");
 
-    assert_eq!(frame.len(), 3, "3-day fall-back range at Tf1d must emit 3 bars");
+    assert_eq!(
+        frame.len(),
+        3,
+        "3-day fall-back range at Tf1d must emit 3 bars"
+    );
 
     let day0_open = day_start_utc(NaiveDate::from_ymd_opt(2024, 10, 26).expect("valid"));
     let day1_open = day_start_utc(NaiveDate::from_ymd_opt(2024, 10, 27).expect("valid"));

@@ -1534,6 +1534,7 @@ dependencies = [
  "figment",
  "insta",
  "jsonschema",
+ "miner-reader-dukascopy",
  "proptest",
  "schemars",
  "serde",
@@ -1543,6 +1544,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tracing",
  "ulid",
+ "zstd",
 ]
 
 [[package]]
