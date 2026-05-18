@@ -58,6 +58,7 @@ fn sample_data_slice() -> DataSlice {
             end_utc: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
         },
         gap_manifest_ref: None,
+        gap_manifest: None,
     }
 }
 
