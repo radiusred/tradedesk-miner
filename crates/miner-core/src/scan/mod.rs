@@ -174,8 +174,6 @@ pub enum ScanError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     /// Compile-time regression gate (mirrors `reader.rs:272-274`
     /// `reader_trait_object_safe`). If `Scan` becomes non-dyn-compatible the
     /// workspace stops building — that's the test.

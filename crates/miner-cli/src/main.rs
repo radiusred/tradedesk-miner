@@ -28,6 +28,11 @@ use miner_core::findings::{Finding, FindingSink, RunEnd, RunId, RunStart, RunSum
 use tracing_subscriber::EnvFilter;
 
 mod cli;
+// Phase 3 (Plan 03-01): `scan_args` ships ScanArgs + window parser as a
+// signature-only scaffold so subsequent plans (03-02 conversion, 03-05 window
+// parser) fill the bodies without adding files. Unused for now (Wave 0); the
+// `#[allow(dead_code)]` at the module top keeps cargo check warning-free.
+mod scan_args;
 
 use cli::{Cli, Command, resolve_toml_path};
 
