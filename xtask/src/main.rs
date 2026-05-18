@@ -118,14 +118,12 @@ fn gen_schema(out_dir: &Path) -> anyhow::Result<()> {
     }
 
     write_schema::<Finding>(out_dir.join("findings-v1.schema.json").as_path())?;
-    write_schema::<ScansCatalogueEntry>(
-        out_dir.join("scans-catalogue-v1.schema.json").as_path(),
-    )?;
+    write_schema::<ScansCatalogueEntry>(out_dir.join("scans-catalogue-v1.schema.json").as_path())?;
     Ok(())
 }
 
 /// Emit `schemars::schema_for!(T)` to `path`, pretty-printed with stable key
-/// ordering (BTreeMap-backed serde_json::Map per workspace Cargo.toml).
+/// ordering (`BTreeMap`-backed `serde_json::Map` per workspace `Cargo.toml`).
 fn write_schema<T: JsonSchema>(path: &Path) -> anyhow::Result<()> {
     let schema = schemars::schema_for!(T);
     let as_value: serde_json::Value = serde_json::to_value(&schema)?;

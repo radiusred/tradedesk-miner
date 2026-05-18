@@ -7,7 +7,7 @@
 //!
 //! - `strict_with_gaps_emits_single_gap_aborted` — D3-11 (Aborted carries manifest).
 //! - `continuous_only_partitions_and_inlines_manifest` — D3-10 happy path
-//!   (SubRanges union equals (requested - gaps)).
+//!   (`SubRanges` union equals (requested - gaps)).
 //! - `strict_zero_gaps_emits_result_with_none_manifest` — D3-12 strict fast path.
 //! - `continuous_only_zero_gaps_emits_empty_manifest` — D3-12 continuous fast path.
 //! - `never_silently_emits_on_hole_proptest` — proptest invariant (SC-3e).
@@ -53,7 +53,9 @@ fn intra_day_gap(start: DateTime<Utc>, end: DateTime<Utc>) -> GapSpan {
     GapSpan {
         start_utc: start,
         end_utc: end,
-        reason: GapReason::IntraDayGap { affected_minutes: 1 },
+        reason: GapReason::IntraDayGap {
+            affected_minutes: 1,
+        },
     }
 }
 
@@ -90,10 +92,7 @@ fn strict_with_gaps_emits_single_gap_aborted() {
 fn continuous_only_partitions_and_inlines_manifest() {
     // Two gaps -> three sub-ranges; the union of (requested - gaps) is
     // covered exactly.
-    let gaps = vec![
-        intra_day_gap(t(1), t(2)),
-        intra_day_gap(t(3), t(4)),
-    ];
+    let gaps = vec![intra_day_gap(t(1), t(2)), intra_day_gap(t(3), t(4))];
     let m = manifest_with_gaps(gaps);
     let r = requested(0, 6);
     let out = dispatch(&m, r, GapPolicyKind::ContinuousOnly);
@@ -107,9 +106,18 @@ fn continuous_only_partitions_and_inlines_manifest() {
             assert_eq!(
                 subs,
                 vec![
-                    TimeRange { start_utc: t(0), end_utc: t(1) },
-                    TimeRange { start_utc: t(2), end_utc: t(3) },
-                    TimeRange { start_utc: t(4), end_utc: t(6) },
+                    TimeRange {
+                        start_utc: t(0),
+                        end_utc: t(1)
+                    },
+                    TimeRange {
+                        start_utc: t(2),
+                        end_utc: t(3)
+                    },
+                    TimeRange {
+                        start_utc: t(4),
+                        end_utc: t(6)
+                    },
                 ],
                 "sub-ranges must equal (requested - gaps) in order",
             );
@@ -132,7 +140,10 @@ fn strict_zero_gaps_emits_result_with_none_manifest() {
         GapDispatch::SubRanges(subs) => {
             assert_eq!(
                 subs,
-                vec![TimeRange { start_utc: t(0), end_utc: t(6) }],
+                vec![TimeRange {
+                    start_utc: t(0),
+                    end_utc: t(6)
+                }],
                 "Strict + zero gaps fast path: SubRanges([requested])",
             );
         }
@@ -154,7 +165,10 @@ fn continuous_only_zero_gaps_emits_empty_manifest() {
         GapDispatch::SubRanges(subs) => {
             assert_eq!(
                 subs,
-                vec![TimeRange { start_utc: t(0), end_utc: t(6) }],
+                vec![TimeRange {
+                    start_utc: t(0),
+                    end_utc: t(6)
+                }],
                 "ContinuousOnly + zero gaps fast path: SubRanges([requested])",
             );
         }

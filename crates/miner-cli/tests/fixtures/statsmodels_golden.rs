@@ -21,17 +21,15 @@ pub const STATSMODELS_REQUIRED: &str = "0.14.6";
 /// The committed golden fixture, loaded via `include_str!` so the path
 /// resolution is compile-time and the integration tests don't depend on
 /// process cwd.
-pub const GOLDEN_JSON: &str = include_str!(
-    "../../../miner-core/tests/fixtures/ljung_box_golden.json"
-);
+pub const GOLDEN_JSON: &str =
+    include_str!("../../../miner-core/tests/fixtures/ljung_box_golden.json");
 
 /// Parse the golden fixture as a `serde_json::Value`, asserting the
 /// `provenance.statsmodels_version` field matches [`STATSMODELS_REQUIRED`].
 /// Panics with a clear regeneration message on mismatch.
 #[must_use]
 pub fn load_statsmodels_golden() -> serde_json::Value {
-    let v: serde_json::Value =
-        serde_json::from_str(GOLDEN_JSON).expect("golden JSON must parse");
+    let v: serde_json::Value = serde_json::from_str(GOLDEN_JSON).expect("golden JSON must parse");
     let prov_version = v["provenance"]["statsmodels_version"].as_str();
     assert_eq!(
         prov_version,

@@ -31,10 +31,7 @@ fn schema_path() -> std::path::PathBuf {
 
 /// Spawn `miner scan ...` with the four required env vars + the supplied
 /// additional CLI args. Returns (stdout, stderr, status).
-fn run_miner(
-    cache: &SyntheticCache,
-    extra_args: &[&str],
-) -> (String, String, ExitStatus) {
+fn run_miner(cache: &SyntheticCache, extra_args: &[&str]) -> (String, String, ExitStatus) {
     let mut cmd = assert_cmd::Command::cargo_bin("miner").expect("cargo_bin miner");
     cmd.env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
@@ -57,15 +54,16 @@ fn parse_stdout_lines(stdout: &str) -> Vec<serde_json::Value> {
     stdout
         .lines()
         .filter(|l| !l.is_empty())
-        .map(|line| serde_json::from_str(line).unwrap_or_else(|e| {
-            panic!("stdout line not JSON: {e}; line: {line}")
-        }))
+        .map(|line| {
+            serde_json::from_str(line)
+                .unwrap_or_else(|e| panic!("stdout line not JSON: {e}; line: {line}"))
+        })
         .collect()
 }
 
 fn happy_path_cache() -> SyntheticCache {
     let day = NaiveDate::from_ymd_opt(2024, 6, 12).unwrap();
-    SyntheticCache::new().with_deterministic_day("EURUSD", Side::Bid, day, 0xDEADBEEF)
+    SyntheticCache::new().with_deterministic_day("EURUSD", Side::Bid, day, 0xDEAD_BEEF)
 }
 
 // ---------------------------------------------------------------------------
@@ -150,8 +148,7 @@ fn unknown_scan_emits_wireerror_exit_1() {
         .lines()
         .find(|l| l.starts_with('{'))
         .unwrap_or_else(|| panic!("stderr WireError line missing; got: {stderr}"));
-    let wire: serde_json::Value =
-        serde_json::from_str(wire_line).expect("WireError parses");
+    let wire: serde_json::Value = serde_json::from_str(wire_line).expect("WireError parses");
     assert_eq!(
         wire["code"], "unknown_scan",
         "unknown scan must classify as unknown_scan; got: {wire}",
@@ -197,8 +194,7 @@ fn invalid_params_emits_wireerror_exit_1() {
         .lines()
         .find(|l| l.starts_with('{'))
         .unwrap_or_else(|| panic!("stderr WireError line missing; got: {stderr}"));
-    let wire: serde_json::Value =
-        serde_json::from_str(wire_line).expect("WireError parses");
+    let wire: serde_json::Value = serde_json::from_str(wire_line).expect("WireError parses");
     assert_eq!(
         wire["code"], "invalid_parameter",
         "invalid --side must classify as invalid_parameter; got: {wire}",
@@ -226,11 +222,7 @@ fn dry_run_emits_dry_run_finding_only() {
             "--dry-run",
         ],
     );
-    assert_eq!(
-        status.code(),
-        Some(0),
-        "dry-run exit 0; stderr: {stderr}",
-    );
+    assert_eq!(status.code(), Some(0), "dry-run exit 0; stderr: {stderr}",);
     let lines = parse_stdout_lines(&stdout);
     assert_eq!(
         lines.len(),
@@ -276,7 +268,11 @@ fn exit_code_routing_zero_one_two() {
             "2024-06-12:2024-06-13",
         ],
     );
-    assert_eq!(status_a.code(), Some(0), "happy path exit 0: stdout: {stdout_a}");
+    assert_eq!(
+        status_a.code(),
+        Some(0),
+        "happy path exit 0: stdout: {stdout_a}"
+    );
 
     // (b) Unknown scan → exit 1.
     let (_, _, status_b) = run_miner(
@@ -320,7 +316,10 @@ fn exit_code_routing_zero_one_two() {
     assert!(
         lines_c.iter().any(|l| l["kind"] == "scan_error"),
         "exit 2 path must emit at least one Finding::ScanError; got: {:?}",
-        lines_c.iter().map(|l| l["kind"].clone()).collect::<Vec<_>>(),
+        lines_c
+            .iter()
+            .map(|l| l["kind"].clone())
+            .collect::<Vec<_>>(),
     );
 }
 

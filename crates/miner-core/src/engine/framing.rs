@@ -99,18 +99,12 @@ pub fn build_run_start(
         "gap_policy".to_string(),
         serde_json::Value::String(req.gap_policy.as_str().to_string()),
     );
-    request.insert(
-        "resolved_params".to_string(),
-        req.resolved_params.clone(),
-    );
+    request.insert("resolved_params".to_string(), req.resolved_params.clone());
     // Blocker 2 / D3-21: `dry_run` is ALWAYS present — never omitted. This is
     // the audit-trail signal Plan 04's run_one + Plan 06's integration tests
     // rely on. Do NOT add `skip_serializing_if`; the field appears even when
     // `false`.
-    request.insert(
-        "dry_run".to_string(),
-        serde_json::Value::Bool(req.dry_run),
-    );
+    request.insert("dry_run".to_string(), serde_json::Value::Bool(req.dry_run));
 
     Finding::RunStart(RunStart {
         run_id,

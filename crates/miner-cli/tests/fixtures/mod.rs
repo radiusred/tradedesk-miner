@@ -8,7 +8,7 @@
 //! Pattern analog: `miner-core/tests/full_determinism.rs::write_synthetic_day`
 //! — uses the sibling crate's PUBLIC `day_csv_zst` API; no internal poking.
 
-#![allow(dead_code, unused_imports)]
+#![allow(dead_code, unused_imports, clippy::cast_precision_loss)]
 
 pub mod ar1_seed;
 pub mod statsmodels_golden;
@@ -66,9 +66,14 @@ impl SyntheticCache {
     /// Write a full UTC day of 1-minute synthetic bars (1440 bars) at the
     /// canonical Dukascopy path layout. Deterministic LCG-seeded prices so
     /// the aggregator's monotonicity invariants hold trivially.
-    pub fn with_deterministic_day(self, symbol: &str, side: Side, date: NaiveDate, seed: u32) -> Self {
-        let day_start: DateTime<Utc> =
-            date.and_hms_opt(0, 0, 0).expect("00:00:00 valid").and_utc();
+    pub fn with_deterministic_day(
+        self,
+        symbol: &str,
+        side: Side,
+        date: NaiveDate,
+        seed: u32,
+    ) -> Self {
+        let day_start: DateTime<Utc> = date.and_hms_opt(0, 0, 0).expect("00:00:00 valid").and_utc();
         let mut s = seed;
         let mut csv = String::with_capacity(1440 * 64 + 32);
         csv.push_str("timestamp,open,high,low,close,volume\n");

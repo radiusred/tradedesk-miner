@@ -39,8 +39,7 @@ fn dry_run_emits_dry_run_finding_only() {
     // reader reference (and we want to prove the short-circuit happens BEFORE
     // gap detection).
     let day = NaiveDate::from_ymd_opt(2024, 6, 12).unwrap();
-    let cache = SyntheticCache::new()
-        .with_deterministic_day("EURUSD", Side::Bid, day, 42);
+    let cache = SyntheticCache::new().with_deterministic_day("EURUSD", Side::Bid, day, 42);
 
     let cfg = MinerConfig {
         cache_root: cache.cache_root().to_path_buf(),
@@ -107,7 +106,10 @@ fn dry_run_emits_dry_run_finding_only() {
     }
 
     // resolved_params echoed verbatim into the DryRunFinding.
-    assert_eq!(dr.resolved_params, resolved, "DryRunFinding.resolved_params must echo the request");
+    assert_eq!(
+        dr.resolved_params, resolved,
+        "DryRunFinding.resolved_params must echo the request"
+    );
 
     // RunEnd.summary.results_emitted == 0 (Pitfall 3 type-level pin).
     let Finding::RunEnd(ref re) = findings[2] else {

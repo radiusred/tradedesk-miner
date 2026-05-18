@@ -19,8 +19,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use miner_core::aggregator::{BarFrame, Timeframe};
-use miner_core::engine::param_hash;
 use miner_core::engine::gap_policy::GapPolicyKind;
+use miner_core::engine::param_hash;
 use miner_core::findings::{Finding, RunId, TimeRange};
 use miner_core::reader::{ClosedRangeUtc, Side};
 use miner_core::scan::ljung_box::LjungBoxScan;
@@ -58,7 +58,7 @@ fn shuffle_in_place(slice: &mut [f64], seed: u32) {
     }
 }
 
-/// Build a BarFrame from a pre-computed close array; OHLC derived trivially.
+/// Build a `BarFrame` from a pre-computed close array; OHLC derived trivially.
 fn bar_frame_from_closes(closes: &[f64]) -> BarFrame {
     let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
     let n = closes.len();
@@ -120,18 +120,12 @@ fn run_and_extract_q_stats(closes_slice: &[f64]) -> Vec<f64> {
         sleep_after_first_finding_ms: None,
     };
     let mut sink = BufferSink::new();
-    LjungBoxScan
-        .run(&ctx, &req, &mut sink)
-        .expect("scan ok");
+    LjungBoxScan.run(&ctx, &req, &mut sink).expect("scan ok");
     let findings = common::parse_findings(&sink.0);
     let Finding::Result(ref r) = findings[0] else {
         panic!("expected Finding::Result");
     };
-    let arr = r
-        .effect
-        .extra
-        .get("q_stats")
-        .expect("q_stats present");
+    let arr = r.effect.extra.get("q_stats").expect("q_stats present");
     let mut out = Vec::with_capacity(arr.data.0.len() / 8);
     for chunk in arr.data.0.chunks_exact(8) {
         let mut buf = [0u8; 8];

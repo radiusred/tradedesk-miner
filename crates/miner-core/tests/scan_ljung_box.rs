@@ -20,7 +20,10 @@
 //! exactly `"0.14.6"` so a future version bump that changes the JSON without
 //! re-running the Python script fails loudly.
 
-#![allow(clippy::cast_precision_loss)]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::too_many_lines, // single-method test walks 8 numbered steps; intentional.
+)]
 
 mod common;
 
@@ -31,8 +34,8 @@ use std::sync::atomic::AtomicBool;
 use chrono::{Duration, TimeZone, Utc};
 
 use miner_core::aggregator::{BarFrame, Timeframe};
-use miner_core::engine::param_hash;
 use miner_core::engine::gap_policy::GapPolicyKind;
+use miner_core::engine::param_hash;
 use miner_core::findings::{Finding, RunId, TimeRange};
 use miner_core::reader::{ClosedRangeUtc, Side};
 use miner_core::scan::ljung_box::LjungBoxScan;
@@ -53,8 +56,8 @@ const FLOAT_TOLERANCE: f64 = 1e-12;
 #[test]
 fn ljung_box_matches_statsmodels_golden() {
     // Step 1 — load the precomputed statsmodels reference.
-    let golden: serde_json::Value = serde_json::from_str(GOLDEN_JSON)
-        .expect("ljung_box_golden.json must be valid JSON");
+    let golden: serde_json::Value =
+        serde_json::from_str(GOLDEN_JSON).expect("ljung_box_golden.json must be valid JSON");
 
     // Provenance gate (Blocker 4 — D3-05 invariant): the JSON MUST cite
     // statsmodels 0.14.6 or the test refuses to run.
@@ -85,8 +88,7 @@ fn ljung_box_matches_statsmodels_golden() {
     // Step 4 — construct the ScanRequest + ScanCtx. lags=10 is the fixed
     // golden parameter (matches the Python script's `LAGS = 10`).
     let resolved_params = serde_json::json!({"lags": 10});
-    let param_hash =
-        param_hash::param_hash(&resolved_params).expect("param_hash ok");
+    let param_hash = param_hash::param_hash(&resolved_params).expect("param_hash ok");
     let window_start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
     let window_end = Utc.with_ymd_and_hms(2024, 1, 4, 0, 0, 0).unwrap();
     let req = ScanRequest {
@@ -219,7 +221,7 @@ fn build_bar_frame_from_closes(close: &[f64]) -> BarFrame {
     }
 }
 
-/// Decode an `effect.extra[name]` RawArray from a parsed `ResultFinding`
+/// Decode an `effect.extra[name]` `RawArray` from a parsed `ResultFinding`
 /// into a `Vec<f64>`. The wire form is base64-encoded LE f64 bytes
 /// (D-01); we inverse the encoding here so the test can compare against
 /// the statsmodels JSON's plain float arrays.
@@ -227,9 +229,15 @@ fn decode_f64_raw_array(
     extra: &BTreeMap<String, miner_core::findings::RawArray>,
     key: &str,
 ) -> Vec<f64> {
-    let arr = extra.get(key).unwrap_or_else(|| panic!("extra[{key}] present"));
+    let arr = extra
+        .get(key)
+        .unwrap_or_else(|| panic!("extra[{key}] present"));
     let bytes = &arr.data.0;
-    assert_eq!(bytes.len() % 8, 0, "{key}: byte length must be a multiple of 8");
+    assert_eq!(
+        bytes.len() % 8,
+        0,
+        "{key}: byte length must be a multiple of 8"
+    );
     let mut out = Vec::with_capacity(bytes.len() / 8);
     for chunk in bytes.chunks_exact(8) {
         let mut buf = [0u8; 8];

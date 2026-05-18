@@ -1,11 +1,16 @@
 //! Synthetic Dukascopy cache builder for integration tests (Plan 03-06).
 //!
 //! Mirrors `crates/miner-core/tests/full_determinism.rs::write_synthetic_day`
-//! but exposes a typed builder (`SyntheticCache::new + with_one_day_csv +
-//! with_close_seeded_day`) so individual tests don't re-derive the synthetic
+//! but exposes a typed builder
+//! (`SyntheticCache::new` + `with_close_seeded_day` + `with_deterministic_day`
+//! + `with_day_holed`) so individual tests don't re-derive the synthetic
 //! plumbing. Backed by a `TempDir` so paths clean up automatically.
 
-#![allow(dead_code)] // each integration test consumes a different subset of helpers.
+#![allow(
+    dead_code, // each integration test consumes a different subset of helpers.
+    clippy::cast_precision_loss, // i64/usize -> f64 for synthetic volume; bounded.
+    clippy::doc_lazy_continuation, // module-doc paragraph continuation OK here.
+)]
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -78,8 +83,7 @@ impl SyntheticCache {
             "with_close_seeded_day expects 1440 1-minute closes (got {})",
             close_seq.len()
         );
-        let day_start: DateTime<Utc> =
-            date.and_hms_opt(0, 0, 0).expect("00:00:00").and_utc();
+        let day_start: DateTime<Utc> = date.and_hms_opt(0, 0, 0).expect("00:00:00").and_utc();
         let mut csv = String::with_capacity(1440 * 64 + 32);
         csv.push_str("timestamp,open,high,low,close,volume\n");
         for (i, &c) in close_seq.iter().enumerate() {
@@ -105,7 +109,13 @@ impl SyntheticCache {
     /// Same shape as [`Self::with_close_seeded_day`] but with a deterministic
     /// price walk (no caller-supplied closes). Useful for tests that don't
     /// care about the bar values, only the cache layout.
-    pub fn with_deterministic_day(self, symbol: &str, side: Side, date: NaiveDate, seed: u32) -> Self {
+    pub fn with_deterministic_day(
+        self,
+        symbol: &str,
+        side: Side,
+        date: NaiveDate,
+        seed: u32,
+    ) -> Self {
         let mut closes = Vec::with_capacity(1440);
         let mut s = seed;
         for _ in 0..1440 {
@@ -127,8 +137,7 @@ impl SyntheticCache {
         seed: u32,
         hole_minutes: std::ops::Range<i64>,
     ) -> Self {
-        let day_start: DateTime<Utc> =
-            date.and_hms_opt(0, 0, 0).expect("00:00:00").and_utc();
+        let day_start: DateTime<Utc> = date.and_hms_opt(0, 0, 0).expect("00:00:00").and_utc();
         let mut s = seed;
         let mut csv = String::with_capacity(1440 * 64 + 32);
         csv.push_str("timestamp,open,high,low,close,volume\n");

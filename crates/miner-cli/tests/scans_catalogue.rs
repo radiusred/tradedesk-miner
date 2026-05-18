@@ -24,8 +24,7 @@ fn load_validator(filename: &str) -> jsonschema::Validator {
     let path = schemas_dir().join(filename);
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read schema at {}: {}", path.display(), e));
-    let json: serde_json::Value =
-        serde_json::from_str(&text).expect("schema must be valid JSON");
+    let json: serde_json::Value = serde_json::from_str(&text).expect("schema must be valid JSON");
     jsonschema::validator_for(&json).expect("schema must be valid JSON Schema")
 }
 

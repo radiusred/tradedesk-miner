@@ -36,9 +36,7 @@ pub fn ar1_bar_frame_seeded(
     let mut s = seed as u32;
     let mut closes = Vec::with_capacity(n);
     for _ in 0..n {
-        s = s
-            .wrapping_mul(1_664_525)
-            .wrapping_add(1_013_904_223);
+        s = s.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
         let frac = f64::from(s) / f64::from(u32::MAX);
         closes.push(1.0 + frac);
     }
