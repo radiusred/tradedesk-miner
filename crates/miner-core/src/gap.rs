@@ -55,7 +55,7 @@
 //! [`read_1m_bars`]: crate::reader::Reader::read_1m_bars
 //! [`Calendar::is_open_at`]: crate::calendar::Calendar::is_open_at
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -385,17 +385,6 @@ fn corrupt_file_span(date: NaiveDate, detail: String) -> GapSpan {
     }
 }
 
-// `Datelike` is brought into scope for `NaiveDate::pred_opt` / `succ_opt`
-// users via the `chrono::Datelike` import above. Silence unused-import on
-// builds that don't reach the trait directly through these helpers.
-#[allow(dead_code)]
-const _: fn() = || {
-    fn _check(_d: NaiveDate) {
-        let _ = chrono::NaiveDate::weekday;
-        let _y: i32 = NaiveDate::MIN.year();
-    }
-};
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -469,5 +458,297 @@ mod tests {
         );
     }
 
-    // Task 2 / Task 3 tests added below.
+    // ---- Task 2: LocalMockReader + 4 gap-class unit tests -----------------
+
+    use std::collections::BTreeMap;
+
+    use crate::Blake3Hex;
+    use crate::reader::{ClosedRangeUtc, RawBar, RawBarIter};
+
+    /// Sentinel: when the bars vec for a `(symbol, side, date)` key is
+    /// `Some(Err(_))`, the `LocalMockReader` simulates a present-but-corrupt
+    /// source file — `fingerprint_day` returns `Ok(Some(_))` (the file is
+    /// present) but `read_1m_bars`'s iterator yields the recorded error on
+    /// first poll. `None` (key absent) simulates a missing-file day.
+    /// `Some(Ok(bars))` is the happy path.
+    type DayPayload = std::io::Result<Vec<RawBar>>;
+
+    /// Minimal in-test `Reader` impl. Keyed by `(symbol, side, date)`:
+    /// absent key → `fingerprint_day` returns `Ok(None)` (= missing daily
+    /// file). Present key with `Ok(bars)` → `fingerprint_day` returns
+    /// `Ok(Some(_))` and `read_1m_bars` yields the bars in order. Present
+    /// key with `Err(_)` → `fingerprint_day` returns `Ok(Some(_))` and
+    /// `read_1m_bars` yields a single `Err` on first poll (= corrupt file).
+    ///
+    /// Inline in `#[cfg(test)]` rather than reusing the integration
+    /// `tests/aggregator_fixtures.rs::MockReader` because that fixture lives
+    /// in a separate `tests/` target and cannot be imported by a unit test.
+    /// The duplication mirrors the unit/integration split documented at the
+    /// top of `aggregator_fixtures.rs`.
+    struct LocalMockReader {
+        days: BTreeMap<(String, Side, NaiveDate), DayPayload>,
+        calendar: Calendar,
+    }
+
+    impl LocalMockReader {
+        fn new() -> Self {
+            Self {
+                days: BTreeMap::new(),
+                calendar: Calendar::fx_major(),
+            }
+        }
+
+        fn insert_ok(&mut self, symbol: &str, side: Side, date: NaiveDate, bars: Vec<RawBar>) {
+            self.days.insert((symbol.to_string(), side, date), Ok(bars));
+        }
+
+        fn insert_err(&mut self, symbol: &str, side: Side, date: NaiveDate, msg: &str) {
+            self.days.insert(
+                (symbol.to_string(), side, date),
+                Err(std::io::Error::other(msg.to_string())),
+            );
+        }
+    }
+
+    impl Reader for LocalMockReader {
+        type Error = std::io::Error;
+
+        fn source_id(&self) -> &'static str {
+            "mock"
+        }
+
+        fn trading_calendar(&self) -> Calendar {
+            self.calendar.clone()
+        }
+
+        fn read_1m_bars<'a>(
+            &'a self,
+            symbol: &str,
+            side: Side,
+            range: ClosedRangeUtc,
+        ) -> Result<RawBarIter<'a, Self::Error>, Self::Error> {
+            // For every day intersecting the requested range, materialise its
+            // bars (or its error). We yield Result<RawBar, Error> per the
+            // Reader contract — a corrupt-day's error appears as the first
+            // item.
+            let start_date = range.start.date_naive();
+            let end_date = range.end.date_naive();
+            let mut items: Vec<Result<RawBar, std::io::Error>> = Vec::new();
+            for ((sym, sd, date), payload) in &self.days {
+                if sym != symbol || *sd != side {
+                    continue;
+                }
+                if *date < start_date || *date > end_date {
+                    continue;
+                }
+                match payload {
+                    Ok(bars) => {
+                        for bar in bars {
+                            if bar.ts_open_utc >= range.start && bar.ts_open_utc < range.end {
+                                items.push(Ok(*bar));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        // Re-wrap because std::io::Error isn't Clone.
+                        items.push(Err(std::io::Error::other(e.to_string())));
+                    }
+                }
+            }
+            Ok(Box::new(items.into_iter()))
+        }
+
+        fn fingerprint_day(
+            &self,
+            symbol: &str,
+            side: Side,
+            date: NaiveDate,
+        ) -> Result<Option<Blake3Hex>, Self::Error> {
+            let key = (symbol.to_string(), side, date);
+            if self.days.contains_key(&key) {
+                Ok(Some(Blake3Hex::from_hex_bytes(&[b'0'; 64])))
+            } else {
+                Ok(None)
+            }
+        }
+
+        fn enumerate_days(
+            &self,
+            symbol: &str,
+            side: Side,
+            range: ClosedRangeUtc,
+        ) -> Result<Vec<NaiveDate>, Self::Error> {
+            let start_date = range.start.date_naive();
+            let end_date = range.end.date_naive();
+            let mut out: Vec<NaiveDate> = self
+                .days
+                .keys()
+                .filter(|(s, sd, _)| s == symbol && *sd == side)
+                .map(|(_, _, d)| *d)
+                .filter(|d| *d >= start_date && *d <= end_date)
+                .collect();
+            out.sort_unstable();
+            Ok(out)
+        }
+    }
+
+    /// Build a full minute-aligned day of 1m bars at `date` UTC. 1440 bars at
+    /// `[ts, ts+1m)` with placeholder OHLC values. All bars covered → no
+    /// intra-day gaps.
+    fn build_full_day_bars(date: NaiveDate) -> Vec<RawBar> {
+        let start = date.and_hms_opt(0, 0, 0).expect("00:00:00 valid").and_utc();
+        (0..1440_i64)
+            .map(|i| {
+                let ts_open = start + Duration::minutes(i);
+                RawBar {
+                    ts_open_utc: ts_open,
+                    ts_close_utc: ts_open + Duration::minutes(1),
+                    open: 1.0,
+                    high: 1.0001,
+                    low: 0.9999,
+                    close: 1.0,
+                    tick_volume: 1.0,
+                }
+            })
+            .collect()
+    }
+
+    fn day_range(start: NaiveDate, end_exclusive: NaiveDate) -> ClosedRangeUtc {
+        ClosedRangeUtc {
+            start: start
+                .and_hms_opt(0, 0, 0)
+                .expect("midnight valid")
+                .and_utc(),
+            end: end_exclusive
+                .and_hms_opt(0, 0, 0)
+                .expect("midnight valid")
+                .and_utc(),
+        }
+    }
+
+    #[test]
+    fn missing_file_emits_correct_reason() {
+        // Tue 2024-06-11 + Thu 2024-06-13: open, no data → MissingSourceFile.
+        // Wed 2024-06-12: open, has full-day bars → no gap.
+        let mut reader = LocalMockReader::new();
+        let wed = NaiveDate::from_ymd_opt(2024, 6, 12).unwrap();
+        reader.insert_ok("EURUSD", Side::Bid, wed, build_full_day_bars(wed));
+
+        let range = day_range(
+            NaiveDate::from_ymd_opt(2024, 6, 11).unwrap(),
+            NaiveDate::from_ymd_opt(2024, 6, 14).unwrap(),
+        );
+        let manifest =
+            GapDetector::detect(&reader, "EURUSD", Side::Bid, range).expect("detect succeeds");
+
+        let missing_dates: Vec<NaiveDate> = manifest
+            .gaps
+            .iter()
+            .filter_map(|g| match &g.reason {
+                GapReason::MissingSourceFile { date } => Some(*date),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            missing_dates,
+            vec![
+                NaiveDate::from_ymd_opt(2024, 6, 11).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 6, 13).unwrap(),
+            ],
+            "Tue + Thu must both emit MissingSourceFile, Wed must not"
+        );
+        // Wed is fully populated — no other gap kinds present for it.
+        let wed_gaps: Vec<&GapSpan> = manifest
+            .gaps
+            .iter()
+            .filter(|g| g.start_utc.date_naive() == wed)
+            .collect();
+        assert!(
+            wed_gaps.is_empty(),
+            "Wed has full-day bars; no gaps must be emitted for it, got: {wed_gaps:?}"
+        );
+    }
+
+    #[test]
+    fn zero_byte_emits_corrupt() {
+        // Wed 2024-06-12: fingerprint says "present" but read_1m_bars yields
+        // Err on first poll → CorruptSourceFile.
+        let mut reader = LocalMockReader::new();
+        let wed = NaiveDate::from_ymd_opt(2024, 6, 12).unwrap();
+        reader.insert_err("EURUSD", Side::Bid, wed, "zero-byte file");
+
+        let range = day_range(wed, NaiveDate::from_ymd_opt(2024, 6, 13).unwrap());
+        let manifest =
+            GapDetector::detect(&reader, "EURUSD", Side::Bid, range).expect("detect succeeds");
+
+        // Exactly one gap; its reason is CorruptSourceFile for Wed.
+        assert_eq!(
+            manifest.gaps.len(),
+            1,
+            "expected exactly one CorruptSourceFile gap, got {:?}",
+            manifest.gaps
+        );
+        match &manifest.gaps[0].reason {
+            GapReason::CorruptSourceFile { date, detail } => {
+                assert_eq!(*date, wed, "corrupt-file date must match the bad day");
+                assert!(
+                    detail.contains("zero-byte"),
+                    "detail must carry the reader's error message, got: {detail}"
+                );
+            }
+            other => panic!("expected CorruptSourceFile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn intra_day_hole_during_open_hours() {
+        // Wed 2024-06-12 open, present bars for all 1440 minutes EXCEPT
+        // 12:00 UTC. Exactly one IntraDayGap at [12:00, 12:01).
+        let mut reader = LocalMockReader::new();
+        let wed = NaiveDate::from_ymd_opt(2024, 6, 12).unwrap();
+        let missing_ts = Utc.with_ymd_and_hms(2024, 6, 12, 12, 0, 0).unwrap();
+        let bars: Vec<RawBar> = build_full_day_bars(wed)
+            .into_iter()
+            .filter(|b| b.ts_open_utc != missing_ts)
+            .collect();
+        reader.insert_ok("EURUSD", Side::Bid, wed, bars);
+
+        let range = day_range(wed, NaiveDate::from_ymd_opt(2024, 6, 13).unwrap());
+        let manifest =
+            GapDetector::detect(&reader, "EURUSD", Side::Bid, range).expect("detect succeeds");
+
+        assert_eq!(
+            manifest.gaps.len(),
+            1,
+            "expected exactly one IntraDayGap, got {:?}",
+            manifest.gaps
+        );
+        let gap = &manifest.gaps[0];
+        assert_eq!(gap.start_utc, missing_ts);
+        assert_eq!(gap.end_utc, missing_ts + Duration::minutes(1));
+        match gap.reason {
+            GapReason::IntraDayGap { affected_minutes } => {
+                assert_eq!(affected_minutes, 1, "v1 emits affected_minutes=1");
+            }
+            ref other => panic!("expected IntraDayGap, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn closed_hours_are_not_gaps() {
+        // Sat 2024-06-15 is fully closed under FX-major. No data inserted →
+        // missing daily file. But the calendar says every minute is closed,
+        // so no gap is emitted (D2-07: anything during closed window is NOT
+        // a gap).
+        let reader = LocalMockReader::new();
+        let sat = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+        let range = day_range(sat, NaiveDate::from_ymd_opt(2024, 6, 16).unwrap());
+        let manifest =
+            GapDetector::detect(&reader, "EURUSD", Side::Bid, range).expect("detect succeeds");
+        assert!(
+            manifest.gaps.is_empty(),
+            "Saturday is fully closed; no gaps must be emitted, got: {:?}",
+            manifest.gaps
+        );
+    }
 }
