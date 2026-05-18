@@ -1,11 +1,12 @@
 ---
 phase: 02
 slug: reader-aggregator-derived-bar-cache
-status: planned
+status: completed
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-05-17
 plan_phase_completed: 2026-05-17
+execution_phase_completed: 2026-05-18
 revision_pass: 1
 ---
 
@@ -43,43 +44,43 @@ revision_pass: 1
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 02-01-T4 | 02-01 | 0 | CACHE-01 | T-02-02 | DukascopyReader opens a real `.csv.zst` fixture and yields 1m bars in ascending UTC order | integration | `cargo test -p miner-reader-dukascopy --test reader_smoke reads_one_day_in_order` | ⬜ Wave 0 | ⬜ pending |
-| 02-01-T4 | 02-01 | 0 | CACHE-01 | T-02-02 | DukascopyReader rejects a zero-byte source file with `CorruptSourceFile` | unit | `cargo test -p miner-reader-dukascopy zero_byte_file` | ⬜ Wave 0 | ⬜ pending |
-| 02-01-T2 | 02-01 | 0 | CACHE-02 | — | `Reader` trait is dyn-compatible (inline test in miner-core) | unit | `cargo test -p miner-core reader::tests::reader_trait_object_safe` | ⬜ Wave 0 | ⬜ pending |
-| 02-06-T2 | 02-06 | 3 | CACHE-02 | — | `DukascopyReader: Reader` (standalone integration test) | integration | `cargo test -p miner-reader-dukascopy --test reader_trait_object_safety dukascopy_reader_is_dyn_compatible` | ⬜ Wave 0 | ⬜ pending |
-| 02-02-T2 | 02-02 | 1 | CACHE-03 | — | Aggregator emits 15m / 1h / 1d bars from 1-day synthetic 1m input | unit | `cargo test -p miner-core aggregator::tests::three_timeframes` | ⬜ Wave 0 | ⬜ pending |
-| 02-02-T3 | 02-02 | 1 | CACHE-04 | T-02-05 | Aggregator output is byte-identical across two runs on the same input | integration | `cargo test -p miner-core --test aggregator_determinism byte_identical_two_runs` | ⬜ Wave 0 | ⬜ pending |
-| 02-02-T2 | 02-02 | 1 | CACHE-04 | — | OHLC monotonicity: high ≥ open/close, low ≤ open/close (proptest) | property | `cargo test -p miner-core aggregator::tests::ohlc_monotonicity_proptest` | ⬜ Wave 0 | ⬜ pending |
-| 02-02-T2 | 02-02 | 1 | CACHE-04 | T-02-06 | Aggregator omits (never interpolates) when source minutes are missing | unit | `cargo test -p miner-core aggregator::tests::omits_gaps_never_interpolates` | ⬜ Wave 0 | ⬜ pending |
-| 02-03-T1 | 02-03 | 1 | CACHE-04 | T-02-09 | DST spring-forward fixture: bars are evenly spaced through the transition | fixture | `cargo test -p miner-core --test dst_spring_forward` | ⬜ Wave 0 | ⬜ pending |
-| 02-03-T2 | 02-03 | 1 | CACHE-04 | T-02-09 | DST fall-back fixture: bars are evenly spaced through the transition | fixture | `cargo test -p miner-core --test dst_fall_back` | ⬜ Wave 0 | ⬜ pending |
-| 02-02-T2 | 02-02 | 1 | CACHE-04 | T-02-06 | Bid/ask sides process independently (no cross-contamination) | unit | `cargo test -p miner-core aggregator::tests::bid_ask_independent` | ⬜ Wave 0 | ⬜ pending |
-| 02-03-T3 | 02-03 | 1 | CACHE-04 | T-02-10 | Aggregator edge cases (weekend / holiday / instrument first/last day / partial session open) | fixture | `cargo test -p miner-core --test aggregator_edge_cases` | ⬜ Wave 0 | ⬜ pending |
-| 02-01-T4 | 02-01 | 0 | CACHE-05 | — | Dukascopy `volume` field surfaces as `tick_volume: f64` (per-bar SUM, not count) | unit | `cargo test -p miner-reader-dukascopy --test reader_smoke tick_volume_from_csv_volume` | ⬜ Wave 0 | ⬜ pending |
-| 02-01-T3 | 02-01 | 0 | CACHE-05 | T-02-04 | 00-indexed month: January → "00" | unit | `cargo test -p miner-reader-dukascopy path_layout::jan_maps_to_00` | ⬜ Wave 0 | ⬜ pending |
-| 02-01-T3 | 02-01 | 0 | CACHE-05 | T-02-04 | 00-indexed month: December → "11" | unit | `cargo test -p miner-reader-dukascopy path_layout::dec_maps_to_11` | ⬜ Wave 0 | ⬜ pending |
-| 02-01-T3 | 02-01 | 0 | CACHE-05 | T-02-04 | 00-indexed month: invalid inputs (0, 13) panic / Err | unit | `cargo test -p miner-reader-dukascopy path_layout::out_of_range_panics` | ⬜ Wave 0 | ⬜ pending |
-| 02-01-T3 | 02-01 | 0 | CACHE-05 | T-02-04 | 00-indexed month: full path round-trip property | property | `cargo test -p miner-reader-dukascopy path_layout::path_round_trip_proptest` | ⬜ Wave 0 | ⬜ pending |
-| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-14 | Cache hit serves bars without re-reading source CSV | integration | `cargo test -p miner-core --test cache_smoke cache_hit_skips_reader` | ⬜ Wave 0 | ⬜ pending |
-| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-14 | `aggregator_version` bump triggers full rebuild | integration | `cargo test -p miner-core --test cache_smoke aggregator_version_bump_rebuilds` | ⬜ Wave 0 | ⬜ pending |
-| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-14 | Per-day fingerprint mismatch triggers day-splice only | integration | `cargo test -p miner-core --test cache_smoke day_fingerprint_bump_splices` | ⬜ Wave 0 | ⬜ pending |
-| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-15 | Atomic write: tempfile dropped without persist leaves existing Arrow file byte-unchanged AND no stale `*.tmp*` files in parent dir | integration | `cargo test -p miner-core --test cache_smoke atomic_write_crash_safety` | ⬜ Wave 0 | ⬜ pending |
-| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-16 | Arrow IPC bytes are deterministic under shuffled-metadata construction (BTreeMap-source proptest) | property | `cargo test -p miner-core --test cache_smoke arrow_bytes_deterministic_under_shuffled_construction` | ⬜ Wave 0 | ⬜ pending |
-| 02-04-T2 | 02-04 | 1 | CACHE-07 | T-02-12 | GapDetector emits `MissingSourceFile` for a missing day file | unit | `cargo test -p miner-core gap::tests::missing_file_emits_correct_reason` | ⬜ Wave 0 | ⬜ pending |
-| 02-04-T2 | 02-04 | 1 | CACHE-07 | T-02-12 | GapDetector emits `CorruptSourceFile` for a zero-byte source file | unit | `cargo test -p miner-core gap::tests::zero_byte_emits_corrupt` | ⬜ Wave 0 | ⬜ pending |
-| 02-04-T2 | 02-04 | 1 | CACHE-07 | T-02-12 | GapDetector emits `IntraDayGap` for sub-minute holes during open hours | unit | `cargo test -p miner-core gap::tests::intra_day_hole_during_open_hours` | ⬜ Wave 0 | ⬜ pending |
-| 02-04-T2 | 02-04 | 1 | CACHE-07 | T-02-13 | GapDetector does NOT emit anything for closed-hours holes | unit | `cargo test -p miner-core gap::tests::closed_hours_are_not_gaps` | ⬜ Wave 0 | ⬜ pending |
-| 02-04-T3 | 02-04 | 1 | CACHE-07 | T-02-12 | Gap manifest JSON shape pinned by insta snapshot | snapshot | `cargo test -p miner-core --test gap_manifest_snapshot` | ⬜ Wave 0 | ⬜ pending |
-| 02-04-T3 | 02-04 | 1 | CACHE-07 | T-02-12 | Gaps in the manifest are sorted by `start_utc` ascending (proptest) | property | `cargo test -p miner-core gap::tests::gaps_sorted_proptest` | ⬜ Wave 0 | ⬜ pending |
-| 02-04-T1 | 02-04 | 1 | CACHE-08 | — | `GapManifest` derives `JsonSchema` and round-trips via serde_json | unit | `cargo test -p miner-core gap::tests::gap_manifest_schemars_roundtrip` | ⬜ Wave 0 | ⬜ pending |
-| 02-05-T3 | 02-05 | 2 | ALL (schema) | T-02-16, T-02-18 | Arrow IPC schema bytes pinned by insta snapshot | snapshot | `cargo test -p miner-core --test arrow_schema_snapshot` | ⬜ Wave 0 | ⬜ pending |
-| 02-05-T3 | 02-05 | 2 | ALL (schema) | T-02-16 | Arrow schema metadata keys iterate in sorted order (BTreeMap-source gate) | unit | `cargo test -p miner-core --test arrow_schema_snapshot schema_metadata_keys_sorted` | ⬜ Wave 0 | ⬜ pending |
-| 02-06-T1 | 02-06 | 3 | ALL (determinism) | T-02-19 | Two full runs of aggregator + cache produce byte-identical `.arrow` + `.fingerprints.json` | integration | `cargo test -p miner-core --test full_determinism two_runs_byte_identical` | ⬜ Wave 0 | ⬜ pending |
-| 02-06-T2 | 02-06 | 3 | ALL (surface) | T-02-20 | Phase 2 FROZEN public surface complete: every Phase 2 type reachable via `use miner_core::*` | integration | `cargo test -p miner-core --test public_surface_audit phase_2_public_surface_present` | ⬜ Wave 0 | ⬜ pending |
+| 02-01-T4 | 02-01 | 0 | CACHE-01 | T-02-02 | DukascopyReader opens a real `.csv.zst` fixture and yields 1m bars in ascending UTC order | integration | `cargo test -p miner-reader-dukascopy --test reader_smoke reads_one_day_in_order` | ✅ | ✅ green |
+| 02-01-T4 | 02-01 | 0 | CACHE-01 | T-02-02 | DukascopyReader rejects a zero-byte source file with `CorruptSourceFile` | unit | `cargo test -p miner-reader-dukascopy zero_byte_file` | ✅ | ✅ green |
+| 02-01-T2 | 02-01 | 0 | CACHE-02 | — | `Reader` trait is dyn-compatible (inline test in miner-core) | unit | `cargo test -p miner-core reader::tests::reader_trait_object_safe` | ✅ | ✅ green |
+| 02-06-T2 | 02-06 | 3 | CACHE-02 | — | `DukascopyReader: Reader` (standalone integration test) | integration | `cargo test -p miner-reader-dukascopy --test reader_trait_object_safety dukascopy_reader_is_dyn_compatible` | ✅ | ✅ green |
+| 02-02-T2 | 02-02 | 1 | CACHE-03 | — | Aggregator emits 15m / 1h / 1d bars from 1-day synthetic 1m input | unit | `cargo test -p miner-core aggregator::tests::three_timeframes` | ✅ | ✅ green |
+| 02-02-T3 | 02-02 | 1 | CACHE-04 | T-02-05 | Aggregator output is byte-identical across two runs on the same input | integration | `cargo test -p miner-core --test aggregator_determinism byte_identical_two_runs` | ✅ | ✅ green |
+| 02-02-T2 | 02-02 | 1 | CACHE-04 | — | OHLC monotonicity: high ≥ open/close, low ≤ open/close (proptest) | property | `cargo test -p miner-core aggregator::tests::ohlc_monotonicity_proptest` | ✅ | ✅ green |
+| 02-02-T2 | 02-02 | 1 | CACHE-04 | T-02-06 | Aggregator omits (never interpolates) when source minutes are missing | unit | `cargo test -p miner-core aggregator::tests::omits_gaps_never_interpolates` | ✅ | ✅ green |
+| 02-03-T1 | 02-03 | 1 | CACHE-04 | T-02-09 | DST spring-forward fixture: bars are evenly spaced through the transition | fixture | `cargo test -p miner-core --test dst_spring_forward` | ✅ | ✅ green |
+| 02-03-T2 | 02-03 | 1 | CACHE-04 | T-02-09 | DST fall-back fixture: bars are evenly spaced through the transition | fixture | `cargo test -p miner-core --test dst_fall_back` | ✅ | ✅ green |
+| 02-02-T2 | 02-02 | 1 | CACHE-04 | T-02-06 | Bid/ask sides process independently (no cross-contamination) | unit | `cargo test -p miner-core aggregator::tests::bid_ask_independent` | ✅ | ✅ green |
+| 02-03-T3 | 02-03 | 1 | CACHE-04 | T-02-10 | Aggregator edge cases (weekend / holiday / instrument first/last day / partial session open) | fixture | `cargo test -p miner-core --test aggregator_edge_cases` | ✅ | ✅ green |
+| 02-01-T4 | 02-01 | 0 | CACHE-05 | — | Dukascopy `volume` field surfaces as `tick_volume: f64` (per-bar SUM, not count) | unit | `cargo test -p miner-reader-dukascopy --test reader_smoke tick_volume_from_csv_volume` | ✅ | ✅ green |
+| 02-01-T3 | 02-01 | 0 | CACHE-05 | T-02-04 | 00-indexed month: January → "00" | unit | `cargo test -p miner-reader-dukascopy path_layout::jan_maps_to_00` | ✅ | ✅ green |
+| 02-01-T3 | 02-01 | 0 | CACHE-05 | T-02-04 | 00-indexed month: December → "11" | unit | `cargo test -p miner-reader-dukascopy path_layout::dec_maps_to_11` | ✅ | ✅ green |
+| 02-01-T3 | 02-01 | 0 | CACHE-05 | T-02-04 | 00-indexed month: invalid inputs (0, 13) panic / Err | unit | `cargo test -p miner-reader-dukascopy path_layout::out_of_range_panics` | ✅ | ✅ green |
+| 02-01-T3 | 02-01 | 0 | CACHE-05 | T-02-04 | 00-indexed month: full path round-trip property | property | `cargo test -p miner-reader-dukascopy path_layout::path_round_trip_proptest` | ✅ | ✅ green |
+| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-14 | Cache hit serves bars without re-reading source CSV | integration | `cargo test -p miner-core --test cache_smoke cache_hit_skips_reader` | ✅ | ✅ green |
+| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-14 | `aggregator_version` bump triggers full rebuild | integration | `cargo test -p miner-core --test cache_smoke aggregator_version_bump_rebuilds` | ✅ | ✅ green |
+| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-14 | Per-day fingerprint mismatch triggers day-splice only | integration | `cargo test -p miner-core --test cache_smoke day_fingerprint_bump_splices` | ✅ | ✅ green |
+| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-15 | Atomic write: tempfile dropped without persist leaves existing Arrow file byte-unchanged AND no stale `*.tmp*` files in parent dir | integration | `cargo test -p miner-core --test cache_smoke atomic_write_crash_safety` | ✅ | ✅ green |
+| 02-05-T2 | 02-05 | 2 | CACHE-06 | T-02-16 | Arrow IPC bytes are deterministic under shuffled-metadata construction (BTreeMap-source proptest) | property | `cargo test -p miner-core --test cache_smoke arrow_bytes_deterministic_under_shuffled_construction` | ✅ | ✅ green |
+| 02-04-T2 | 02-04 | 1 | CACHE-07 | T-02-12 | GapDetector emits `MissingSourceFile` for a missing day file | unit | `cargo test -p miner-core gap::tests::missing_file_emits_correct_reason` | ✅ | ✅ green |
+| 02-04-T2 | 02-04 | 1 | CACHE-07 | T-02-12 | GapDetector emits `CorruptSourceFile` for a zero-byte source file | unit | `cargo test -p miner-core gap::tests::zero_byte_emits_corrupt` | ✅ | ✅ green |
+| 02-04-T2 | 02-04 | 1 | CACHE-07 | T-02-12 | GapDetector emits `IntraDayGap` for sub-minute holes during open hours | unit | `cargo test -p miner-core gap::tests::intra_day_hole_during_open_hours` | ✅ | ✅ green |
+| 02-04-T2 | 02-04 | 1 | CACHE-07 | T-02-13 | GapDetector does NOT emit anything for closed-hours holes | unit | `cargo test -p miner-core gap::tests::closed_hours_are_not_gaps` | ✅ | ✅ green |
+| 02-04-T3 | 02-04 | 1 | CACHE-07 | T-02-12 | Gap manifest JSON shape pinned by insta snapshot | snapshot | `cargo test -p miner-core --test gap_manifest_snapshot` | ✅ | ✅ green |
+| 02-04-T3 | 02-04 | 1 | CACHE-07 | T-02-12 | Gaps in the manifest are sorted by `start_utc` ascending (proptest) | property | `cargo test -p miner-core gap::tests::gaps_sorted_proptest` | ✅ | ✅ green |
+| 02-04-T1 | 02-04 | 1 | CACHE-08 | — | `GapManifest` derives `JsonSchema` and round-trips via serde_json | unit | `cargo test -p miner-core gap::tests::gap_manifest_schemars_roundtrip` | ✅ | ✅ green |
+| 02-05-T3 | 02-05 | 2 | ALL (schema) | T-02-16, T-02-18 | Arrow IPC schema bytes pinned by insta snapshot | snapshot | `cargo test -p miner-core --test arrow_schema_snapshot` | ✅ | ✅ green |
+| 02-05-T3 | 02-05 | 2 | ALL (schema) | T-02-16 | Arrow schema metadata keys iterate in sorted order (BTreeMap-source gate) | unit | `cargo test -p miner-core --test arrow_schema_snapshot schema_metadata_keys_sorted` | ✅ | ✅ green |
+| 02-06-T1 | 02-06 | 3 | ALL (determinism) | T-02-19 | Two full runs of aggregator + cache produce byte-identical `.arrow` + `.fingerprints.json` | integration | `cargo test -p miner-core --test full_determinism two_runs_byte_identical` | ✅ | ✅ green |
+| 02-06-T2 | 02-06 | 3 | ALL (surface) | T-02-20 | Phase 2 FROZEN public surface complete: every Phase 2 type reachable via `use miner_core::*` | integration | `cargo test -p miner-core --test public_surface_audit phase_2_public_surface_present` | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
-> All `TBD | TBD` rows have been replaced with real `{plan-id}-T{task-num}` task IDs. The map is locked for execution-phase. Revision pass 1 added two rows from the B4 fix (`arrow_bytes_deterministic_under_shuffled_construction` proptest and `schema_metadata_keys_sorted` ancillary gate) and uses `aggregator::tests::*` paths throughout (file `crates/miner-core/src/aggregator.rs`).
+> Plan/Wave/Task-ID columns are all populated with real `{plan-id}-T{task-num}` identifiers; no placeholder rows remain. The map is locked. Revision pass 1 added two rows from the B4 fix (`arrow_bytes_deterministic_under_shuffled_construction` proptest and `schema_metadata_keys_sorted` ancillary gate) and uses `aggregator::tests::*` paths throughout (file `crates/miner-core/src/aggregator.rs`). Plan 02-06 (execution) marked all rows ✅ green after the full `cargo test --workspace` suite passed.
 
 ---
 
@@ -87,20 +88,20 @@ revision_pass: 1
 
 Test infrastructure that MUST land in Wave 0 (before any Wave 1 task can be verified):
 
-- [ ] `crates/miner-reader-dukascopy/tests/fixtures/` — synthetic `.csv.zst` generator helper (writes via `tempfile::TempDir` using the same zstd encoder as `tradedesk-dukascopy`; no binary fixtures checked in) — **OWNED BY: Plan 02-01 Task 4**
-- [ ] `crates/miner-reader-dukascopy/tests/reader_smoke.rs` — integration tests against the synthetic cache — **OWNED BY: Plan 02-01 Task 4**
-- [ ] `crates/miner-reader-dukascopy/src/path_layout.rs` — module + tests for `DukascopyMonth` (00-indexed) and full path round-trip — **OWNED BY: Plan 02-01 Task 3**
-- [ ] `crates/miner-core/tests/aggregator_fixtures.rs` — shared fixture builders (MockReader + build_24h_1m_bars + build_partial_day_1m_bars) — **OWNED BY: Plan 02-02 Task 2**
-- [ ] `crates/miner-core/tests/dst_spring_forward.rs` + `tests/dst_fall_back.rs` — split per fixture for parallel runs — **OWNED BY: Plan 02-03 Tasks 1+2**
-- [ ] `crates/miner-core/tests/aggregator_edge_cases.rs` — weekend / holiday / first-day / last-day / partial-session-open — **OWNED BY: Plan 02-03 Task 3**
-- [ ] `crates/miner-core/tests/cache_smoke.rs` — cache hit/miss/atomic-write tests — **OWNED BY: Plan 02-05 Task 2**
-- [ ] `crates/miner-core/tests/gap_manifest_snapshot.rs` — insta snapshot of manifest JSON — **OWNED BY: Plan 02-04 Task 3**
-- [ ] `crates/miner-core/tests/arrow_schema_snapshot.rs` — insta snapshot of Arrow IPC schema bytes — **OWNED BY: Plan 02-05 Task 3**
-- [ ] `crates/miner-core/tests/full_determinism.rs` — end-to-end two-runs-byte-identical — **OWNED BY: Plan 02-06 Task 1**
-- [ ] `crates/miner-core/tests/snapshots/.gitkeep` directory — created on first `cargo insta accept`; the `.gitkeep` is staged + git-tracked from Wave 0 so the snapshots dir is committed before any `.snap` files arrive — **OWNED BY: Plan 02-04 Task 3** (creates and git-tracks .gitkeep)
-- [ ] Workspace dev-deps added: `proptest`, `insta`, `tempfile`, `serial_test` — **OWNED BY: Plan 02-01 Task 1**
-- [ ] Workspace runtime deps lockstep: `arrow` and `parquet` at the same major (per amended D2-01: latest stable, floor 53+) — **OWNED BY: Plan 02-01 Task 1**
-- [ ] Workspace lints: keep `unsafe_code = "forbid"` for Phase 2 (no mmap; defer to a later optimisation plan) — **VERIFIED: workspace Cargo.toml unchanged from Phase 1**
+- [x] `crates/miner-reader-dukascopy/tests/fixtures/` — synthetic `.csv.zst` generator helper (writes via `tempfile::TempDir` using the same zstd encoder as `tradedesk-dukascopy`; no binary fixtures checked in) — **LANDED IN: Plan 02-01 Task 4**
+- [x] `crates/miner-reader-dukascopy/tests/reader_smoke.rs` — integration tests against the synthetic cache — **LANDED IN: Plan 02-01 Task 4**
+- [x] `crates/miner-reader-dukascopy/src/path_layout.rs` — module + tests for `DukascopyMonth` (00-indexed) and full path round-trip — **LANDED IN: Plan 02-01 Task 3**
+- [x] `crates/miner-core/tests/aggregator_fixtures.rs` — shared fixture builders (MockReader + build_24h_1m_bars + build_partial_day_1m_bars) — **LANDED IN: Plan 02-02 Task 2**
+- [x] `crates/miner-core/tests/dst_spring_forward.rs` + `tests/dst_fall_back.rs` — split per fixture for parallel runs — **LANDED IN: Plan 02-03 Tasks 1+2**
+- [x] `crates/miner-core/tests/aggregator_edge_cases.rs` — weekend / holiday / first-day / last-day / partial-session-open — **LANDED IN: Plan 02-03 Task 3**
+- [x] `crates/miner-core/tests/cache_smoke.rs` — cache hit/miss/atomic-write tests — **LANDED IN: Plan 02-05 Task 2**
+- [x] `crates/miner-core/tests/gap_manifest_snapshot.rs` — insta snapshot of manifest JSON — **LANDED IN: Plan 02-04 Task 3**
+- [x] `crates/miner-core/tests/arrow_schema_snapshot.rs` — insta snapshot of Arrow IPC schema bytes — **LANDED IN: Plan 02-05 Task 3**
+- [x] `crates/miner-core/tests/full_determinism.rs` — end-to-end two-runs-byte-identical — **LANDED IN: Plan 02-06 Task 1**
+- [x] `crates/miner-core/tests/snapshots/.gitkeep` directory — created on first `cargo insta accept`; the `.gitkeep` is staged + git-tracked from Wave 0 so the snapshots dir is committed before any `.snap` files arrive — **LANDED IN: Plan 02-04 Task 3** (created and git-tracked .gitkeep)
+- [x] Workspace dev-deps added: `proptest`, `insta`, `tempfile`, `serial_test` — **LANDED IN: Plan 02-01 Task 1**
+- [x] Workspace runtime deps lockstep: `arrow` and `parquet` at the same major (per amended D2-01: latest stable, floor 53+) — **LANDED IN: Plan 02-01 Task 1**
+- [x] Workspace lints: keep `unsafe_code = "forbid"` for Phase 2 (no mmap; defer to a later optimisation plan) — **VERIFIED: workspace Cargo.toml unchanged from Phase 1**
 
 ---
 
@@ -121,8 +122,9 @@ Test infrastructure that MUST land in Wave 0 (before any Wave 1 task can be veri
 - [x] Feedback latency < 30s (per-crate quick run) and < 90s (full suite)
 - [x] `nyquist_compliant: true` set in frontmatter — all rows bound to plan task IDs
 - [x] Revision pass 1 applied: aggregator module renamed; arrow/parquet major lockstep documented; atomic write surface split into write_arrow_to_tempfile + persist_arrow_tempfile; .gitkeep git-tracked; gap-tests enumerated explicitly; arrow metadata determinism enforced via BTreeMap-sourced sorted Vec to the IPC encoder.
+- [x] Plan 02-06 execution: full-pipeline determinism gate (`tests/full_determinism.rs`) green; public-surface audit (`tests/public_surface_audit.rs`) green; standalone DukascopyReader dyn-compat (`crates/miner-reader-dukascopy/tests/reader_trait_object_safety.rs`) green; `cargo test --workspace` green; `cargo clippy --workspace --all-targets -- -D warnings` exits 0; `cargo fmt --all --check` exits 0; `cargo tree -p miner-core --edges normal,build | grep -E 'tokio|async-std|async-trait'` empty (FOUND-04 gate intact).
 
-**Approval:** approved by Plan 02-06 (planner-phase completion, revision pass 1).
+**Approval:** approved by Plan 02-06 (execution-phase completion).
 
 ---
 
