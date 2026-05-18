@@ -13,7 +13,7 @@
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundations & Contracts** - Workspace, types, locked findings envelope, stdout/stderr discipline, config precedence (completed 2026-05-17)
-- [ ] **Phase 2: Reader, Aggregator & Derived-Bar Cache** - Dukascopy reader, deterministic aggregator, derived-bar cache, gap manifest
+- [x] **Phase 2: Reader, Aggregator & Derived-Bar Cache** - Dukascopy reader, deterministic aggregator, derived-bar cache, gap manifest (completed 2026-05-18)
 - [ ] **Phase 3: Scan Engine, Facade & CLI** - Scan trait/registry, facade, look-ahead-safe windowing, gap-policy enforcement, CLI wrapper
 - [ ] **Phase 4: Scan Catalogue (ANOM, CROSS, SEAS)** - All v1 statistical, cross-instrument, and seasonality scans
 - [ ] **Phase 5: Statistical Hygiene & Sweep Runner** - Effect sizes, bootstrap, phase-scramble nulls, BH-FDR, sweep manifest
@@ -57,12 +57,12 @@ Plans:
 **Plans**: 6 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Workspace deps + Reader trait + DukascopyReader + path_layout + synthetic fixtures (CACHE-01, CACHE-02, CACHE-05)
-- [ ] 02-02-PLAN.md — Calendar + Aggregator kernel + aggregator unit/determinism tests (CACHE-03, CACHE-04)
-- [ ] 02-03-PLAN.md — DST spring/fall fixtures + aggregator edge cases (weekend/holiday/first-day/last-day/partial-session-open) (CACHE-04)
-- [ ] 02-04-PLAN.md — GapDetector + GapManifest tagged-enum + insta snapshot + sorted/dedup proptest (CACHE-07, CACHE-08)
-- [ ] 02-05-PLAN.md — Derived-bar cache: Arrow IPC writer + fingerprint sidecar + day-splice + cache_smoke + schema snapshot (CACHE-06)
-- [ ] 02-06-PLAN.md — End-to-end full_determinism + public-surface audit + reader dyn-compat regression + VALIDATION.md sealing (CACHE-04, CACHE-06)
+- [x] 02-01-PLAN.md — Workspace deps + Reader trait + DukascopyReader + path_layout + synthetic fixtures (CACHE-01, CACHE-02, CACHE-05)
+- [x] 02-02-PLAN.md — Calendar + Aggregator kernel + aggregator unit/determinism tests (CACHE-03, CACHE-04)
+- [x] 02-03-PLAN.md — DST spring/fall fixtures + aggregator edge cases (weekend/holiday/first-day/last-day/partial-session-open) (CACHE-04)
+- [x] 02-04-PLAN.md — GapDetector + GapManifest tagged-enum + insta snapshot + sorted/dedup proptest (CACHE-07, CACHE-08)
+- [x] 02-05-PLAN.md — Derived-bar cache: Arrow IPC writer + fingerprint sidecar + day-splice + cache_smoke + schema snapshot (CACHE-06)
+- [x] 02-06-PLAN.md — End-to-end full_determinism + public-surface audit + reader dyn-compat regression + VALIDATION.md sealing (CACHE-04, CACHE-06)
 **UI hint**: No
 
 ### Phase 3: Scan Engine, Facade & CLI
