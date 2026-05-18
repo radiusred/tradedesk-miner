@@ -5,59 +5,130 @@
 //! types with a sibling `#[cfg(test)] mod tests` block. No IO, no `serde_json`,
 //! no `Reader` calls — pure kernels callable by [`super::LjungBoxScan::run`].
 //!
-//! Wave 0 scaffold: signature only. Plan 04 fills the bodies verbatim from
-//! 03-RESEARCH §"Code Examples" lines 644-685.
+//! ## Implementation source
+//!
+//! The three kernels are ported verbatim from 03-RESEARCH §"Code Examples"
+//! lines 641-687. The summation order in [`ljung_box_q_and_p`] is sequential /
+//! cumsum-style — this is what makes goldens match statsmodels 0.14.6's
+//! `acorr_ljungbox(..., adjusted=False, fft=False)`.
 
-#![allow(dead_code, unused_variables)]
+#![cfg_attr(any(test, debug_assertions), allow(clippy::float_cmp))]
+
+use statrs::distribution::ChiSquared;
+use statrs::distribution::ContinuousCDF;
 
 /// Compute log returns from a `close` price series: `returns[t] = ln(close[t] / close[t-1])`
-/// for `t = 1..n`. Returns a `Vec<f64>` of length `n - 1` (or empty when `n < 2`).
+/// for `t = 1..n`. Returns a `Vec<f64>` of length `n - 1` (empty when `n < 2`).
 ///
-/// Pure function — no allocations beyond the output `Vec`. Plan 04 fills the body.
+/// Pure function — no allocations beyond the output `Vec`. Handles `len 0` and
+/// `len 1` naturally because `slice::windows(2)` yields zero elements then.
 #[inline]
 pub(super) fn log_returns(close: &[f64]) -> Vec<f64> {
-    unimplemented!(
-        "Plan 04 (03-04-PLAN) implements log_returns(close) per 03-RESEARCH lines 644-650"
-    )
+    close.windows(2).map(|w| (w[1] / w[0]).ln()).collect()
 }
 
 /// Biased sample autocorrelation up to `max_lag` lags.
 ///
-/// Returns a `Vec<f64>` of length `max_lag + 1` where `acf[0] == 1.0` and `acf[k]`
-/// is the biased ACF estimator at lag `k`. The "biased" estimator divides by `n`
-/// (not `n - k`) so it matches `statsmodels.tsa.stattools.acf(..., adjusted=False)`.
-/// See D3-05 — statsmodels golden comparison.
+/// Returns a `Vec<f64>` of length `max_lag + 1` where `acf[0] == 1.0` by
+/// construction and `acf[k]` (for `k >= 1`) is the biased ACF estimator at lag
+/// `k`. The "biased" estimator divides by `n` implicitly via the shared `denom`
+/// (the centred sum-of-squares) — NOT by `n - k`. This matches
+/// `statsmodels.tsa.stattools.acf(..., adjusted=False)`. See D3-05 — the
+/// statsmodels golden test pins byte equality at the envelope level; this
+/// kernel is unit-tested against precomputed hand-references within 1e-12.
 ///
-/// Pure function. Plan 04 fills the body.
+/// ## Constant-series special case
+///
+/// For a constant series (`denom == 0.0`), the naive formula yields `0.0 / 0.0`
+/// for every `k >= 1`. This kernel returns `0.0` at every `k >= 1` instead of
+/// `NaN` — matching `statsmodels`' practical behaviour on constant input and
+/// keeping the downstream Q-statistic finite. `acf[0]` stays `1.0` by
+/// construction (the lag-0 autocorrelation of any series is `1` modulo the
+/// degenerate-variance edge).
 #[inline]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "n is the returns sample size — bar counts fit trivially in f64's 52-bit mantissa for any realistic OHLCV series (Phase 1 cap << 2^52)"
+)]
 pub(super) fn biased_acf(x: &[f64], max_lag: usize) -> Vec<f64> {
-    unimplemented!(
-        "Plan 04 (03-04-PLAN) implements biased_acf per 03-RESEARCH lines 652-672"
-    )
+    let n = x.len();
+    let n_f = n as f64;
+    let mean = x.iter().copied().sum::<f64>() / n_f;
+    let cent: Vec<f64> = x.iter().map(|v| v - mean).collect();
+    let denom: f64 = cent.iter().map(|v| v * v).sum();
+
+    let mut out = Vec::with_capacity(max_lag + 1);
+    out.push(1.0);
+    for k in 1..=max_lag {
+        if denom == 0.0 {
+            out.push(0.0);
+            continue;
+        }
+        let num: f64 = (0..n.saturating_sub(k))
+            .map(|i| cent[i] * cent[i + k])
+            .sum();
+        out.push(num / denom);
+    }
+    out
 }
 
 /// Ljung-Box Q-statistic + chi-squared p-values for lags `1..=max_lag`.
 ///
 /// `returns_n` is the sample size of the returns series (length of the input
-/// to `biased_acf`). `acf` is the biased-ACF output (length `max_lag + 1`,
+/// to [`biased_acf`]). `acf` is the biased-ACF output (length `max_lag + 1`;
 /// `acf[0]` is unused).
 ///
 /// Returns a pair `(q_stats, p_values)` each of length `max_lag` (one element
 /// per lag in `1..=max_lag`). `q_stats[k-1]` is the cumulative Q-statistic at
-/// lag `k`; `p_values[k-1]` is the chi-squared(k) tail probability.
+/// lag `k`; `p_values[k-1]` is the chi-squared(k) tail probability
+/// (`1 - chi2.cdf(q[k-1], df=k)`).
 ///
-/// Pure function except for the `statrs::distribution::ChiSquared::new(k)` +
-/// `.sf(q)` calls (no IO). Plan 04 fills the body.
+/// The summation order is sequential and cumsum-style (RESEARCH line 687) —
+/// this is what makes goldens match statsmodels' `np.cumsum`.
+///
+/// # Panics
+/// Panics via `debug_assert` when `max_lag < 1` or when `acf.len() <= max_lag`.
 #[inline]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "k is bounded by max_lag (typical max 10..50 per D3-03); returns_n is the bar count which fits trivially in f64's 52-bit mantissa for realistic series"
+)]
+#[allow(
+    clippy::similar_names,
+    reason = "`acf` (autocorrelation function) and `acc` (cumulative accumulator) are short, well-known statistics-domain names; renaming either would be noise"
+)]
 pub(super) fn ljung_box_q_and_p(
     returns_n: usize,
     acf: &[f64],
     max_lag: usize,
 ) -> (Vec<f64>, Vec<f64>) {
-    unimplemented!(
-        "Plan 04 (03-04-PLAN) implements ljung_box_q_and_p per 03-RESEARCH lines 674-685; \
-         uses statrs::distribution::ChiSquared for the p-value"
-    )
+    debug_assert!(max_lag >= 1, "ljung_box_q_and_p: max_lag must be >= 1");
+    debug_assert!(
+        acf.len() > max_lag,
+        "ljung_box_q_and_p: acf.len() must be > max_lag"
+    );
+
+    let n = returns_n as f64;
+    let mut q = Vec::with_capacity(max_lag);
+    let mut p = Vec::with_capacity(max_lag);
+    let mut acc = 0.0_f64;
+    // Sequential cumsum over `k in 1..=max_lag` — the summation order pins
+    // byte-equality with statsmodels' `np.cumsum` (RESEARCH line 687). Direct
+    // indexed iteration is the natural shape; the `needless_range_loop` lint
+    // is suppressed because `acf[k]` is the index-aware access we want.
+    #[allow(clippy::needless_range_loop)]
+    for k in 1..=max_lag {
+        let k_f = k as f64;
+        let denom = n - k_f;
+        acc += acf[k] * acf[k] / denom;
+        let qk = n * (n + 2.0) * acc;
+        q.push(qk);
+        // ChiSquared::new(k) requires k > 0; our debug_assert(max_lag >= 1)
+        // makes k >= 1 inside this loop, so the construction always succeeds.
+        let chi = ChiSquared::new(k_f).expect("k >= 1 yields a valid ChiSquared");
+        p.push(1.0 - chi.cdf(qk));
+    }
+    (q, p)
 }
 
 // ---------------------------------------------------------------------------
@@ -66,11 +137,178 @@ pub(super) fn ljung_box_q_and_p(
 
 #[cfg(test)]
 mod tests {
-    // Plan 04 fills:
-    // - `log_returns_basic` — handcrafted 4-element input, expected outputs.
-    // - `acf_matches_statsmodels_at_k1` — tiny vector, biased-ACF byte equality.
-    // - `ljung_box_matches_statsmodels_q_stat` — same fixture, Q-stat byte equality.
-    //
-    // Wave 0 ships an empty module so the `#[cfg(test)] mod tests` discipline
-    // (clippy.toml + RESEARCH §"Pure-kernel pattern") holds the scaffold.
+    use super::*;
+
+    const TOL: f64 = 1e-12;
+
+    fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
+        (a - b).abs() <= tol
+    }
+
+    // -----------------------------------------------------------------------
+    // log_returns
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn log_returns_basic() {
+        // close[t+1]/close[t] = e^1 each step -> ln = 1.0 twice.
+        let e = std::f64::consts::E;
+        let r = log_returns(&[1.0, e, e * e]);
+        assert_eq!(r.len(), 2);
+        assert!(approx_eq(r[0], 1.0, TOL), "r[0]={}", r[0]);
+        assert!(approx_eq(r[1], 1.0, TOL), "r[1]={}", r[1]);
+    }
+
+    #[test]
+    fn log_returns_empty() {
+        let r = log_returns(&[]);
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn log_returns_singleton() {
+        let r = log_returns(&[42.0]);
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn log_returns_length_invariant() {
+        // n closes -> n-1 returns.
+        let closes: Vec<f64> = (1..=10).map(|i| i as f64).collect();
+        let r = log_returns(&closes);
+        assert_eq!(r.len(), closes.len() - 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // biased_acf
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn biased_acf_lag0_is_one() {
+        let x = [1.0, 2.0, 3.0, 2.5, 2.0];
+        let acf = biased_acf(&x, 2);
+        assert!(approx_eq(acf[0], 1.0, TOL), "acf[0]={}", acf[0]);
+    }
+
+    #[test]
+    fn biased_acf_constant_series() {
+        // denom == 0 for a constant series; kernel returns 0 at lag>=1
+        // (statsmodels' practical handling of zero-variance input).
+        let acf = biased_acf(&[5.0; 10], 3);
+        assert_eq!(acf.len(), 4);
+        assert!(approx_eq(acf[0], 1.0, TOL));
+        for k in 1..=3 {
+            assert!(
+                approx_eq(acf[k], 0.0, TOL),
+                "acf[{k}]={} should be 0.0 for constant series",
+                acf[k]
+            );
+        }
+    }
+
+    #[test]
+    fn biased_acf_known_input() {
+        // Hand-computed reference for x = [1.0, 1.5, 2.0, 1.8, 1.6, 2.2, 2.8, 2.5].
+        // Precomputed via reference Python with the same algorithm; pinned here
+        // within 1e-12. The Plan 06 golden test pins byte-exact statsmodels
+        // equality at the envelope level.
+        let x = [1.0_f64, 1.5, 2.0, 1.8, 1.6, 2.2, 2.8, 2.5];
+        let acf = biased_acf(&x, 3);
+        assert_eq!(acf.len(), 4);
+        let expected = [
+            1.0_f64,
+            0.448_340_471_092_077_1,
+            -0.086_188_436_830_835_02,
+            -0.009_368_308_351_177_7,
+        ];
+        for (i, (got, want)) in acf.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                approx_eq(*got, *want, TOL),
+                "acf[{i}]={} vs expected {} (diff {})",
+                got,
+                want,
+                (got - want).abs()
+            );
+        }
+    }
+
+    #[test]
+    fn biased_acf_length_is_max_lag_plus_one() {
+        let x = [1.0, 2.0, 3.0, 4.0, 5.0];
+        assert_eq!(biased_acf(&x, 0).len(), 1);
+        assert_eq!(biased_acf(&x, 2).len(), 3);
+        assert_eq!(biased_acf(&x, 4).len(), 5);
+    }
+
+    // -----------------------------------------------------------------------
+    // ljung_box_q_and_p
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ljung_box_q_monotone() {
+        // Use a positive-autocorrelation seed; Q-stats must be non-decreasing
+        // (each contribution is acf[k]^2/(n-k) >= 0).
+        let x = [1.0_f64, 1.5, 2.0, 1.8, 1.6, 2.2, 2.8, 2.5];
+        let acf = biased_acf(&x, 3);
+        let (q, _p) = ljung_box_q_and_p(x.len(), &acf, 3);
+        assert_eq!(q.len(), 3);
+        assert!(q[0] <= q[1], "Q monotone: q[0]={} q[1]={}", q[0], q[1]);
+        assert!(q[1] <= q[2], "Q monotone: q[1]={} q[2]={}", q[1], q[2]);
+    }
+
+    #[test]
+    fn ljung_box_q_and_p_known_input() {
+        // Same fixture as biased_acf_known_input; precomputed Q-stats + p-values.
+        let x = [1.0_f64, 1.5, 2.0, 1.8, 1.6, 2.2, 2.8, 2.5];
+        let acf = biased_acf(&x, 3);
+        let (q, p) = ljung_box_q_and_p(x.len(), &acf, 3);
+        let expected_q = [
+            2.297_247_748_789_321_3_f64,
+            2.396_293_704_033_892_5,
+            2.397_697_947_255_696_5,
+        ];
+        // p-values come from chi2 CDF; tolerate slightly larger numeric error
+        // because chi2.cdf goes through a transcendental.
+        let expected_p = [
+            0.129_603_468_052_337_58_f64,
+            0.301_752_886_852_302_5,
+            0.494_063_292_970_136_3,
+        ];
+        for i in 0..3 {
+            assert!(
+                approx_eq(q[i], expected_q[i], TOL),
+                "q[{i}]={} expected {}",
+                q[i],
+                expected_q[i]
+            );
+            assert!(
+                approx_eq(p[i], expected_p[i], 1e-10),
+                "p[{i}]={} expected {}",
+                p[i],
+                expected_p[i]
+            );
+        }
+    }
+
+    #[test]
+    fn ljung_box_p_in_unit_interval() {
+        // For any Q >= 0 and df >= 1, p must land in [0, 1].
+        let x = [1.0_f64, 1.5, 2.0, 1.8, 1.6, 2.2, 2.8, 2.5, 3.0, 2.7];
+        let acf = biased_acf(&x, 5);
+        let (_q, p) = ljung_box_q_and_p(x.len(), &acf, 5);
+        for (i, pv) in p.iter().enumerate() {
+            assert!(
+                (0.0..=1.0).contains(pv),
+                "p[{i}]={pv} must be in [0, 1]"
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "max_lag must be >= 1")]
+    fn ljung_box_invalid_lag_panics() {
+        // debug_assert fires under cfg(test).
+        let acf = [1.0, 0.5];
+        let _ = ljung_box_q_and_p(10, &acf, 0);
+    }
 }
