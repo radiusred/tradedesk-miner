@@ -236,9 +236,8 @@ pub(crate) fn run_one_with_registry<R: Reader>(
     // `MinerError::Preflight(WireError)` which the CLI dispatches on via a
     // typed match.
     // -----------------------------------------------------------------------
-    let scan =
-        preflight::resolve_scan(&format!("{}@{}", req.scan_id, req.version), registry)
-            .map_err(MinerError::Preflight)?;
+    let scan = preflight::resolve_scan(&format!("{}@{}", req.scan_id, req.version), registry)
+        .map_err(MinerError::Preflight)?;
 
     // jsonschema validation of resolved_params against scan.param_schema() is
     // OUT OF SCOPE for Phase 3 (heavyweight dep + duplicated by the per-scan
@@ -1485,12 +1484,7 @@ mod tests {
     fn happy_reader_one_day() -> (FakeReader, NaiveDate) {
         let date = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
         let mut reader = FakeReader::new();
-        reader.insert_day(
-            "EURUSD",
-            Side::Bid,
-            date,
-            build_full_day_1m_bars(date, 1),
-        );
+        reader.insert_day("EURUSD", Side::Bid, date, build_full_day_1m_bars(date, 1));
         (reader, date)
     }
 
