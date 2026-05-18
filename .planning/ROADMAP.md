@@ -76,7 +76,15 @@ Plans:
   4. User can dry-run a planned scan invocation and see the resolved job (instruments, timeframes, windows, parameter expansion) and `data_slice` summary before committing.
   5. User can interrupt a long-running scan (SIGINT) and keep every finding already streamed to stdout, with a clean shutdown of the rayon worker pool.
   6. User can run the same scan twice on the same data and produce byte-identical JSONL output (sorted emission, BTreeMap, seeded RNG from inputs); the shuffled-future regression test passes (statistics before cutpoint unchanged when post-cutpoint bars are shuffled).
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Wave 0 scaffold: ctrlc/statrs/nix deps + 13 new source files + 9 integration test files (all stubs, #[ignore] markers) (OP-01, OP-05, OP-06, OP-07, OP-08, OUT-04)
+- [ ] 03-02-PLAN.md — Extend Finding envelope (DataSlice.gap_manifest + Finding::DryRun) + Registry::bootstrap + FindingSink::write_raw_json + regen schemas additively (OP-07, OP-08, OUT-04)
+- [ ] 03-03-PLAN.md — Engine sub-modules: param_hash + framing builders + preflight (scan resolver, params parser, window parser) + gap_policy dispatch (OP-08, OUT-04)
+- [ ] 03-04-PLAN.md — Ljung-Box kernel + LjungBoxScan: Scan impl + engine::run_one facade body (preflight → framing → dry-run → gap-policy → scan → cancel polling → RunSummary) (OP-01, OP-05, OP-06, OP-08, OUT-04)
+- [ ] 03-05-PLAN.md — CLI wiring: ScanArgs clap-derive + ctrlc handler install (Pitfall 2) + four-tier exit-code routing + miner scans via write_raw_json + miner-core public-surface extension (OP-01, OP-05, OP-06, OP-07, OP-08)
+- [ ] 03-06-PLAN.md — Integration tests (Ljung-Box golden insta snap, gap-policy 5 tests, shuffled-future proptest, dry-run, scan_subcommand_smoke, scans_catalogue, SIGINT) + README Quickstart + Phase 3 sign-off (OP-01, OP-05, OP-06, OP-07, OP-08, OUT-04)
 **UI hint**: No
 
 ### Phase 4: Scan Catalogue (ANOM, CROSS, SEAS)
@@ -140,9 +148,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations & Contracts | 0/7 | Planned | - |
-| 2. Reader, Aggregator & Derived-Bar Cache | 0/6 | Planned | - |
-| 3. Scan Engine, Facade & CLI | 0/TBD | Not started | - |
+| 1. Foundations & Contracts | 7/7 | Complete | 2026-05-17 |
+| 2. Reader, Aggregator & Derived-Bar Cache | 6/6 | Complete | 2026-05-18 |
+| 3. Scan Engine, Facade & CLI | 0/6 | Planned | - |
 | 4. Scan Catalogue (ANOM, CROSS, SEAS) | 0/TBD | Not started | - |
 | 5. Statistical Hygiene & Sweep Runner | 0/TBD | Not started | - |
 | 6. MCP & HTTP Wrappers | 0/TBD | Not started | - |
