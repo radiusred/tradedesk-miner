@@ -231,6 +231,64 @@ pub struct ScanRequest {
     pub sleep_after_first_finding_ms: Option<u64>,
 }
 
+impl ScanRequest {
+    /// Construct a `ScanRequest` with the 10 universally-available fields.
+    ///
+    /// Plan 03-05 chains this with `with_sleep_after_first_finding_ms`
+    /// (cfg-gated under `test` / `feature = "test-internal"`) to forward the
+    /// CLI's `--sleep-after-first-finding-ms` hook into the request without
+    /// per-field cfg in struct literals.
+    ///
+    /// Under release builds (no `test-internal`) the cfg-gated
+    /// `sleep_after_first_finding_ms` field is absent from the struct entirely,
+    /// so this constructor is the canonical entry point.
+    #[allow(clippy::too_many_arguments, reason = "ScanRequest is a flat 10-field request type and this constructor is the canonical builder; introducing an intermediate builder type would obscure the call site")]
+    #[must_use]
+    pub fn new(
+        scan_id: String,
+        version: u32,
+        instrument: String,
+        side: Side,
+        timeframe: Timeframe,
+        window: ClosedRangeUtc,
+        sub_range: TimeRange,
+        gap_policy: GapPolicyKind,
+        dry_run: bool,
+        resolved_params: serde_json::Value,
+        param_hash: Blake3Hex,
+    ) -> Self {
+        Self {
+            scan_id,
+            version,
+            instrument,
+            side,
+            timeframe,
+            window,
+            sub_range,
+            gap_policy,
+            resolved_params,
+            param_hash,
+            dry_run,
+            #[cfg(any(test, feature = "test-internal"))]
+            sleep_after_first_finding_ms: None,
+        }
+    }
+
+    /// Chained setter for the cfg-gated `sleep_after_first_finding_ms` hook
+    /// (Plan 03-02 / Pitfall 8). Forwards the value into `ScanRequest`; the
+    /// method itself is `#[cfg]`-gated so the call site in Plan 03-05's
+    /// `ScanArgs::to_scan_request` must also be cfg-gated when invoking it.
+    ///
+    /// NEVER reachable in release production builds — the cfg gate matches the
+    /// matching field gate (`#[cfg(any(test, feature = "test-internal"))]`).
+    #[cfg(any(test, feature = "test-internal"))]
+    #[must_use]
+    pub fn with_sleep_after_first_finding_ms(mut self, value: Option<u64>) -> Self {
+        self.sleep_after_first_finding_ms = value;
+        self
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ScanError — thiserror enum, mirrors aggregator.rs:201-219 AggregateError.
 // ---------------------------------------------------------------------------

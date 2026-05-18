@@ -87,6 +87,29 @@ impl Timeframe {
             Self::Tf1d => "1d",
         }
     }
+
+    /// Inverse of [`Timeframe::as_str`] — parse the canonical CLI / wire form
+    /// (`"15m"` / `"1h"` / `"1d"`) into a [`Timeframe`]. Used by Plan 03-05 to
+    /// convert the clap-parsed `--timeframe` string into the typed enum at the
+    /// CLI preflight boundary.
+    ///
+    /// # Errors
+    /// Returns the input `&str` unchanged when it is not one of the three
+    /// canonical forms; callers convert the error into a typed `WireError`
+    /// with appropriate context.
+    ///
+    /// We do NOT implement `std::str::FromStr` because that trait's
+    /// `Err: Display` requirement would force allocation; the borrowed `&str`
+    /// is exactly what the preflight wrapper site needs.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Result<Self, &str> {
+        match s {
+            "15m" => Ok(Self::Tf15m),
+            "1h" => Ok(Self::Tf1h),
+            "1d" => Ok(Self::Tf1d),
+            _ => Err(s),
+        }
+    }
 }
 
 impl Serialize for Timeframe {
@@ -584,6 +607,19 @@ mod tests {
         assert_eq!(ser, "\"1d\"");
         let de: Timeframe = serde_json::from_str("\"1d\"").unwrap();
         assert_eq!(de, Timeframe::Tf1d);
+    }
+
+    #[test]
+    fn timeframe_from_str_round_trip() {
+        for tf in [Timeframe::Tf15m, Timeframe::Tf1h, Timeframe::Tf1d] {
+            assert_eq!(Timeframe::from_str(tf.as_str()).unwrap(), tf);
+        }
+    }
+
+    #[test]
+    fn timeframe_from_str_rejects_unknown() {
+        let err = Timeframe::from_str("2h").expect_err("must reject");
+        assert_eq!(err, "2h");
     }
 
     #[test]

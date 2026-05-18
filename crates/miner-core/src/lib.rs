@@ -56,3 +56,9 @@ pub use gap::{GapDetector, GapManifest, GapReason, GapSpan};
 pub use cache::{
     ARROW_SCHEMA_VERSION, BarCache, CacheError, FingerprintSidecar, build_arrow_schema,
 };
+
+// Phase 3 (scan-engine-facade-cli) extensions:
+pub use scan::{Registry, Scan, ScanCtx, ScanError, ScanFindingShape, ScanRequest, bootstrap};
+pub use scan::ljung_box::LjungBoxScan;
+pub use engine::{GapDispatch, GapPolicyKind, RunOutcome, run_one};
+pub use findings::DryRunFinding;

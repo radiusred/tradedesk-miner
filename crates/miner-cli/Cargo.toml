@@ -20,6 +20,15 @@ license.workspace = true
 name = "miner"
 path = "src/main.rs"
 
+# `test-internal` is a parallel mirror of miner-core's `test-internal` feature
+# (Plan 03-02). When enabled it surfaces the cfg-gated
+# `--sleep-after-first-finding-ms` CLI flag and forwards the value into the
+# cfg-gated `ScanRequest.sleep_after_first_finding_ms` field so Plan 03-06's
+# SIGINT integration test can deterministically race the cancel token against
+# the scan kernel. NEVER enable in release profiles.
+[features]
+test-internal = ["miner-core/test-internal"]
+
 [dependencies]
 miner-core              = { path = "../miner-core" }
 miner-reader-dukascopy  = { path = "../miner-reader-dukascopy" }
@@ -40,6 +49,15 @@ chrono.workspace            = true
 ctrlc.workspace             = true
 
 [dev-dependencies]
+# Plan 03-05 Blocker 1 — enable miner-core's `test-internal` feature for ALL
+# test builds of this crate (`cargo test -p miner-cli` activates `[dev-dependencies]`
+# feature unification). This makes the cfg-gated
+# `ScanRequest.sleep_after_first_finding_ms` field reachable in scan_args.rs's
+# unit tests + the integration tests without requiring `--features test-internal`
+# at the test invocation. The runtime `[dependencies]` line above keeps default
+# features only; release `cargo build` activates neither cfg(test) nor the feature
+# and the sleep hook stays absent from production binaries.
+miner-core   = { path = "../miner-core", features = ["test-internal"] }
 # Local tempdir for integration tests that need an isolated config file.
 tempfile     = "3"
 # Serialises env-var mutation across tests that touch `MINER_*` vars; figment::Jail

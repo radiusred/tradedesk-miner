@@ -24,6 +24,8 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use miner_core::config::{CliOverrides, OutputDest};
 
+use crate::scan_args::ScanArgs;
+
 /// tradedesk-miner CLI.
 #[derive(Debug, Parser)]
 #[command(name = "miner", version, about)]
@@ -50,12 +52,26 @@ pub struct Cli {
     pub command: Command,
 }
 
-/// Phase 1 ships only `emit-fixture`; later phases extend this enum.
+/// Phase 1 ships only `emit-fixture`; Phase 3 (Plan 05) adds `scan` + `scans`.
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Emit one `RunStart` + one `RunEnd` fixture to stdout (Phase 1 sanity check;
     /// no scans yet).
     EmitFixture,
+
+    /// Execute one scan invocation end-to-end (Phase 3 — `engine::run_one`).
+    ///
+    /// Streams `RunStart` → per-finding envelopes (`Result` / `ScanError` /
+    /// `GapAborted` / `DryRun`) → `RunEnd` as JSONL on stdout. Exit code
+    /// routing per CONTEXT D3-24: 0 = clean run, 1 = preflight rejection,
+    /// 2 = at least one mid-stream `ScanError`, 130 = SIGINT.
+    Scan(ScanArgs),
+
+    /// List every registered scan, one JSONL line per scan validating against
+    /// `schemas/scans-catalogue-v1.schema.json` (D3-20 / RESEARCH Open
+    /// Question 8 resolution). Used by MCP / HTTP wrappers (Phase 6) to render
+    /// per-agent catalogues without running scans.
+    Scans,
 }
 
 impl Cli {
@@ -123,4 +139,36 @@ pub fn resolve_toml_path(cli_explicit: Option<&Path>) -> Option<PathBuf> {
         return Some(cwd.to_path_buf());
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    /// Plan 03-05 acceptance: when neither `--side` nor `--gap-policy` is
+    /// supplied on a `miner scan` invocation, clap must default them to
+    /// `bid` / `continuous_only` per D3-19.
+    #[test]
+    fn scan_args_defaults_per_d3_19() {
+        let cli = Cli::try_parse_from([
+            "miner",
+            "scan",
+            "stats.autocorr.ljung_box@1",
+            "--instrument",
+            "EURUSD",
+            "--timeframe",
+            "15m",
+            "--window",
+            "2024-01-01:2024-01-02",
+        ])
+        .expect("clap parse ok");
+        match &cli.command {
+            Command::Scan(args) => {
+                assert_eq!(args.side, "bid", "D3-19 default");
+                assert_eq!(args.gap_policy, "continuous_only", "D3-19 default");
+            }
+            other => panic!("expected Command::Scan; got {other:?}"),
+        }
+    }
 }
