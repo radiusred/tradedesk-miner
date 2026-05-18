@@ -188,11 +188,23 @@ pub fn run_one<R: Reader>(
 
     // -----------------------------------------------------------------------
     // Step 2 — Preflight: resolve scan via the production registry.
+    //
+    // Plan 03-07 CR-03 fix: route through the typed
+    // `engine::preflight::resolve_scan` helper which returns
+    // `Result<&dyn Scan, WireError>` carrying `PreflightCode::UnknownScan`.
+    // The previous inlined `registry.get(...)` plus a stringly-typed
+    // `MinerError::Scan(format!(...))` was the CR-03 root cause: the CLI
+    // dispatch matched on the format-string prefix — a fragile coupling
+    // between engine and CLI. Now the error is a typed
+    // `MinerError::Preflight(WireError)` which the CLI dispatches on via a
+    // typed match.
     // -----------------------------------------------------------------------
     let registry = crate::scan::bootstrap();
-    let scan = registry.get(&req.scan_id, req.version).ok_or_else(|| {
-        MinerError::Scan(format!("unknown scan: {}@{}", req.scan_id, req.version))
-    })?;
+    let scan = preflight::resolve_scan(
+        &format!("{}@{}", req.scan_id, req.version),
+        &registry,
+    )
+    .map_err(MinerError::Preflight)?;
 
     // jsonschema validation of resolved_params against scan.param_schema() is
     // OUT OF SCOPE for Phase 3 (heavyweight dep + duplicated by the per-scan
@@ -738,7 +750,24 @@ mod tests {
         let mut sink = VecSink::new();
         let cancel = Arc::new(AtomicBool::new(false));
         let res = run_one(&req, &cfg, &reader, &mut sink, cancel);
-        assert!(matches!(res, Err(MinerError::Scan(_))));
+        // Plan 03-07 CR-03: typed `MinerError::Preflight(WireError)` is now
+        // the preflight unknown-scan error. The wire-form carries
+        // `PreflightCode::UnknownScan` directly — no string-match dispatch
+        // in the CLI.
+        match res {
+            Err(MinerError::Preflight(w)) => {
+                assert_eq!(
+                    w.code, "unknown_scan",
+                    "preflight WireError must carry PreflightCode::UnknownScan"
+                );
+                assert!(
+                    w.message.contains("nope") || w.message.contains("no such scan"),
+                    "WireError message must surface the offending scan id; got {:?}",
+                    w.message
+                );
+            }
+            other => panic!("expected MinerError::Preflight(_); got {other:?}"),
+        }
         // Stdout (sink) stays empty: no RunStart, no Result, no RunEnd.
         assert!(sink.0.is_empty(), "no envelope on preflight failure");
     }

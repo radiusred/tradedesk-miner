@@ -254,6 +254,14 @@ fn handle_scans_subcommand(sink: &mut dyn FindingSink) -> std::io::Result<()> {
 /// verified by `handle_scan_subcommand_forwards_sleep_hook_to_scan_request`
 /// below (test-only seam: `build_scan_request_for_tests`).
 ///
+/// **Plan 03-07 CR-03 (typed-preflight dispatch):** preflight unknown-scan
+/// errors arrive here as `Err(MinerError::Preflight(WireError))` carrying the
+/// typed `PreflightCode::UnknownScan`; we emit the wire-form to stderr and
+/// signal `PreflightFailed`. The previous `MinerError::Scan(_)` plus a
+/// fragile prefix-match on the format-string dispatch is gone — the engine
+/// routes through `engine::preflight::resolve_scan` which builds the typed
+/// `WireError` directly.
+///
 /// # Errors
 /// Returns the underlying `WireError`-wrapped failure on preflight rejection
 /// (mapped to `RunOutcome::PreflightFailed`) or an `anyhow::Error` on
@@ -285,16 +293,17 @@ fn handle_scan_subcommand(
     let reader = DukascopyReader::new(cfg.cache_root.clone());
 
     // Step 3 — call the facade. The Result<RunOutcome, MinerError> propagates
-    // through anyhow; preflight unknown-scan errors arrive here as
-    // Err(MinerError::Scan(_)) per Plan 04's run_one contract, which we
-    // demote to PreflightFailed.
+    // through anyhow. Plan 03-07 CR-03 fix: preflight unknown-scan errors now
+    // arrive here as `Err(MinerError::Preflight(WireError))` carrying the
+    // typed `PreflightCode::UnknownScan` — no substring-match dispatch.
     match run_one(&req, cfg, &reader, sink, cancel) {
         Ok(outcome) => Ok(outcome),
-        Err(miner_core::error::MinerError::Scan(msg)) if msg.starts_with("unknown scan:") => {
-            // Map the run_one preflight rejection into a structured WireError
-            // on stderr; stdout stays empty (T-01-03 stdout discipline).
-            let err = WireError::preflight(PreflightCode::UnknownScan, msg);
-            let _ = emit_to_stderr(&err);
+        Err(miner_core::error::MinerError::Preflight(wire_err)) => {
+            // Emit the typed WireError verbatim to stderr; stdout stays empty
+            // (T-01-03 stdout discipline). The `code: "unknown_scan"` field
+            // is preserved by construction because `resolve_scan` built it
+            // with `PreflightCode::UnknownScan`.
+            let _ = emit_to_stderr(&wire_err);
             Ok(RunOutcome::PreflightFailed)
         }
         Err(e) => Err(anyhow::anyhow!("engine::run_one: {e}")),
