@@ -1,4 +1,8 @@
+![banner](https://i.ibb.co/Kc5C88gp/tradedesk-banner.webp)
+
 # tradedesk-miner
+
+![CI Build](https://github.com/radiusred/tradedesk-miner/actions/workflows/ci.yml/badge.svg)
 
 High-performance, agent-operable data-mining engine for historical financial OHLCV
 data. Scans cached candle data (typically Dukascopy bid/ask CSVs prepared by
@@ -22,10 +26,6 @@ Ljung-Box demo scan (`stats.autocorr.ljung_box@1`) end-to-end. The Phase 1
 contract surface — locked `Finding` JSON Schema, single sink writer, config
 precedence, CI gates — is FROZEN; later phases add scans and wrappers on top
 without re-litigating the envelope.
-
-## License
-
-Apache-2.0 — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
 
 ## Quickstart
 
@@ -160,3 +160,16 @@ research artefacts.
 See `.planning/ROADMAP.md`. Plan-by-plan summaries live under
 `.planning/phases/<phase>/<phase>-<plan>-SUMMARY.md`.
 
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, quality gates,
+and PR expectations.
+
+## License
+
+Licensed under the Apache License, Version 2.0.
+See: [https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0)
+
+Copyright 2026 [Radius Red Ltd.](https://github.com/radiusred) |
+[Contact](mailto:opensource@radiusred.uk)
