@@ -9,10 +9,12 @@ pub mod aggregator;
 pub mod cache;
 pub mod calendar;
 pub mod config;
+pub mod engine;
 pub mod error;
 pub mod findings;
 pub mod gap;
 pub mod reader;
+pub mod scan;
 
 /// Git SHA of the source revision that produced this build; `dirty-<sha>` when the tree
 /// had uncommitted changes; `"unknown"` when git was unavailable (e.g., tarball builds).

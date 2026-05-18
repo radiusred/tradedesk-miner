@@ -61,6 +61,16 @@ zstd               = "0.13"
 walkdir            = "2.5"
 tempfile           = "3"
 serial_test        = "3"
+# Phase 3 (Plan 03-01) additions:
+# - `ctrlc` is the SIGINT handler used by `miner-cli` only (D3-22). Pure-std underneath; tiny dep.
+# - `statrs` provides the `ChiSquared` distribution + `.cdf()` for Ljung-Box p-value computation
+#   (D3-04). Wired into `miner-core` ONLY; the CLI never touches the chi-squared kernel
+#   (Pitfall 1 — keep miner-core the single owner of the distribution dep).
+# `nix` is a `miner-cli` dev-dep only (SIGINT integration test), declared inline in
+# `crates/miner-cli/Cargo.toml` rather than at workspace level so the unix-only gate stays
+# local. See RESEARCH lines 70-90 + 03-PATTERNS line 1048.
+ctrlc              = "3.5"
+statrs             = "0.17"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
