@@ -76,7 +76,7 @@ Plans:
   4. User can dry-run a planned scan invocation and see the resolved job (instruments, timeframes, windows, parameter expansion) and `data_slice` summary before committing.
   5. User can interrupt a long-running scan (SIGINT) and keep every finding already streamed to stdout, with a clean shutdown of the rayon worker pool.
   6. User can run the same scan twice on the same data and produce byte-identical JSONL output (sorted emission, BTreeMap, seeded RNG from inputs); the shuffled-future regression test passes (statistics before cutpoint unchanged when post-cutpoint bars are shuffled).
-**Plans**: 6 plans
+**Plans**: 7 plans
 
 Plans:
 - [x] 03-01-PLAN.md — Wave 0 scaffold: ctrlc/statrs/nix deps + 13 new source files + 9 integration test files (all stubs, #[ignore] markers) (OP-01, OP-05, OP-06, OP-07, OP-08, OUT-04)
@@ -85,6 +85,7 @@ Plans:
 - [x] 03-04-PLAN.md — Ljung-Box kernel + LjungBoxScan: Scan impl + engine::run_one facade body (preflight → framing → dry-run → gap-policy → scan → cancel polling → RunSummary) (OP-01, OP-05, OP-06, OP-08, OUT-04)
 - [x] 03-05-PLAN.md — CLI wiring: ScanArgs clap-derive + ctrlc handler install (Pitfall 2) + four-tier exit-code routing + miner scans via write_raw_json + miner-core public-surface extension (OP-01, OP-05, OP-06, OP-07, OP-08)
 - [x] 03-06-PLAN.md — Integration tests (Ljung-Box golden insta snap, gap-policy 5 tests, shuffled-future proptest, dry-run, scan_subcommand_smoke, scans_catalogue, SIGINT) + README Quickstart + Phase 3 sign-off (OP-01, OP-05, OP-06, OP-07, OP-08, OUT-04)
+- [ ] 03-07-PLAN.md — Gap closure: typed MinerError::Preflight variant (CR-03) + wrap engine error paths with emit_scan_error+emit_run_end (CR-01) + restructure exit-code routing to honor cancel on Err arm (CR-02) + four engine sink-content regression tests + cancel_overrides_error_exit_130 integration test (OP-06, OP-08, OUT-04)
 **UI hint**: No
 
 ### Phase 4: Scan Catalogue (ANOM, CROSS, SEAS)
