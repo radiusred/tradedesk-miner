@@ -44,6 +44,10 @@ pub mod gap_policy;
 pub mod param_hash;
 pub mod preflight;
 
+// Plan 04 imports these via `use miner_core::engine::*;` — re-export the
+// two enums so callers don't need to spell out the inner module path.
+pub use gap_policy::{GapDispatch, GapPolicyKind};
+
 // ---------------------------------------------------------------------------
 // RunOutcome — internal enum the CLI maps to an exit code (D3-24).
 // ---------------------------------------------------------------------------
