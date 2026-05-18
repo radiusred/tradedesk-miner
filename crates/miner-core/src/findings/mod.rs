@@ -319,7 +319,7 @@ pub struct DryRunFinding {
     pub run_id: RunId,
     pub produced_at_utc: DateTime<Utc>,
     /// The same `request` blob `RunStart` echoes (canonical run-level metadata
-    /// — `scan_id@version`, instrument, side, timeframe, window, gap_policy,
+    /// — `scan_id@version`, instrument, side, timeframe, window, `gap_policy`,
     /// `dry_run = true`).
     pub request: serde_json::Value,
     /// Post-defaults parameter object — same input the `param_hash` would be

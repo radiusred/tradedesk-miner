@@ -13,29 +13,37 @@
 //!   single [`ScanError`] enum (kernel / cancel / io); readers each have their own
 //!   `Self::Error`.
 //! - [`ScanCtx`] — brokering object the facade constructs and passes to
-//!   [`Scan::run`]. Holds `cache`, `gap_detector`, `run_id`, `code_revision`,
-//!   and the cancellation flag. Plan 02 fills the fields and accessor methods.
+//!   [`Scan::run`]. Holds `bars`, `gap_manifest`, `run_id`, `code_revision`,
+//!   the cancellation flag, and the test-only `sleep_after_first_finding_ms`
+//!   Pitfall 8 hook (cfg-gated under `test` or `feature = "test-internal"`).
 //! - [`ScanRequest`] — the typed, post-preflight, resolved request the facade
-//!   hands to a scan. Plan 02 fills the fields.
+//!   hands to a scan. Includes the canonical `dry_run: bool` signal per D3-21.
 //! - [`ScanError`] — `thiserror`-derived enum following the
 //!   `crate::aggregator::AggregateError` shape (`aggregator.rs:201-219`).
 //! - [`ScanFindingShape`] — re-exported from [`shape`] for `miner scans`
 //!   catalogue introspection.
 //!
-//! ## Wave 0 scaffold
+//! ## Plan 03-02 fills bodies
 //!
-//! Plan 03-01 lays down signature-only bodies (`unimplemented!()` / `todo!()`); Plan
-//! 02..06 fill them. The trait IS object-safe — the [`tests::scan_trait_object_safe`]
-//! regression gate compiles the type-erased coercion and fails the build if a future
-//! method introduces non-dyn-safe self-types.
-
-#![allow(dead_code, unused_variables)]
+//! Plan 03-01 laid down signature-only bodies (`unimplemented!()` / `todo!()`);
+//! Plan 03-02 (this commit) fills the support-type bodies (everything except
+//! `LjungBoxScan::run` + `param_schema` which Plan 04 owns). The trait IS
+//! object-safe — the [`tests::scan_trait_object_safe`] regression gate compiles
+//! the type-erased coercion and fails the build if a future method introduces
+//! non-dyn-safe self-types.
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::findings::FindingSink;
-use crate::reader::ClosedRangeUtc;
+use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+use crate::aggregator::{BarFrame, Timeframe};
+use crate::engine::gap_policy::GapPolicyKind;
+use crate::findings::{FindingSink, RunId, TimeRange};
+use crate::gap::GapManifest;
+use crate::reader::{Blake3Hex, ClosedRangeUtc, Side};
 
 pub mod ljung_box;
 pub mod registry;
@@ -101,41 +109,126 @@ pub trait Scan: Send + Sync {
 
 /// Per-run brokering object passed to [`Scan::run`].
 ///
-/// Phase 3 ships the field skeleton; Plan 02 wires the accessor methods
-/// (`bars(symbol, side, tf, range) -> BarFrame`, `gap_manifest(...)`, etc.).
+/// Holds borrowed references to the bar frame the facade fetched plus run-level
+/// metadata (`run_id`, `code_revision`) and the cooperative cancellation flag
+/// installed by the CLI wrapper's `ctrlc` handler (D3-22). The `gap_manifest`
+/// field carries the partitioned manifest under `--gap-policy=continuous_only`
+/// (Plan 03-03 wires the dispatch).
 ///
-/// The lifetime parameter `'a` carries references to the facade-owned cache /
-/// detector borrows.
+/// ## Test-only Pitfall 8 hook (`sleep_after_first_finding_ms`)
+///
+/// Under `#[cfg(any(test, feature = "test-internal"))]` the struct gains an
+/// extra `sleep_after_first_finding_ms: Option<u64>` field. When `Some(ms)`,
+/// Plan 04's `LjungBoxScan::run` performs a cancel-aware sleep loop after
+/// emitting the first `Finding::Result` — this makes the Plan 06 SIGINT
+/// integration test's race deterministic without flake. Production builds
+/// (`cargo build` / `cargo build --release` without the `test-internal`
+/// feature) do NOT activate the cfg, so the field is genuinely absent from the
+/// release surface (T-03-02-05 mitigation).
 pub struct ScanCtx<'a> {
+    /// The bar frame the facade fetched via `BarCache::get_or_build`. Scans
+    /// read columns (`open`, `high`, `low`, `close`, `volume`, `ts_open_utc`)
+    /// for their kernel input.
+    pub bars: &'a BarFrame,
+    /// The partitioned gap manifest under `--gap-policy=continuous_only` (None
+    /// under `strict` success-path; the strict-with-gaps path emits
+    /// `Finding::GapAborted` BEFORE reaching `Scan::run`, so the kernel never
+    /// sees a strict-mode manifest).
+    pub gap_manifest: Option<&'a GapManifest>,
+    /// ULID identifying the run. Echoed into every `Finding::Result`'s
+    /// `run_id` field so the consumer can group findings by invocation.
+    pub run_id: RunId,
+    /// Git SHA (or `dirty-<sha>`) of the source revision that built this
+    /// binary — wired into every finding's `code_revision` field.
+    pub code_revision: &'a str,
     /// Cooperative cancellation flag installed by the CLI's `ctrlc` handler.
     /// Scans poll between findings; rayon workers exit at the next yield point.
     pub cancel: Arc<AtomicBool>,
-    /// Phantom lifetime carrier; Plan 02 will turn this into real `&'a BarCache` /
-    /// `&'a Calendar` references.
-    pub _lifetime: std::marker::PhantomData<&'a ()>,
+    /// **Test-only Pitfall 8 hook** (Plan 06 SIGINT race mitigation). When
+    /// `Some(ms)`, `LjungBoxScan::run` pauses after the first `Finding::Result`
+    /// emit for the requested duration via a cancel-aware sleep loop. NEVER
+    /// reachable in release production builds — the `#[cfg(...)]` gates the
+    /// field out of the struct entirely without the `test-internal` feature
+    /// or `cfg(test)` activation.
+    #[cfg(any(test, feature = "test-internal"))]
+    pub sleep_after_first_finding_ms: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
 // ScanRequest — the typed, post-preflight, resolved request the facade owns.
 // ---------------------------------------------------------------------------
 
-/// Resolved scan request. The facade builds one from a [`crate::config::MinerConfig`]
-/// + CLI args (or MCP / HTTP request payload). Plan 02 fills the fields.
+/// Resolved scan request. The facade builds one from a
+/// [`crate::config::MinerConfig`] + CLI args (or MCP / HTTP request payload).
 ///
 /// The struct intentionally carries primitive types (String / typed enums from
 /// `miner-core`) rather than clap-derived types — `miner-core` does not depend
 /// on clap (D-16).
+///
+/// ## `dry_run` is the canonical signal (D3-21 / Blocker 2)
+///
+/// `ScanRequest.dry_run: bool` is the CANONICAL dry-run signal end-to-end. No
+/// separate `RunOutcome::DryRun` enum variant exists; the signal is in
+/// `RunStart.request.dry_run` (echoed by Plan 04's framing) and in the
+/// `Finding::DryRun` envelope. Plan 04's `engine::run_one` branches on
+/// `req.dry_run`; Plan 05's `ScanArgs::to_scan_request` populates it; Plan
+/// 03-03's gap-policy dispatch never runs when `dry_run` is true (the
+/// dry-run short-circuit emits `Finding::DryRun` between `RunStart` and
+/// `RunEnd` and skips the scan body entirely).
+///
+/// ## `sleep_after_first_finding_ms` is cfg-gated (Pitfall 8 / Blocker 3)
+///
+/// Under `#[cfg(any(test, feature = "test-internal"))]` the struct gains an
+/// extra `sleep_after_first_finding_ms: Option<u64>` field forwarded into
+/// `ScanCtx` by Plan 04's `run_one`. Production builds do NOT include the
+/// field.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanRequest {
+    /// Scan id without the version suffix — e.g. `"stats.autocorr.ljung_box"`.
     pub scan_id: String,
+    /// Scan version. The pair `(scan_id, version)` keys `Registry::scans`.
     pub version: u32,
+    /// Instrument symbol — e.g. `"EURUSD"`.
     pub instrument: String,
-    pub side: crate::reader::Side,
-    pub timeframe: String,
+    /// Bid / ask side.
+    pub side: Side,
+    /// Output timeframe — `Tf15m` / `Tf1h` / `Tf1d`.
+    pub timeframe: Timeframe,
+    /// Request-level OUTPUT window (D3-06): the half-open range whose bars the
+    /// scan emits statistics about. The scan MAY read earlier bars internally
+    /// for warm-up.
     pub window: ClosedRangeUtc,
-    pub gap_policy: crate::engine::gap_policy::GapPolicyKind,
-    pub dry_run: bool,
-    /// Resolved, post-defaults parameter object (the input to `param_hash` per D3-13).
+    /// Per-finding consumed range, post gap-partitioning (Pitfall 4 pin —
+    /// distinct from `window`). Under `--gap-policy=continuous_only` with gaps,
+    /// Plan 04 invokes the scan once per sub-range with a different `sub_range`
+    /// per invocation; under the zero-gap fast path `sub_range` equals the
+    /// requested window translated through `ClosedRangeUtc::to_timerange()`.
+    pub sub_range: TimeRange,
+    /// Gap policy — `strict` or `continuous_only` (D3-19 default
+    /// `continuous_only`).
+    pub gap_policy: GapPolicyKind,
+    /// Resolved, post-defaults parameter object (the input to `param_hash`
+    /// per D3-13).
     pub resolved_params: serde_json::Value,
+    /// Blake3 hex of `serde_json::to_vec(&resolved_params)` (D3-13). Computed
+    /// once at the facade boundary and echoed into every finding's
+    /// `param_hash` field for byte-stable provenance.
+    pub param_hash: Blake3Hex,
+    /// **Canonical dry-run signal (D3-21 / Blocker 2).** When `true`, Plan
+    /// 04's `engine::run_one` emits one `Finding::DryRun` envelope between
+    /// `RunStart` and `RunEnd` and skips the scan body. Echoed into
+    /// `RunStart.request` so `param_hash` + `data_slice.range` provenance both
+    /// encode whether this was a dry-run. There is NO `RunOutcome::DryRun`
+    /// variant — the signal lives here.
+    #[serde(default)]
+    pub dry_run: bool,
+    /// **Test-only Pitfall 8 hook (Blocker 3).** Forwarded into `ScanCtx` by
+    /// Plan 04's `run_one`. Plan 05 surfaces the matching
+    /// `--sleep-after-first-finding-ms` CLI flag (also cfg-gated). Plan 06's
+    /// SIGINT integration test uses it to make the race deterministic.
+    #[cfg(any(test, feature = "test-internal"))]
+    #[serde(default)]
+    pub sleep_after_first_finding_ms: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -169,16 +262,185 @@ pub enum ScanError {
 }
 
 // ---------------------------------------------------------------------------
+// Cfg-gated parameter-passing dependencies declared above for the typed
+// ScanRequest fields; the JsonSchema derive deliberately stays OFF (ScanRequest
+// is the engine-internal request type — the wire-form description lives on the
+// per-scan `param_schema()` JSON Schema fragment + the framing `request` blob
+// inside `RunStart`).
+// ---------------------------------------------------------------------------
+
+#[allow(dead_code)]
+const _: fn() = || {
+    // Compile-only: confirm `DateTime<Utc>` + `JsonSchema` are usable from this
+    // module (`schemars` is a direct dependency). Plan 04's param_schema()
+    // implementations will lean on this.
+    fn _accept_dt(_v: DateTime<Utc>) {}
+    fn _accept_js<T: JsonSchema>() {}
+};
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     /// Compile-time regression gate (mirrors `reader.rs:272-274`
     /// `reader_trait_object_safe`). If `Scan` becomes non-dyn-compatible the
     /// workspace stops building — that's the test.
     #[test]
     fn scan_trait_object_safe() {
         fn _accept(_s: &dyn crate::scan::Scan) {}
+    }
+
+    /// Plan 03-02 Task 2 — `scan_request_dry_run_defaults_false_when_absent`.
+    ///
+    /// JSON object WITHOUT a `dry_run` field deserialises into a `ScanRequest`
+    /// with `dry_run == false` (per `#[serde(default)]` on the field). Pins
+    /// Blocker 2 acceptance: the dry-run signal is opt-in, not opt-out, and the
+    /// MCP / HTTP wrappers in Phase 6 can omit the field without changing
+    /// behaviour.
+    #[test]
+    fn scan_request_dry_run_defaults_false_when_absent() {
+        use crate::aggregator::Timeframe;
+        use crate::engine::gap_policy::GapPolicyKind;
+        use crate::reader::Side;
+        let json = serde_json::json!({
+            "scan_id": "stats.autocorr.ljung_box",
+            "version": 1,
+            "instrument": "EURUSD",
+            "side": "bid",
+            "timeframe": "15m",
+            "window": {
+                "start_utc": "2026-01-01T00:00:00Z",
+                "end_utc": "2026-02-01T00:00:00Z"
+            },
+            "sub_range": {
+                "start_utc": "2026-01-01T00:00:00Z",
+                "end_utc": "2026-02-01T00:00:00Z"
+            },
+            "gap_policy": "continuous_only",
+            "resolved_params": {"lags": 20},
+            "param_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            // dry_run intentionally omitted — must default to false.
+        });
+        let s = serde_json::to_string(&json).expect("serialise");
+        let req: ScanRequest = serde_json::from_str(&s).expect("deserialise");
+        assert!(
+            !req.dry_run,
+            "dry_run must default to false when absent (Blocker 2)"
+        );
+        // Spot-check side/timeframe parsed correctly to confirm the rest of the
+        // struct is well-formed.
+        assert!(matches!(req.side, Side::Bid));
+        assert!(matches!(req.timeframe, Timeframe::Tf15m));
+        assert!(matches!(req.gap_policy, GapPolicyKind::ContinuousOnly));
+    }
+
+    /// Plan 03-02 Task 2 — `scan_request_dry_run_round_trips`.
+    ///
+    /// A `ScanRequest` constructed with `dry_run = true` round-trips through
+    /// `serde_json::to_string` → `from_str` with the flag preserved. Pins the
+    /// wire-form symmetry the MCP / HTTP wrappers will rely on.
+    #[test]
+    fn scan_request_dry_run_round_trips() {
+        let req = sample_scan_request(true);
+        let json = serde_json::to_string(&req).expect("serialise");
+        let parsed: ScanRequest = serde_json::from_str(&json).expect("deserialise");
+        assert!(
+            parsed.dry_run,
+            "dry_run flag must survive serde round-trip; serialised: {json}"
+        );
+        // Same again for false — make sure `#[serde(default)]` doesn't drop the
+        // explicit value on the wire.
+        let req_false = sample_scan_request(false);
+        let json_false = serde_json::to_string(&req_false).expect("serialise");
+        let parsed_false: ScanRequest =
+            serde_json::from_str(&json_false).expect("deserialise");
+        assert!(!parsed_false.dry_run);
+    }
+
+    /// Plan 03-02 Task 2 — `scan_ctx_has_sleep_after_first_finding_ms_field`
+    /// (Blocker 3 / Pitfall 8).
+    ///
+    /// Under `cargo test` the `cfg(test)` predicate activates the cfg-gated
+    /// `sleep_after_first_finding_ms: Option<u64>` field on both `ScanCtx`
+    /// and `ScanRequest`. This test constructs both with the field present
+    /// (compile-time evidence the field is reachable under the test cfg) and
+    /// asserts the default is `None`. A release `cargo build` (without
+    /// `--features test-internal`) does NOT compile this test module and the
+    /// field is absent from the production binary.
+    #[test]
+    #[cfg(any(test, feature = "test-internal"))]
+    fn scan_ctx_has_sleep_after_first_finding_ms_field() {
+        let req = sample_scan_request(false);
+        assert!(
+            req.sleep_after_first_finding_ms.is_none(),
+            "sleep_after_first_finding_ms must default to None on ScanRequest"
+        );
+        // Compile-time evidence the field is reachable on ScanCtx too — the
+        // struct literal explicitly mentions the cfg-gated field.
+        let bars = sample_bar_frame();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let ctx = ScanCtx {
+            bars: &bars,
+            gap_manifest: None,
+            run_id: RunId::new(),
+            code_revision: "abc123",
+            cancel,
+            sleep_after_first_finding_ms: None,
+        };
+        assert!(ctx.sleep_after_first_finding_ms.is_none());
+    }
+
+    fn sample_scan_request(dry_run: bool) -> ScanRequest {
+        use chrono::TimeZone;
+        let start = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2026, 2, 1, 0, 0, 0).unwrap();
+        ScanRequest {
+            scan_id: "stats.autocorr.ljung_box".into(),
+            version: 1,
+            instrument: "EURUSD".into(),
+            side: Side::Bid,
+            timeframe: Timeframe::Tf15m,
+            window: ClosedRangeUtc { start, end },
+            sub_range: TimeRange { start_utc: start, end_utc: end },
+            gap_policy: GapPolicyKind::ContinuousOnly,
+            resolved_params: serde_json::json!({"lags": 20}),
+            param_hash: blake3_hex_zero(),
+            dry_run,
+            #[cfg(any(test, feature = "test-internal"))]
+            sleep_after_first_finding_ms: None,
+        }
+    }
+
+    fn blake3_hex_zero() -> Blake3Hex {
+        // 64-char lowercase-hex zero blake3 — deterministic placeholder for tests
+        // that don't care about the actual hash value. `Blake3Hex::from_hex_bytes`
+        // takes a fixed-size 64-byte ASCII array; we materialise one from a 64-char
+        // hex string here.
+        let bytes: [u8; 64] = [b'0'; 64];
+        Blake3Hex::from_hex_bytes(&bytes)
+    }
+
+    fn sample_bar_frame() -> BarFrame {
+        // Minimal empty BarFrame for ctx-construction tests. `BarFrame` is a pub
+        // struct (no `new` constructor — Plan 02-02), so we build it via struct
+        // literal with empty column vectors. The scan kernel never reads from
+        // this frame in the ctx-shape unit tests above.
+        BarFrame {
+            source_id: "dukascopy".into(),
+            symbol: "EURUSD".into(),
+            side: Side::Bid,
+            tf: Timeframe::Tf15m,
+            ts_open_utc: Vec::new(),
+            ts_close_utc: Vec::new(),
+            open: Vec::new(),
+            high: Vec::new(),
+            low: Vec::new(),
+            close: Vec::new(),
+            tick_volume: Vec::new(),
+        }
     }
 }

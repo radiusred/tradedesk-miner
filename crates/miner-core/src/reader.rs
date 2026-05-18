@@ -67,9 +67,11 @@ impl Side {
 ///
 /// Bars whose `ts_open_utc` falls in this range are yielded; the end timestamp is
 /// exclusive (a bar at `ts_open_utc == end` is NOT yielded).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ClosedRangeUtc {
+    #[serde(rename = "start_utc")]
     pub start: DateTime<Utc>,
+    #[serde(rename = "end_utc")]
     pub end: DateTime<Utc>,
 }
 
