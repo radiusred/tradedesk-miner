@@ -118,7 +118,7 @@ fn sigint_preserves_already_streamed_findings_and_exits_130() {
             "scan",
             "stats.autocorr.ljung_box@1",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",

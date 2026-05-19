@@ -146,9 +146,10 @@ mod tests {
     use super::*;
     use clap::Parser;
 
-    /// Plan 03-05 acceptance: when neither `--side` nor `--gap-policy` is
-    /// supplied on a `miner scan` invocation, clap must default them to
-    /// `bid` / `continuous_only` per D3-19.
+    /// Plan 03-05 / 04-02 acceptance: when `--gap-policy` is not supplied on
+    /// a `miner scan` invocation, clap defaults it to `continuous_only` per
+    /// D3-19. The legacy `--side` default was removed in Plan 04-02; side
+    /// now travels inside `--instrument SYMBOL:side`.
     #[test]
     fn scan_args_defaults_per_d3_19() {
         let cli = Cli::try_parse_from([
@@ -156,7 +157,7 @@ mod tests {
             "scan",
             "stats.autocorr.ljung_box@1",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",
@@ -165,7 +166,8 @@ mod tests {
         .expect("clap parse ok");
         match &cli.command {
             Command::Scan(args) => {
-                assert_eq!(args.side, "bid", "D3-19 default");
+                assert_eq!(args.instruments.len(), 1);
+                assert_eq!(args.instruments[0].symbol, "EURUSD");
                 assert_eq!(args.gap_policy, "continuous_only", "D3-19 default");
             }
             other => panic!("expected Command::Scan; got {other:?}"),

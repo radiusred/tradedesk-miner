@@ -122,13 +122,11 @@ fn cancel_overrides_error_exit_130() {
             "scan",
             "stats.autocorr.ljung_box@1",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",
             "2024-06-12:2024-06-13",
-            "--side",
-            "bid",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

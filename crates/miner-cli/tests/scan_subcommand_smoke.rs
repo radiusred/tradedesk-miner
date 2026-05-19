@@ -79,9 +79,7 @@ fn scan_emits_run_start_result_run_end() {
         &[
             "stats.autocorr.ljung_box@1",
             "--instrument",
-            "EURUSD",
-            "--side",
-            "bid",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",
@@ -125,7 +123,7 @@ fn unknown_scan_emits_wireerror_exit_1() {
         &[
             "nonexistent.scan@99",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",
@@ -162,19 +160,20 @@ fn unknown_scan_emits_wireerror_exit_1() {
 #[test]
 #[serial_test::serial]
 fn invalid_params_emits_wireerror_exit_1() {
-    // Supply --side with an invalid value so preflight rejects with
-    // invalid_parameter (the malformed-KEY=VAL params path is preempted by
-    // clap because clap accepts the string verbatim before preflight runs;
-    // an invalid --side value tests the same boundary code path).
+    // Plan 04-02 / D4-02 removed `--side`; use `--gap-policy lax` as the
+    // invalid-parameter boundary trigger (the malformed-KEY=VAL params
+    // path is preempted by clap because clap accepts the string verbatim;
+    // an invalid `--gap-policy` value reaches preflight and surfaces the
+    // same `invalid_parameter` classification).
     let cache = happy_path_cache();
     let (stdout, stderr, status) = run_miner(
         &cache,
         &[
             "stats.autocorr.ljung_box@1",
             "--instrument",
-            "EURUSD",
-            "--side",
-            "middle",
+            "EURUSD:bid",
+            "--gap-policy",
+            "lax",
             "--timeframe",
             "15m",
             "--window",
@@ -197,7 +196,7 @@ fn invalid_params_emits_wireerror_exit_1() {
     let wire: serde_json::Value = serde_json::from_str(wire_line).expect("WireError parses");
     assert_eq!(
         wire["code"], "invalid_parameter",
-        "invalid --side must classify as invalid_parameter; got: {wire}",
+        "invalid --gap-policy must classify as invalid_parameter; got: {wire}",
     );
 }
 
@@ -214,7 +213,7 @@ fn dry_run_emits_dry_run_finding_only() {
         &[
             "stats.autocorr.ljung_box@1",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",
@@ -261,7 +260,7 @@ fn exit_code_routing_zero_one_two() {
         &[
             "stats.autocorr.ljung_box@1",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",
@@ -280,7 +279,7 @@ fn exit_code_routing_zero_one_two() {
         &[
             "no.such.scan@1",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",
@@ -297,7 +296,7 @@ fn exit_code_routing_zero_one_two() {
         &[
             "stats.autocorr.ljung_box@1",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",

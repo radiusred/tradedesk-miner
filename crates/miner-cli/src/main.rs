@@ -244,9 +244,13 @@ fn emit_fixture(sink: &mut dyn FindingSink) -> anyhow::Result<()> {
 fn handle_scans_subcommand(sink: &mut dyn FindingSink) -> std::io::Result<()> {
     let registry = miner_core::scan::bootstrap();
     for scan in registry.iter() {
+        // Plan 04-02 / D4-02: the catalogue line gains an `arity` field
+        // ("single" / "pair") so MCP/HTTP wrappers in Phase 6 can render a
+        // typed parameter surface without executing a scan.
         let line = serde_json::json!({
             "scan_id": scan.id(),
             "version": scan.version(),
+            "arity": scan.arity().as_str(),
             "params": scan.param_schema(),
             "finding_fields": {
                 "effect_extra_keys": scan.finding_fields().effect_extra_keys,
@@ -579,12 +583,13 @@ mod tests {
     fn handle_scan_subcommand_forwards_sleep_hook_to_scan_request() {
         use clap::Parser;
         // Build the same ScanArgs handle_scan_subcommand would receive.
+        // Plan 04-02 / D4-02: `--instrument SYMBOL:side` (repeatable).
         let cli = Cli::try_parse_from([
             "miner",
             "scan",
             "stats.autocorr.ljung_box@1",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",

@@ -60,8 +60,8 @@ fn scans_emits_one_line_per_registered_scan() {
     );
 
     let line = &lines[0];
-    // Required keys per D3-20.
-    for key in ["scan_id", "version", "params", "finding_fields"] {
+    // Required keys per D3-20 + Plan 04-02 / D4-02 (`arity`).
+    for key in ["scan_id", "version", "arity", "params", "finding_fields"] {
         assert!(
             line.get(key).is_some(),
             "catalogue line missing required key {key:?}: {line}",
@@ -69,6 +69,8 @@ fn scans_emits_one_line_per_registered_scan() {
     }
     assert_eq!(line["scan_id"], "stats.autocorr.ljung_box");
     assert_eq!(line["version"], 1);
+    // Plan 04-02 / D4-02: LjungBoxScan is single-leg.
+    assert_eq!(line["arity"], "single");
     // finding_fields.effect_extra_keys is a non-empty array.
     let extra_keys = line["finding_fields"]["effect_extra_keys"]
         .as_array()

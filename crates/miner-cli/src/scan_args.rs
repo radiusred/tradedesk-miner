@@ -4,16 +4,22 @@
 //! conversion). `ScanArgs` follows the same shape but as a clap `Args` substruct
 //! that the `Command::Scan(ScanArgs)` variant wraps.
 //!
-//! ## D3-19 CLI surface
+//! ## D3-19 / D4-02 CLI surface
 //!
 //! ```text
-//! miner scan <scan_id@version> --instrument <SYM> --side <bid|ask> \
+//! miner scan <scan_id@version> --instrument SYMBOL:side [--instrument SYMBOL:side]... \
 //!     --timeframe <15m|1h|1d> --window <ISO_FROM>:<ISO_TO> \
 //!     [--gap-policy <strict|continuous_only>] [--dry-run] [--params <KEY=VAL>...]
 //! ```
 //!
+//! Plan 04-02 (D4-02 / PATTERNS.md Pattern K): the legacy `--instrument SYMBOL`
+//! + `--side bid|ask` pair is replaced by a REPEATABLE `--instrument SYMBOL:side`
+//! flag. Single-leg scans pass `--instrument EURUSD:bid` once; two-leg CROSS
+//! scans pass it twice (e.g. `--instrument EURUSD:bid --instrument GBPUSD:bid`).
+//! The engine's `validate_arity` preflight (Plan 04-02) rejects mismatched
+//! arity with `PreflightCode::WrongInstrumentArity`.
+//!
 //! Defaults:
-//! - `--side`: `bid` (D3-19 — conservative FX default).
 //! - `--gap-policy`: `continuous_only` (D3-19 — the policy that "does
 //!   something" by default; `strict` is opt-in).
 //!
@@ -47,14 +53,13 @@ pub struct ScanArgs {
     /// Positional `<scan_id@version>` — e.g., `"stats.autocorr.ljung_box@1"`.
     pub scan_id_at_version: String,
 
-    /// Instrument symbol — single-shot per invocation (D3-18). Phase 5's
-    /// sweep manifest is the only fanout entry point.
-    #[arg(long)]
-    pub instrument: String,
-
-    /// Bid/ask side. Default `bid` per D3-19 (FX-conservative).
-    #[arg(long, default_value = "bid")]
-    pub side: String,
+    /// Repeatable instrument flag — `--instrument SYMBOL:side` (Plan 04-02 /
+    /// D4-02 / PATTERNS.md Pattern K). Length must match the scan's declared
+    /// `arity()`. Single-leg scans (ANOM / SEAS) take ONE flag; Pair-arity
+    /// scans (CROSS, Plan 04-07) take TWO flags in leg order. Engine
+    /// preflight rejects mismatches with `PreflightCode::WrongInstrumentArity`.
+    #[arg(long = "instrument", action = clap::ArgAction::Append, value_parser = parse_instrument_spec)]
+    pub instruments: Vec<InstrumentSpec>,
 
     /// Timeframe (`15m` / `1h` / `1d`). Drives `BarCache::get_or_build`.
     #[arg(long)]
@@ -126,14 +131,10 @@ impl ScanArgs {
         // mirrors Plan 03-03's symmetric MCP/HTTP usage in Phase 6).
         let (scan_id, version) = preflight::resolve_scan_id_at_version(&self.scan_id_at_version)?;
 
-        // 2. side / timeframe / gap_policy enum parses.
-        let side = Side::from_str(&self.side).map_err(|bad| {
-            WireError::preflight(
-                PreflightCode::InvalidParameter,
-                format!("side must be one of \"bid\" / \"ask\"; got {bad:?}"),
-            )
-            .with_context("side", serde_json::Value::String(self.side.clone()))
-        })?;
+        // 2. timeframe / gap_policy enum parses. (Plan 04-02 / D4-02:
+        // `--side` was removed from the CLI surface — every leg's side
+        // travels INSIDE the `--instrument SYMBOL:side` value, parsed
+        // by `parse_instrument_spec`.)
         let timeframe = Timeframe::from_str(&self.timeframe).map_err(|bad| {
             WireError::preflight(
                 PreflightCode::InvalidParameter,
@@ -174,16 +175,11 @@ impl ScanArgs {
             start_utc: self.window.start,
             end_utc: self.window.end,
         };
-        // Phase 4 (D4-01): build a single-leg `Vec<InstrumentSpec>` from the
-        // current CLI shape (`--instrument SYMBOL` + `--side SIDE`). Plan 04-02
-        // will introduce the repeatable `--instrument SYMBOL:side` flag per
-        // Pattern K (PATTERNS.md) — this conversion preserves the existing
-        // CLI surface for Plan 04-01 while the engine internals already speak
-        // the new typed `instruments: Vec<InstrumentSpec>` shape.
-        let instruments = vec![InstrumentSpec {
-            symbol: self.instrument.clone(),
-            side,
-        }];
+        // Phase 4 (Plan 04-02 / D4-02): clap already parsed `--instrument
+        // SYMBOL:side` (repeatable) into `Vec<InstrumentSpec>` via the
+        // `parse_instrument_spec` value-parser. Engine preflight
+        // (`validate_arity`) rejects mismatched arity post-CLI.
+        let instruments = self.instruments.clone();
         let req = ScanRequest::new(
             scan_id,
             version,
@@ -234,6 +230,42 @@ pub fn parse_window(s: &str) -> Result<ClosedRangeUtc, String> {
     preflight::parse_iso_utc_window(s).map_err(|wire_err| wire_err.message)
 }
 
+/// Parse a single `--instrument SYMBOL:side` flag value into an
+/// [`InstrumentSpec`]. Plan 04-02 / D4-02 / PATTERNS.md Pattern K — used
+/// as the clap `value_parser` for the repeatable `--instrument` flag.
+///
+/// Splits the input on the FIRST `:` separator; the left part is the
+/// symbol (uppercase-normalised by the consumer; this parser preserves
+/// the input case), the right part parses via [`Side::from_str`]
+/// (`bid` / `ask` lowercase wire form).
+///
+/// # Errors
+/// Returns a user-facing `String` error when:
+/// - The input lacks a `:` separator.
+/// - The symbol leg is empty.
+/// - The side leg is not one of `"bid"` / `"ask"`.
+pub fn parse_instrument_spec(s: &str) -> Result<InstrumentSpec, String> {
+    let (symbol, side) = s.split_once(':').ok_or_else(|| {
+        format!(
+            "--instrument value must be of the form SYMBOL:side (e.g., EURUSD:bid); got {s:?}"
+        )
+    })?;
+    if symbol.is_empty() {
+        return Err(format!(
+            "--instrument SYMBOL:side has empty symbol; got {s:?}"
+        ));
+    }
+    let side = Side::from_str(side).map_err(|bad| {
+        format!(
+            "--instrument SYMBOL:side has unknown side {bad:?} (expected bid|ask); got {s:?}"
+        )
+    })?;
+    Ok(InstrumentSpec {
+        symbol: symbol.to_string(),
+        side,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -247,7 +279,9 @@ mod tests {
     use miner_core::engine::gap_policy::GapPolicyKind;
     use miner_core::reader::Side;
 
-    /// Parse a complete `miner scan ...` argv vector for use in tests.
+    /// Parse a complete `miner scan ...` argv vector for use in tests. Plan
+    /// 04-02 / D4-02: the `--instrument` flag now takes `SYMBOL:side` form
+    /// (the legacy `--side bid|ask` flag was removed).
     fn parse_argv(extra: &[&str]) -> Cli {
         // Always provide the four required base args; `extra` appends.
         let mut argv: Vec<&str> = vec![
@@ -255,7 +289,7 @@ mod tests {
             "scan",
             "stats.autocorr.ljung_box@1",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",
@@ -272,18 +306,20 @@ mod tests {
         }
     }
 
-    // ScanArgs_defaults: --side defaults to bid, --gap-policy defaults to
-    // continuous_only, --dry-run false, --params empty (D3-19).
+    /// ScanArgs_defaults: --gap-policy defaults to continuous_only,
+    /// --dry-run false, --params empty (D3-19). Plan 04-02 removed
+    /// `--side`; side travels inside `--instrument SYMBOL:side`.
     #[test]
     fn scan_args_defaults_per_d3_19_local() {
         let cli = parse_argv(&[]);
         let args = unwrap_scan_args(&cli);
-        assert_eq!(args.side, "bid");
         assert_eq!(args.gap_policy, "continuous_only");
         assert!(!args.dry_run);
         assert!(args.params.is_empty());
         assert_eq!(args.timeframe, "15m");
-        assert_eq!(args.instrument, "EURUSD");
+        assert_eq!(args.instruments.len(), 1);
+        assert_eq!(args.instruments[0].symbol, "EURUSD");
+        assert_eq!(args.instruments[0].side, Side::Bid);
         assert_eq!(args.scan_id_at_version, "stats.autocorr.ljung_box@1");
     }
 
@@ -307,6 +343,72 @@ mod tests {
         assert!(matches!(&req.resolved_params, serde_json::Value::Object(m) if m.is_empty()));
         // param_hash is the 64-char blake3 of `{}`.
         assert_eq!(req.param_hash.as_str().len(), 64);
+    }
+
+    /// Plan 04-02 Task 3 — Behavior Tests 1-4: `parse_instrument_spec`.
+    #[test]
+    fn parse_instrument_spec_basic() {
+        let spec = parse_instrument_spec("EURUSD:bid").expect("ok");
+        assert_eq!(spec.symbol, "EURUSD");
+        assert!(matches!(spec.side, Side::Bid));
+    }
+
+    #[test]
+    fn parse_instrument_spec_ask() {
+        let spec = parse_instrument_spec("GBPUSD:ask").expect("ok");
+        assert_eq!(spec.symbol, "GBPUSD");
+        assert!(matches!(spec.side, Side::Ask));
+    }
+
+    #[test]
+    fn parse_instrument_spec_invalid_side() {
+        let err = parse_instrument_spec("EURUSD:both").expect_err("must reject");
+        // Message must mention side / bid|ask.
+        assert!(
+            err.to_lowercase().contains("side") || err.contains("bid|ask"),
+            "error must mention side; got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_instrument_spec_missing_colon() {
+        let err = parse_instrument_spec("EURUSD").expect_err("must reject");
+        assert!(
+            err.contains("SYMBOL:side"),
+            "error must mention SYMBOL:side format; got {err:?}"
+        );
+    }
+
+    /// Plan 04-02 Task 3 — Behavior Test 5: repeatable `--instrument`
+    /// (two-leg case) lands a `Vec<InstrumentSpec>` of length 2 in leg
+    /// order.
+    #[test]
+    fn scan_args_round_trip_two_instruments() {
+        let cli = Cli::try_parse_from([
+            "miner",
+            "scan",
+            "stats.autocorr.ljung_box@1",
+            "--instrument",
+            "EURUSD:bid",
+            "--instrument",
+            "GBPUSD:bid",
+            "--timeframe",
+            "15m",
+            "--window",
+            "2024-01-01:2024-12-31",
+        ])
+        .expect("parse ok");
+        let args = unwrap_scan_args(&cli);
+        assert_eq!(args.instruments.len(), 2, "two-leg Vec");
+        assert_eq!(args.instruments[0].symbol, "EURUSD");
+        assert!(matches!(args.instruments[0].side, Side::Bid));
+        assert_eq!(args.instruments[1].symbol, "GBPUSD");
+        assert!(matches!(args.instruments[1].side, Side::Bid));
+        // Sanity: to_scan_request preserves leg order.
+        let req = args.to_scan_request("rev").expect("ok");
+        assert_eq!(req.instruments.len(), 2);
+        assert_eq!(req.instruments[0].symbol, "EURUSD");
+        assert_eq!(req.instruments[1].symbol, "GBPUSD");
     }
 
     #[test]
@@ -336,7 +438,7 @@ mod tests {
             "scan",
             "bad-no-at",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "15m",
             "--window",
@@ -348,12 +450,26 @@ mod tests {
         assert_eq!(err.code, "invalid_parameter");
     }
 
+    /// Plan 04-02 / D4-02 — invalid side leg inside an `--instrument SYMBOL:side`
+    /// value is rejected at CLI parse time (clap value-parser returns a String
+    /// error; clap exits before `to_scan_request` is reachable).
     #[test]
-    fn scan_args_invalid_side() {
-        let cli = parse_argv(&["--side", "middle"]);
-        let args = unwrap_scan_args(&cli);
-        let err = args.to_scan_request("rev").expect_err("must reject");
-        assert_eq!(err.code, "invalid_parameter");
+    fn scan_args_invalid_side_in_instrument() {
+        let res = Cli::try_parse_from([
+            "miner",
+            "scan",
+            "stats.autocorr.ljung_box@1",
+            "--instrument",
+            "EURUSD:middle",
+            "--timeframe",
+            "15m",
+            "--window",
+            "2024-01-01:2024-01-02",
+        ]);
+        assert!(
+            res.is_err(),
+            "clap value-parser must reject EURUSD:middle at parse time"
+        );
     }
 
     #[test]
@@ -363,7 +479,7 @@ mod tests {
             "scan",
             "stats.autocorr.ljung_box@1",
             "--instrument",
-            "EURUSD",
+            "EURUSD:bid",
             "--timeframe",
             "2h",
             "--window",

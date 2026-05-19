@@ -84,6 +84,13 @@ struct ScansCatalogueEntry {
     scan_id: String,
     /// Major version of the scan's output shape.
     version: u32,
+    /// Phase 4 (Plan 04-02 / D4-02) — declarative arity wire form
+    /// (`"single"` for ANOM/SEAS scans, `"pair"` for CROSS scans).
+    /// Lets MCP/HTTP wrappers in Phase 6 render a typed parameter
+    /// surface (number of required `--instrument` flags) without
+    /// executing a scan. Serialised via `ScanArity::as_str()` at the
+    /// `miner scans` subcommand emission site.
+    arity: String,
     /// JSON Schema fragment for the scan's `--params` (the
     /// `Scan::param_schema()` output, embedded verbatim).
     params: serde_json::Value,

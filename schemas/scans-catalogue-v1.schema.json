@@ -28,6 +28,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "xtask-local shim describing one line of `miner scans` introspection output\nper CONTEXT D3-20:\n\n```text\n{\"scan_id\":\"stats.autocorr.ljung_box\",\"version\":1,\n \"params\":{...JSON Schema fragment...},\n \"finding_fields\":{\"effect_extra_keys\":[...],\"raw_series_keys\":[...]}}\n```\n\nLives inside xtask (not `miner-core::scan`) because nothing in the runtime\nengine constructs `ScansCatalogueEntry` — it is purely the wire shape the\n`miner scans` subcommand emits via `FindingSink::write_raw_json` (Plan 05\nwires the subcommand body). Per RESEARCH Open Question 8 resolution, the\nsibling schema documents this shape so MCP/HTTP wrappers in Phase 6 can\nvalidate catalogue lines without coupling to `miner-core`'s internal types.",
   "properties": {
+    "arity": {
+      "description": "Phase 4 (Plan 04-02 / D4-02) — declarative arity wire form\n(`\"single\"` for ANOM/SEAS scans, `\"pair\"` for CROSS scans).\nLets MCP/HTTP wrappers in Phase 6 render a typed parameter\nsurface (number of required `--instrument` flags) without\nexecuting a scan. Serialised via `ScanArity::as_str()` at the\n`miner scans` subcommand emission site.",
+      "type": "string"
+    },
     "finding_fields": {
       "$ref": "#/$defs/ScanFindingShape",
       "description": "Declarative `effect.extra` + `raw.series` key list (the\n`Scan::finding_fields()` output, embedded verbatim)."
@@ -49,6 +53,7 @@
   "required": [
     "scan_id",
     "version",
+    "arity",
     "params",
     "finding_fields"
   ],
