@@ -101,7 +101,7 @@ Plans:
 **Plans**: 11 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Facade-shape extension: D4-01..D4-04 type changes (InstrumentSpec, ScanArity, instruments: Vec, sources: Vec, WrongInstrumentArity), workspace deps (ndarray + ndarray-stats + nalgebra), schemars regen spike + D4-03 vs D4-03-ALT decision
+- [x] 04-01-PLAN.md — Facade-shape extension: D4-01..D4-04 type changes (InstrumentSpec, ScanArity, instruments: Vec, sources: Vec, WrongInstrumentArity), workspace deps (ndarray + ndarray-stats + nalgebra), schemars regen spike + D4-03 vs D4-03-ALT decision
 - [ ] 04-02-PLAN.md — Engine + CLI + primitives + per-family register stubs: primitives::returns + time_alignment + raw_array, engine::validate_arity + two-leg gap dispatch, ScanCtx::bars_pair + bars_up_to, CLI repeatable --instrument SYMBOL:side, goldens/REFERENCE-VERSIONS.md + python-requirements.lock, integration test scaffolds (arity_preflight, two_leg_facade, gap_intersect_cross), LjungBox D4-06 refactor
 - [ ] 04-03-PLAN.md — ANOM batch A: stats.returns.profile (ANOM-01), stats.summary.welford (ANOM-02), stats.vol.rolling (ANOM-03) + shuffled-future extension
 - [ ] 04-04-PLAN.md — ANOM batch B: stats.autocorr.ljung_box_sq (ANOM-04 sq variant), stats.outliers.z_and_mad (ANOM-10), stats.drawdown.profile (ANOM-11)
