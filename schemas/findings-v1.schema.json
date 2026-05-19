@@ -29,6 +29,14 @@
         },
         "range": {
           "$ref": "#/$defs/TimeRange"
+        },
+        "sources": {
+          "default": [],
+          "description": "Phase 4 (Plan 04-01 / D4-03) — leg-labelled source vector. Length =\n`scan.arity().expected_len()` (1 for ANOM / SEAS, 2 for CROSS). Self-\ndescribing per-finding leg provenance; CROSS scans populate two\n`Source` entries in `ScanRequest.instruments` order. The previous\nsingleton `source: Source` field on `ResultFinding` and\n`GapAbortedFinding` has been removed in favour of this vector — see\n`.planning/phases/04-scan-catalogue-anom-cross-seas/04-01-SCHEMA-DIFF.md`\nfor the schema-additive decision (`#[serde(default)]` ensures the\nschema diff is purely additive — the `required` array on `DataSlice`\nis unchanged).",
+          "items": {
+            "$ref": "#/$defs/Source"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -176,9 +184,6 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
-        },
-        "source": {
-          "$ref": "#/$defs/Source"
         }
       },
       "required": [
@@ -189,7 +194,6 @@
         "data_slice",
         "run_id",
         "produced_at_utc",
-        "source",
         "gap_manifest"
       ],
       "type": "object"
@@ -442,9 +446,6 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
-        },
-        "source": {
-          "$ref": "#/$defs/Source"
         }
       },
       "required": [
@@ -455,7 +456,6 @@
         "data_slice",
         "run_id",
         "produced_at_utc",
-        "source",
         "params",
         "effect"
       ],

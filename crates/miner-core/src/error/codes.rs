@@ -26,6 +26,13 @@ pub enum PreflightCode {
     UnknownScan,
     /// The requested instrument is not in the source catalog.
     UnknownInstrument,
+    /// Phase 4 (Plan 04-01 / D4-02) — `ScanRequest.instruments.len()` does
+    /// not match the scan's declared `Scan::arity().expected_len()`.
+    /// Emitted by `engine::preflight::validate_arity` (Plan 04-02) before
+    /// any reader or cache work; the wire-form `code` string is
+    /// `"wrong_instrument_arity"`. Variant positioned alphabetically-by-
+    /// semantic-group AFTER `UnknownScan` per PATTERNS.md Pattern G.
+    WrongInstrumentArity,
     /// A required `MinerConfig` field could not be resolved from any layer.
     MissingRequiredConfig,
     /// A config file / env value failed parse or type-check.
@@ -44,6 +51,7 @@ impl PreflightCode {
             PreflightCode::InvalidParameter => "invalid_parameter",
             PreflightCode::UnknownScan => "unknown_scan",
             PreflightCode::UnknownInstrument => "unknown_instrument",
+            PreflightCode::WrongInstrumentArity => "wrong_instrument_arity",
             PreflightCode::MissingRequiredConfig => "missing_required_config",
             PreflightCode::InvalidConfig => "invalid_config",
             PreflightCode::SweepTooLarge => "sweep_too_large",
@@ -136,13 +144,19 @@ mod tests {
     use super::*;
 
     /// Test 1 — `preflight_code_serialises_snake_case`: every variant round-trips
-    /// through `serde_json` as the locked `snake_case` string.
+    /// through `serde_json` as the locked `snake_case` string. Phase 4 Plan
+    /// 04-01 Task 3 added `WrongInstrumentArity` per D4-02; the test cases
+    /// array now has 8 rows.
     #[test]
     fn preflight_code_serialises_snake_case() {
         let cases = [
             (PreflightCode::InvalidParameter, "invalid_parameter"),
             (PreflightCode::UnknownScan, "unknown_scan"),
             (PreflightCode::UnknownInstrument, "unknown_instrument"),
+            (
+                PreflightCode::WrongInstrumentArity,
+                "wrong_instrument_arity",
+            ),
             (
                 PreflightCode::MissingRequiredConfig,
                 "missing_required_config",
@@ -158,6 +172,17 @@ mod tests {
             assert_eq!(parsed, code);
             assert_eq!(code.as_str(), expected);
         }
+    }
+
+    /// Plan 04-01 Task 3 — Test 2: `preflight_code_as_str_wrong_instrument_arity`.
+    /// Sibling test pinning the as_str() return for the new D4-02 variant
+    /// independently of the cases-array driver above.
+    #[test]
+    fn preflight_code_as_str_wrong_instrument_arity() {
+        assert_eq!(
+            PreflightCode::WrongInstrumentArity.as_str(),
+            "wrong_instrument_arity"
+        );
     }
 
     /// Test 2 — `scan_error_code_serialises_snake_case`: every variant round-trips.
