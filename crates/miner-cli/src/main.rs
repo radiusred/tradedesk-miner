@@ -556,8 +556,8 @@ mod tests {
         assert!(expected >= 1, "Phase 3 ships at least one scan");
         // Parse each line and assert the four required properties on every
         // catalogue entry. Phase 4 adds more registered scans (Plan 04-03
-        // ships the first three under stats.{returns.profile,summary.welford,
-        // vol.rolling}); the per-line shape contract is invariant across
+        // ships ANOM-01..03, Plan 04-07 ships CROSS-02..03, Plan 04-09 ships
+        // SEAS-01..03); the per-line shape contract is invariant across
         // the catalogue.
         let mut ids: Vec<String> = Vec::with_capacity(lines.len());
         for line in &lines {

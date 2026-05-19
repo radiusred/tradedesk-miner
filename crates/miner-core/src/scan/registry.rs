@@ -160,15 +160,12 @@ mod tests {
     /// Plan 03-02 Task 2 Test 4 — `bootstrap_registers_ljung_box_scan`.
     /// The `bootstrap()` factory returns a registry containing the Phase 3
     /// `LjungBoxScan` plus every scan registered by the per-family helpers
-    /// (Plan 04-02 Pattern E). Plan 04-03 adds ANOM-01 -> total = 2; Plan
-    /// 04-11 tightens this to the final 23-scan count across the full
-    /// catalogue.
+    /// (Plan 04-02 Pattern E). Lower-bound assertion so per-family plans
+    /// can grow the count without breaking this test; Plan 04-11 tightens
+    /// to the final 23-scan count.
     #[test]
     fn bootstrap_registers_ljung_box_scan() {
         let r = bootstrap();
-        // Plan 04-03: LjungBox + ANOM-01 (stats.returns.profile@1).
-        // Subsequent Phase 4 plans bump this; Plan 04-11 pins the final
-        // count.
         assert!(
             r.scans.len() >= 1,
             "bootstrap must register at least LjungBox; got {}",
@@ -198,10 +195,10 @@ mod tests {
 
     /// Plan 04-02 Task 1b — Behavior Test 3:
     /// `bootstrap_invokes_all_three_family_registrars`. The factory must call
-    /// `register_anom_scans` + `register_cross_scans` + `register_seas_scans`;
-    /// since each helper is a no-op in Plan 04-02 the post-bootstrap count is
-    /// still 1 (LjungBox). Plan 04-11 will tighten this with the full 22-count
-    /// assertion once all families are populated.
+    /// `register_anom_scans` + `register_cross_scans` + `register_seas_scans`.
+    /// Plan 04-07 populates `register_cross_scans` so the post-bootstrap
+    /// count grows by 2+ (CROSS scans). Plan 04-11 will tighten this with
+    /// the full 23-count assertion once all families are populated.
     ///
     /// Compile-time evidence: this test imports the three family-registrar
     /// helpers via the same module path `bootstrap()` uses, so any rename /
@@ -216,11 +213,11 @@ mod tests {
             as fn(&mut Registry);
         let _ = crate::scan::seas::register_seas_scans
             as fn(&mut Registry);
-        // Behavioural evidence: bootstrap's count equals the number of
-        // direct registrations (LjungBox = 1) plus the sum of the
-        // family-registrar contributions. Plan 04-03 lands ANOM-01 inside
-        // `register_anom_scans` -> total = 2. Plan 04-11 pins the final
-        // 23-scan count once the catalogue is complete.
+        // Behavioural evidence: bootstrap's count equals the LjungBox direct
+        // registration plus the sum of family-registrar contributions.
+        // Lower-bound assertion so per-family Phase-4 plans (04-03..04-10)
+        // can extend without breaking this test; Plan 04-11 tightens to the
+        // exact 23-scan count once every family is populated.
         let r = bootstrap();
         assert!(
             r.scans.len() >= 1,
