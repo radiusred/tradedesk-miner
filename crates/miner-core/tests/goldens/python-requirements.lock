@@ -1,0 +1,32 @@
+# Python lockfile for Phase 4 golden regeneration.
+#
+# REGENERATE WITH:
+#   python -m venv /tmp/miner-goldens
+#   /tmp/miner-goldens/bin/pip install \
+#     statsmodels==0.14.6 scipy==1.14.1 arch==7.2.0 numpy==1.26.4 pandas==2.2.3
+#   /tmp/miner-goldens/bin/pip freeze > crates/miner-core/tests/goldens/python-requirements.lock
+#
+# The pinned top-level versions match
+# `crates/miner-core/tests/goldens/REFERENCE-VERSIONS.md`. Transitive deps
+# below are the deterministic outputs of `pip freeze` on a fresh venv with
+# the four top-level installs above; bump them in lockstep with the top-level
+# versions per the regen recipe.
+#
+# This file is REGENERATION INPUT ONLY — Rust builds + CI never execute it.
+# Golden regeneration is a manual developer task; the test suite consumes the
+# generated `.jsonl` fixtures, not this lockfile.
+
+# Top-level pins (Phase 4):
+statsmodels==0.14.6
+scipy==1.14.1
+arch==7.2.0
+numpy==1.26.4
+pandas==2.2.3
+
+# Transitive deps (pip freeze output as-of 2026-05; regen on bump):
+patsy==1.0.1
+python-dateutil==2.9.0
+pytz==2024.2
+six==1.17.0
+tzdata==2024.2
+packaging==24.2

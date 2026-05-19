@@ -77,13 +77,28 @@ impl Default for Registry {
 /// Construct the production registry with every Phase 3+ scan registered.
 ///
 /// Pattern: explicit `bootstrap()` factory (D3-16) — rejected `inventory`'s
-/// compile-time magic. Phase 4 plans extend this with one line per scan
-/// in alphabetical scan-id order so the registration sequence stays grep-able.
+/// compile-time magic.
+///
+/// ## Phase 4 per-family registrar contract (Plan 04-02 / Pattern E)
+///
+/// `bootstrap()` registers the Phase 3 `LjungBoxScan` directly, then delegates
+/// to three per-family `register_<family>_scans(&mut Registry)` helpers — one
+/// each for ANOM, CROSS, SEAS. This is the LAST modification to `bootstrap()`
+/// in Phase 4: Plans 04-03..04-10 append `r.register(...)` lines inside their
+/// own family's helper (alphabetical by scan-id), and Plan 04-11 only updates
+/// the count-assertion in `bootstrap_registers_ljung_box_scan` (renamed to
+/// reflect the full 22 + 1 count). The per-family registrar pattern lets the
+/// Wave-2..Wave-5 plans parallelise scan additions without touching this
+/// central function.
 #[must_use]
 pub fn bootstrap() -> Registry {
     let mut r = Registry::new();
     r.register(Box::new(LjungBoxScan));
-    // Phase 4 will add lines here, one per additional scan, alphabetical by id.
+    // Phase 4 per-family registrars — Plans 04-03..04-10 append inside the
+    // family helpers, NEVER in this function (Pattern E contract).
+    crate::scan::anom::register_anom_scans(&mut r);
+    crate::scan::cross::register_cross_scans(&mut r);
+    crate::scan::seas::register_seas_scans(&mut r);
     r
 }
 
@@ -175,5 +190,36 @@ mod tests {
         let mut sorted = ids.clone();
         sorted.sort_unstable();
         assert_eq!(ids, sorted, "iter() must yield ids in lexicographic order");
+    }
+
+    /// Plan 04-02 Task 1b — Behavior Test 3:
+    /// `bootstrap_invokes_all_three_family_registrars`. The factory must call
+    /// `register_anom_scans` + `register_cross_scans` + `register_seas_scans`;
+    /// since each helper is a no-op in Plan 04-02 the post-bootstrap count is
+    /// still 1 (LjungBox). Plan 04-11 will tighten this with the full 22-count
+    /// assertion once all families are populated.
+    ///
+    /// Compile-time evidence: this test imports the three family-registrar
+    /// helpers via the same module path `bootstrap()` uses, so any rename /
+    /// removal of the helpers fails the build.
+    #[test]
+    fn bootstrap_invokes_all_three_family_registrars() {
+        // Type-level evidence the three helpers are reachable from
+        // bootstrap()'s namespace (`crate::scan::{anom,cross,seas}::register_*_scans`).
+        let _ = crate::scan::anom::register_anom_scans
+            as fn(&mut Registry);
+        let _ = crate::scan::cross::register_cross_scans
+            as fn(&mut Registry);
+        let _ = crate::scan::seas::register_seas_scans
+            as fn(&mut Registry);
+        // Behavioural evidence: bootstrap's count equals the number of
+        // direct registrations (LjungBox = 1) plus the sum of the
+        // family-registrar contributions (0 + 0 + 0 in Plan 04-02).
+        let r = bootstrap();
+        assert_eq!(
+            r.scans.len(),
+            1,
+            "Plan 04-02 ships LjungBox + 3 empty family helpers = 1 total"
+        );
     }
 }
