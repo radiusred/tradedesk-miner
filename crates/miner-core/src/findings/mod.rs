@@ -87,6 +87,18 @@ pub struct DataSlice {
     /// `#[serde(default)]`, no `skip_serializing_if`.
     #[serde(default)]
     pub gap_manifest: Option<GapManifest>,
+    /// Phase 4 (Plan 04-01 / D4-03) — leg-labelled source vector. Length =
+    /// `scan.arity().expected_len()` (1 for ANOM / SEAS, 2 for CROSS). Self-
+    /// describing per-finding leg provenance; CROSS scans populate two
+    /// `Source` entries in `ScanRequest.instruments` order. The previous
+    /// singleton `source: Source` field on `ResultFinding` and
+    /// `GapAbortedFinding` has been removed in favour of this vector — see
+    /// `.planning/phases/04-scan-catalogue-anom-cross-seas/04-01-SCHEMA-DIFF.md`
+    /// for the schema-additive decision (`#[serde(default)]` ensures the
+    /// schema diff is purely additive — the `required` array on `DataSlice`
+    /// is unchanged).
+    #[serde(default)]
+    pub sources: Vec<Source>,
 }
 
 /// The instrument / side / timeframe a finding pertains to.
@@ -243,7 +255,6 @@ pub struct ResultFinding {
     // ----- Per-variant fields -----
     pub run_id: RunId,
     pub produced_at_utc: DateTime<Utc>,
-    pub source: Source,
     /// Resolved scan parameters (post-defaults).
     pub params: serde_json::Value,
     pub effect: Effect,
@@ -295,7 +306,6 @@ pub struct GapAbortedFinding {
     // ----- Per-variant fields -----
     pub run_id: RunId,
     pub produced_at_utc: DateTime<Utc>,
-    pub source: Source,
     pub gap_manifest: serde_json::Value,
 }
 
@@ -381,6 +391,7 @@ mod tests {
             },
             gap_manifest_ref: None,
             gap_manifest: None,
+            sources: vec![sample_source()],
         }
     }
 
@@ -415,7 +426,6 @@ mod tests {
             fdr_q: None,
             run_id: RunId::new(),
             produced_at_utc: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
-            source: sample_source(),
             params: serde_json::json!({"lags": 20}),
             effect: sample_effect(),
             raw: None,
@@ -450,7 +460,6 @@ mod tests {
             fdr_q: None,
             run_id: RunId::new(),
             produced_at_utc: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
-            source: sample_source(),
             gap_manifest: serde_json::json!({"gaps": []}),
         }
     }
@@ -706,6 +715,83 @@ mod tests {
         );
         assert_eq!(post.scan_errors, 0);
         assert_eq!(post.gap_aborted, 0);
+    }
+
+    /// Plan 04-01 Task 2 — Behavior Test 4: `data_slice_sources_vec_round_trip`.
+    /// `DataSlice.sources: Vec<Source>` round-trips through JSON with the
+    /// inserted Vec length preserved. Single-leg findings carry a length-1
+    /// Vec; the round-trip preserves Source.{source_id, symbol, side,
+    /// timeframe} verbatim. Pins the D4-03 wire contract.
+    #[test]
+    fn data_slice_sources_vec_round_trip() {
+        let slice = DataSlice {
+            range: TimeRange {
+                start_utc: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+                end_utc: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
+            },
+            gap_manifest_ref: None,
+            gap_manifest: None,
+            sources: vec![
+                Source {
+                    source_id: "dukascopy".into(),
+                    symbol: "EURUSD".into(),
+                    side: "bid".into(),
+                    timeframe: "15m".into(),
+                },
+                Source {
+                    source_id: "dukascopy".into(),
+                    symbol: "GBPUSD".into(),
+                    side: "ask".into(),
+                    timeframe: "15m".into(),
+                },
+            ],
+        };
+        let json = serde_json::to_string(&slice).expect("serialise");
+        let parsed: DataSlice = serde_json::from_str(&json).expect("deserialise");
+        assert_eq!(
+            parsed.sources.len(),
+            2,
+            "Pair-arity sources Vec must round-trip length verbatim"
+        );
+        assert_eq!(parsed.sources[0].symbol, "EURUSD");
+        assert_eq!(parsed.sources[0].side, "bid");
+        assert_eq!(parsed.sources[1].symbol, "GBPUSD");
+        assert_eq!(parsed.sources[1].side, "ask");
+        assert_eq!(parsed, slice, "round-trip must be lossless");
+
+        // Single-leg (length 1) case — ANOM / SEAS family default.
+        let single = DataSlice {
+            range: TimeRange {
+                start_utc: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+                end_utc: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
+            },
+            gap_manifest_ref: None,
+            gap_manifest: None,
+            sources: vec![Source {
+                source_id: "dukascopy".into(),
+                symbol: "EURUSD".into(),
+                side: "bid".into(),
+                timeframe: "15m".into(),
+            }],
+        };
+        let json = serde_json::to_string(&single).expect("serialise");
+        let parsed: DataSlice = serde_json::from_str(&json).expect("deserialise");
+        assert_eq!(parsed.sources.len(), 1);
+        assert_eq!(parsed, single);
+
+        // Backward-compat: an old payload omitting `sources` deserialises to
+        // an empty Vec (the `#[serde(default)]` attribute keeps the change
+        // additive — see 04-01-SCHEMA-DIFF.md).
+        let legacy_json = r#"{
+            "range": {"start_utc":"2026-01-01T00:00:00Z","end_utc":"2026-01-02T00:00:00Z"},
+            "gap_manifest_ref": null,
+            "gap_manifest": null
+        }"#;
+        let legacy: DataSlice = serde_json::from_str(legacy_json).expect("legacy parse ok");
+        assert!(
+            legacy.sources.is_empty(),
+            "Omitted `sources` must default to an empty Vec"
+        );
     }
 
     /// Test 12 — `run_summary_has_no_dry_run_emitted_field` (Warning 9 pin).

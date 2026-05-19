@@ -73,13 +73,31 @@ pub fn build_run_start(
         "scan_id@version".to_string(),
         serde_json::Value::String(format!("{}@{}", req.scan_id, req.version)),
     );
+    // Phase 4 (D4-01): echo `instruments: Vec<InstrumentSpec>` as a JSON
+    // array of {symbol, side} objects. The legacy singleton `instrument` +
+    // `side` keys are removed — Phase 6 MCP / HTTP wrappers will mirror the
+    // Vec shape. RunStart consumers that previously read `instrument` /
+    // `side` MUST be updated to read `instruments[0]` (the contract
+    // breakage was accepted at the user-locked decision D4-01).
+    let instruments_array: Vec<serde_json::Value> = req
+        .instruments
+        .iter()
+        .map(|spec| {
+            let mut m = serde_json::Map::new();
+            m.insert(
+                "symbol".to_string(),
+                serde_json::Value::String(spec.symbol.clone()),
+            );
+            m.insert(
+                "side".to_string(),
+                serde_json::Value::String(spec.side.as_str().to_string()),
+            );
+            serde_json::Value::Object(m)
+        })
+        .collect();
     request.insert(
-        "instrument".to_string(),
-        serde_json::Value::String(req.instrument.clone()),
-    );
-    request.insert(
-        "side".to_string(),
-        serde_json::Value::String(req.side.as_str().to_string()),
+        "instruments".to_string(),
+        serde_json::Value::Array(instruments_array),
     );
     request.insert(
         "timeframe".to_string(),
@@ -145,7 +163,7 @@ mod tests {
     use crate::aggregator::Timeframe;
     use crate::engine::gap_policy::GapPolicyKind;
     use crate::findings::TimeRange;
-    use crate::reader::{Blake3Hex, ClosedRangeUtc, Side};
+    use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
     use chrono::TimeZone;
 
     fn blake3_hex_zero() -> Blake3Hex {
@@ -159,8 +177,10 @@ mod tests {
         ScanRequest {
             scan_id: "stats.autocorr.ljung_box".into(),
             version: 1,
-            instrument: "EURUSD".into(),
-            side: Side::Bid,
+            instruments: vec![InstrumentSpec {
+                symbol: "EURUSD".into(),
+                side: Side::Bid,
+            }],
             timeframe: Timeframe::Tf15m,
             window: ClosedRangeUtc { start, end },
             sub_range: TimeRange {
@@ -201,15 +221,32 @@ mod tests {
             )),
             "scan_id@version must be echoed"
         );
+        // Phase 4 (D4-01): the legacy singleton `instrument` + `side` keys
+        // are replaced by an `instruments` JSON array of {symbol, side}
+        // objects.
+        let instruments = rs
+            .request
+            .get("instruments")
+            .and_then(|v| v.as_array())
+            .expect("instruments must be a JSON array");
+        assert_eq!(instruments.len(), 1, "single-leg request -> length-1 Vec");
         assert_eq!(
-            rs.request.get("instrument"),
+            instruments[0].get("symbol"),
             Some(&serde_json::Value::String("EURUSD".into())),
-            "instrument must be echoed"
+            "instruments[0].symbol must be echoed"
         );
         assert_eq!(
-            rs.request.get("side"),
+            instruments[0].get("side"),
             Some(&serde_json::Value::String("bid".into())),
-            "side must be wire form"
+            "instruments[0].side must be wire form"
+        );
+        assert!(
+            rs.request.get("instrument").is_none(),
+            "legacy singleton `instrument` key must NOT be present after D4-01"
+        );
+        assert!(
+            rs.request.get("side").is_none(),
+            "legacy singleton `side` key must NOT be present after D4-01"
         );
         assert_eq!(
             rs.request.get("timeframe"),

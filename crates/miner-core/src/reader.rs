@@ -88,6 +88,76 @@ impl Side {
     }
 }
 
+/// Phase 4 (Plan 04-01 / D4-01) — typed `(symbol, side)` pair carried by
+/// `ScanRequest.instruments: Vec<InstrumentSpec>`.
+///
+/// CLI wire form is `SYMBOL:side` (e.g., `"EURUSD:bid"`); the value-parser in
+/// `miner-cli::scan_args::parse_instrument_spec` splits on the single `:`
+/// separator and reuses [`Side::from_str`] for the side leg.
+///
+/// Derives include `Hash` so the type can serve as a `BTreeMap` /
+/// `HashMap` key in future per-instrument caches (parallel to the
+/// existing `(String, Side, NaiveDate)` MockReader key in Plan 02-02).
+/// `JsonSchema` is derived so the type can appear in any future schemars
+/// regen surface (the type is currently engine-internal — only present in
+/// `ScanRequest.instruments`, which is itself NOT `JsonSchema`-derived — but
+/// the derive is cheap and prevents future regen surprises).
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+pub struct InstrumentSpec {
+    /// Instrument symbol — e.g., `"EURUSD"`.
+    pub symbol: String,
+    /// Bid or ask side.
+    pub side: Side,
+}
+
+impl InstrumentSpec {
+    /// Construct an `InstrumentSpec` from its components.
+    #[must_use]
+    pub fn new(symbol: impl Into<String>, side: Side) -> Self {
+        Self {
+            symbol: symbol.into(),
+            side,
+        }
+    }
+
+    /// Parse the canonical CLI wire form `SYMBOL:side` into an
+    /// `InstrumentSpec`. Returns the offending `&str` slice when the input
+    /// lacks the `:` separator or carries a side leg that is not one of
+    /// `"bid"` / `"ask"`. The CLI value-parser
+    /// (`miner-cli::scan_args::parse_instrument_spec`) wraps the `&str`
+    /// error into a typed `WireError` with `PreflightCode::InvalidParameter`.
+    ///
+    /// Named `from_str` (not `from_canonical`) to match the symmetric
+    /// `Side::from_str` / `Timeframe::from_str` / `GapPolicyKind::from_str`
+    /// pattern; we intentionally do NOT implement `std::str::FromStr` —
+    /// the trait's `Err: Display` requirement forces an owned error type
+    /// the call site doesn't need.
+    ///
+    /// # Errors
+    /// Returns the input `&str` unchanged when it is not of the form
+    /// `"<non-empty-symbol>:<bid|ask>"`.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Result<Self, &str> {
+        let (symbol, side) = s.split_once(':').ok_or(s)?;
+        if symbol.is_empty() {
+            return Err(s);
+        }
+        let side = Side::from_str(side).map_err(|_| s)?;
+        Ok(Self {
+            symbol: symbol.to_string(),
+            side,
+        })
+    }
+}
+
+impl std::fmt::Display for InstrumentSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.symbol, self.side.as_str())
+    }
+}
+
 /// Half-open UTC range `[start, end)`, matching Phase 1 `TimeRange` semantics.
 ///
 /// Bars whose `ts_open_utc` falls in this range are yielded; the end timestamp is
@@ -326,5 +396,38 @@ mod tests {
         let bytes = [b'a'; 64];
         let hex = Blake3Hex::from_hex_bytes(&bytes);
         assert_eq!(hex.as_str(), "a".repeat(64));
+    }
+
+    /// Plan 04-01 Task 2 — Behavior Test 2:
+    /// `instrument_spec_parse_round_trip`. Serialises to the locked wire
+    /// form `{"symbol":"EURUSD","side":"bid"}`, round-trips through
+    /// `serde_json::from_str` with the canonical fields, and parses from
+    /// the CLI wire form `"EURUSD:bid"` via `InstrumentSpec::from_str`.
+    #[test]
+    fn instrument_spec_parse_round_trip() {
+        let spec = InstrumentSpec {
+            symbol: "EURUSD".into(),
+            side: Side::Bid,
+        };
+        let json = serde_json::to_string(&spec).expect("serialise");
+        assert_eq!(
+            json, r#"{"symbol":"EURUSD","side":"bid"}"#,
+            "InstrumentSpec wire form must match the locked shape"
+        );
+        let parsed: InstrumentSpec = serde_json::from_str(&json).expect("deserialise");
+        assert_eq!(parsed, spec);
+
+        // CLI wire form parse — splits on `:` and reuses Side::from_str.
+        let cli_form = "EURUSD:bid";
+        let parsed_cli = InstrumentSpec::from_str(cli_form).expect("parse ok");
+        assert_eq!(parsed_cli, spec);
+
+        // Display round-trips back to CLI form.
+        assert_eq!(parsed_cli.to_string(), cli_form);
+
+        // Rejection paths.
+        assert!(InstrumentSpec::from_str("EURUSDbid").is_err()); // no separator
+        assert!(InstrumentSpec::from_str(":bid").is_err()); // empty symbol
+        assert!(InstrumentSpec::from_str("EURUSD:middle").is_err()); // bad side
     }
 }

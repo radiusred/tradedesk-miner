@@ -96,8 +96,11 @@ fn sample_request() -> ScanRequest {
     ScanRequest {
         scan_id: "stats.autocorr.ljung_box".into(),
         version: 1,
-        instrument: "EURUSD".into(),
-        side: Side::Bid,
+        // Phase 4 (D4-01): single-leg instruments Vec.
+        instruments: vec![miner_core::reader::InstrumentSpec {
+            symbol: "EURUSD".into(),
+            side: Side::Bid,
+        }],
         timeframe: Timeframe::Tf15m,
         window: ClosedRangeUtc { start, end },
         sub_range: TimeRange {

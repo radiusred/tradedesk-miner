@@ -33,7 +33,7 @@ use miner_core::engine::gap_policy::GapPolicyKind;
 use miner_core::engine::preflight;
 use miner_core::error::{PreflightCode, WireError};
 use miner_core::findings::TimeRange;
-use miner_core::reader::{ClosedRangeUtc, Side};
+use miner_core::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 use miner_core::scan::ScanRequest;
 
 /// `miner scan` subcommand arguments.
@@ -174,11 +174,20 @@ impl ScanArgs {
             start_utc: self.window.start,
             end_utc: self.window.end,
         };
+        // Phase 4 (D4-01): build a single-leg `Vec<InstrumentSpec>` from the
+        // current CLI shape (`--instrument SYMBOL` + `--side SIDE`). Plan 04-02
+        // will introduce the repeatable `--instrument SYMBOL:side` flag per
+        // Pattern K (PATTERNS.md) — this conversion preserves the existing
+        // CLI surface for Plan 04-01 while the engine internals already speak
+        // the new typed `instruments: Vec<InstrumentSpec>` shape.
+        let instruments = vec![InstrumentSpec {
+            symbol: self.instrument.clone(),
+            side,
+        }];
         let req = ScanRequest::new(
             scan_id,
             version,
-            self.instrument.clone(),
-            side,
+            instruments,
             timeframe,
             self.window,
             sub_range,
@@ -287,8 +296,10 @@ mod tests {
             .expect("happy-path conversion ok");
         assert_eq!(req.scan_id, "stats.autocorr.ljung_box");
         assert_eq!(req.version, 1);
-        assert_eq!(req.instrument, "EURUSD");
-        assert_eq!(req.side, Side::Bid);
+        // D4-01: instruments Vec replaces the singleton `instrument`+`side`.
+        assert_eq!(req.instruments.len(), 1);
+        assert_eq!(req.instruments[0].symbol, "EURUSD");
+        assert_eq!(req.instruments[0].side, Side::Bid);
         assert_eq!(req.timeframe, Timeframe::Tf15m);
         assert_eq!(req.gap_policy, GapPolicyKind::ContinuousOnly);
         assert!(!req.dry_run);

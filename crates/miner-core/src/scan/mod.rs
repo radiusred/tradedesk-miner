@@ -43,7 +43,7 @@ use crate::aggregator::{BarFrame, Timeframe};
 use crate::engine::gap_policy::GapPolicyKind;
 use crate::findings::{FindingSink, RunId, TimeRange};
 use crate::gap::GapManifest;
-use crate::reader::{Blake3Hex, ClosedRangeUtc, Side};
+use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec};
 
 pub mod ljung_box;
 pub mod registry;
@@ -51,6 +51,54 @@ pub mod shape;
 
 pub use registry::{Registry, bootstrap};
 pub use shape::ScanFindingShape;
+
+// ---------------------------------------------------------------------------
+// ScanArity — Phase 4 (Plan 04-01 / D4-02) declarative arity for each scan.
+// ---------------------------------------------------------------------------
+
+/// Declarative arity for a scan — how many `InstrumentSpec` entries the
+/// scan expects in `ScanRequest.instruments` (D4-02). Validated at preflight
+/// via `PreflightCode::WrongInstrumentArity` (added in Plan 04-01 Task 3).
+///
+/// Pattern analog: `engine::gap_policy::GapPolicyKind` — same derives, same
+/// `#[serde(rename_all = "snake_case")]`, sibling `as_str` method.
+///
+/// v2 extension path: add `Many(min, max)` for basket scans (Johansen etc.).
+/// Adding an enum variant is schema-additive for schemars 1.x (the wire form
+/// `oneOf` gains a new option without invalidating existing parsers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScanArity {
+    /// Single-leg scan (ANOM / SEAS family). `instruments.len() == 1`.
+    Single,
+    /// Two-leg scan (CROSS family). `instruments.len() == 2`.
+    Pair,
+    // v2: Many(min, max) — basket scans (Johansen etc.)
+}
+
+impl ScanArity {
+    /// `snake_case` wire form — mirrors `GapPolicyKind::as_str` (the analog
+    /// at `engine/gap_policy.rs`).
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ScanArity::Single => "single",
+            ScanArity::Pair => "pair",
+        }
+    }
+
+    /// Expected length of `ScanRequest.instruments` for this arity. The
+    /// preflight `validate_arity` helper (Plan 04-02) rejects when
+    /// `instruments.len() != self.expected_len()` with
+    /// `PreflightCode::WrongInstrumentArity`.
+    #[must_use]
+    pub fn expected_len(&self) -> usize {
+        match self {
+            ScanArity::Single => 1,
+            ScanArity::Pair => 2,
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Scan trait — D3-14, mirrors `reader.rs:198-258` Send+Sync+&'static str shape.
@@ -73,6 +121,19 @@ pub trait Scan: Send + Sync {
     /// Major version of the scan's output shape. Bumps on any change to the
     /// emitted `effect` / `raw` keys. Phase 3 ships `version() == 1`.
     fn version(&self) -> u32;
+
+    /// Declarative arity per D4-02. ANOM / SEAS scans return
+    /// [`ScanArity::Single`]; CROSS scans return [`ScanArity::Pair`]. The
+    /// engine's preflight (`validate_arity`, Plan 04-02) rejects requests
+    /// where `instruments.len() != self.arity().expected_len()` with
+    /// `PreflightCode::WrongInstrumentArity`.
+    ///
+    /// No default body — every `Scan` impl must declare arity explicitly.
+    /// This is intentional: the arity is a load-bearing piece of the wire
+    /// contract (exposed via `miner scans` catalogue output so MCP/HTTP
+    /// wrappers in Phase 6 can render a typed parameter surface) and a
+    /// missing-default-causes-silent-Single-arity would be a footgun.
+    fn arity(&self) -> ScanArity;
 
     /// JSON Schema fragment describing the scan's `--params` shape. Used by
     /// `miner scans` introspection and by [`crate::engine::preflight`] to
@@ -188,10 +249,13 @@ pub struct ScanRequest {
     pub scan_id: String,
     /// Scan version. The pair `(scan_id, version)` keys `Registry::scans`.
     pub version: u32,
-    /// Instrument symbol — e.g. `"EURUSD"`.
-    pub instrument: String,
-    /// Bid / ask side.
-    pub side: Side,
+    /// Phase 4 (Plan 04-01 / D4-01) — leg-labelled instrument vector.
+    /// ANOM / SEAS scans take length 1; CROSS scans take length 2. The
+    /// engine's preflight `validate_arity` (Plan 04-02) rejects requests
+    /// whose `instruments.len()` does not match `scan.arity().expected_len()`
+    /// with `PreflightCode::WrongInstrumentArity`. Replaces the Phase 3
+    /// singleton `instrument: String + side: Side` pair.
+    pub instruments: Vec<InstrumentSpec>,
     /// Output timeframe — `Tf15m` / `Tf1h` / `Tf1d`.
     pub timeframe: Timeframe,
     /// Request-level OUTPUT window (D3-06): the half-open range whose bars the
@@ -250,8 +314,7 @@ impl ScanRequest {
     pub fn new(
         scan_id: String,
         version: u32,
-        instrument: String,
-        side: Side,
+        instruments: Vec<InstrumentSpec>,
         timeframe: Timeframe,
         window: ClosedRangeUtc,
         sub_range: TimeRange,
@@ -263,8 +326,7 @@ impl ScanRequest {
         Self {
             scan_id,
             version,
-            instrument,
-            side,
+            instruments,
             timeframe,
             window,
             sub_range,
@@ -346,6 +408,7 @@ const _: fn() = || {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reader::Side;
 
     /// Compile-time regression gate (mirrors `reader.rs:272-274`
     /// `reader_trait_object_safe`). If `Scan` becomes non-dyn-compatible the
@@ -353,6 +416,53 @@ mod tests {
     #[test]
     fn scan_trait_object_safe() {
         fn _accept(_s: &dyn crate::scan::Scan) {}
+    }
+
+    /// Plan 04-01 Task 2 — Behavior Test 1: `scan_arity_serialises_snake_case`.
+    /// `ScanArity::Single` serialises as `"single"`; `ScanArity::Pair` as
+    /// `"pair"`. Round-trip deser equality holds for both. The `as_str()`
+    /// helper mirrors `GapPolicyKind::as_str` (D4-02 / Pattern F).
+    #[test]
+    fn scan_arity_serialises_snake_case() {
+        let cases = [(ScanArity::Single, "single"), (ScanArity::Pair, "pair")];
+        for (arity, expected) in cases {
+            let json = serde_json::to_string(&arity).expect("serialise");
+            assert_eq!(json, format!("\"{expected}\""), "wire form mismatch");
+            let parsed: ScanArity = serde_json::from_str(&json).expect("deserialise");
+            assert_eq!(parsed, arity);
+            assert_eq!(arity.as_str(), expected);
+        }
+        // expected_len() helper used by validate_arity in Plan 04-02.
+        assert_eq!(ScanArity::Single.expected_len(), 1);
+        assert_eq!(ScanArity::Pair.expected_len(), 2);
+    }
+
+    /// Plan 04-01 Task 2 — Behavior Test 3:
+    /// `scan_request_instruments_len_one_serialises`. ScanRequest with
+    /// `instruments = vec![InstrumentSpec { symbol: "EURUSD", side: Side::Bid }]`
+    /// serialises to JSON where `instruments` is a JSON array of length 1
+    /// (D4-01).
+    #[test]
+    fn scan_request_instruments_len_one_serialises() {
+        let req = sample_scan_request(false);
+        assert_eq!(req.instruments.len(), 1, "Single-leg request");
+        let value = serde_json::to_value(&req).expect("serialise");
+        let arr = value
+            .get("instruments")
+            .and_then(|v| v.as_array())
+            .expect("instruments must be a JSON array");
+        assert_eq!(arr.len(), 1, "instruments JSON array must have length 1");
+        let leg = arr[0].as_object().expect("leg must be an object");
+        assert_eq!(leg["symbol"], "EURUSD");
+        assert_eq!(leg["side"], "bid");
+        // Round-trip via a string (the Blake3Hex deserializer requires a
+        // borrowed str, which `serde_json::from_value` cannot supply via its
+        // owned Value path — use from_str on the serialised JSON instead).
+        let json = serde_json::to_string(&req).expect("serialise to string");
+        let parsed: ScanRequest = serde_json::from_str(&json).expect("deserialise");
+        assert_eq!(parsed.instruments.len(), 1);
+        assert_eq!(parsed.instruments[0].symbol, "EURUSD");
+        assert!(matches!(parsed.instruments[0].side, Side::Bid));
     }
 
     /// Plan 03-02 Task 2 — `scan_request_dry_run_defaults_false_when_absent`.
@@ -370,8 +480,7 @@ mod tests {
         let json = serde_json::json!({
             "scan_id": "stats.autocorr.ljung_box",
             "version": 1,
-            "instrument": "EURUSD",
-            "side": "bid",
+            "instruments": [{"symbol": "EURUSD", "side": "bid"}],
             "timeframe": "15m",
             "window": {
                 "start_utc": "2026-01-01T00:00:00Z",
@@ -392,9 +501,10 @@ mod tests {
             !req.dry_run,
             "dry_run must default to false when absent (Blocker 2)"
         );
-        // Spot-check side/timeframe parsed correctly to confirm the rest of the
-        // struct is well-formed.
-        assert!(matches!(req.side, Side::Bid));
+        // Spot-check D4-01 instruments Vec + the rest of the struct.
+        assert_eq!(req.instruments.len(), 1);
+        assert_eq!(req.instruments[0].symbol, "EURUSD");
+        assert!(matches!(req.instruments[0].side, Side::Bid));
         assert!(matches!(req.timeframe, Timeframe::Tf15m));
         assert!(matches!(req.gap_policy, GapPolicyKind::ContinuousOnly));
     }
@@ -461,8 +571,10 @@ mod tests {
         ScanRequest {
             scan_id: "stats.autocorr.ljung_box".into(),
             version: 1,
-            instrument: "EURUSD".into(),
-            side: Side::Bid,
+            instruments: vec![InstrumentSpec {
+                symbol: "EURUSD".into(),
+                side: Side::Bid,
+            }],
             timeframe: Timeframe::Tf15m,
             window: ClosedRangeUtc { start, end },
             sub_range: TimeRange {

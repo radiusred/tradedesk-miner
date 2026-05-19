@@ -272,6 +272,11 @@ pub(crate) fn run_one_with_registry<R: Reader>(
             },
             gap_manifest_ref: None,
             gap_manifest: None,
+            // Phase 4 (D4-03): planned slice for dry-run keeps an empty
+            // sources Vec — the dry-run path does not load bars, and the
+            // ANOM-01 returns primitive (Plan 04-02) will populate the Vec
+            // when it lands the real run path.
+            sources: Vec::new(),
         };
         let dry_run_finding = Finding::DryRun(DryRunFinding {
             run_id,
@@ -306,7 +311,18 @@ pub(crate) fn run_one_with_registry<R: Reader>(
     // (mirrors the existing kernel-error arm). Tests:
     // `run_one_reader_error_emits_run_start_and_run_end_with_scan_error`.
     // -----------------------------------------------------------------------
-    let manifest = match GapDetector::detect(reader, &req.instrument, req.side, req.window) {
+    // Phase 4 (D4-01): single-leg dispatch reads instruments[0]. The Plan
+    // 04-02 `validate_arity` preflight will reject mismatched arity before
+    // this point with `PreflightCode::WrongInstrumentArity`. Until that
+    // preflight lands, the engine assumes single-leg (LjungBox is the only
+    // registered scan) and panics on an empty Vec (preflight should make
+    // this unreachable; the expect message is for diagnosis if the
+    // invariant ever leaks).
+    let leg = req
+        .instruments
+        .first()
+        .expect("ScanRequest.instruments must be non-empty post-preflight (D4-02)");
+    let manifest = match GapDetector::detect(reader, &leg.symbol, leg.side, req.window) {
         Ok(m) => m,
         Err(e) => {
             let msg = format!("reader: {e}");
@@ -335,6 +351,20 @@ pub(crate) fn run_one_with_registry<R: Reader>(
     // -----------------------------------------------------------------------
     match dispatch_result {
         GapDispatch::Aborted(m) => {
+            // Phase 4 (D4-03): populate `data_slice.sources` parallel to
+            // `req.instruments` (length 1 for single-leg). The previous
+            // singleton `source: Source` field on GapAbortedFinding has been
+            // removed in favour of this vector.
+            let sources: Vec<Source> = req
+                .instruments
+                .iter()
+                .map(|spec| Source {
+                    source_id: reader.source_id().to_string(),
+                    symbol: spec.symbol.clone(),
+                    side: spec.side.as_str().to_string(),
+                    timeframe: req.timeframe.as_str().to_string(),
+                })
+                .collect();
             let gap_aborted_finding = Finding::GapAborted(GapAbortedFinding {
                 schema_version: 1,
                 scan_id_at_version: scan_id_at_version.clone(),
@@ -347,17 +377,12 @@ pub(crate) fn run_one_with_registry<R: Reader>(
                     },
                     gap_manifest_ref: None,
                     gap_manifest: Some(m.clone()),
+                    sources,
                 },
                 dsr: None,
                 fdr_q: None,
                 run_id,
                 produced_at_utc: Utc::now(),
-                source: Source {
-                    source_id: reader.source_id().to_string(),
-                    symbol: req.instrument.clone(),
-                    side: req.side.as_str().to_string(),
-                    timeframe: req.timeframe.as_str().to_string(),
-                },
                 gap_manifest: serde_json::to_value(&m).map_err(MinerError::from)?,
             });
             sink.write_envelope(&gap_aborted_finding)?;
@@ -396,8 +421,11 @@ pub(crate) fn run_one_with_registry<R: Reader>(
                 let bars = match cache.get_or_build(
                     reader,
                     AggParams {
-                        symbol: &req.instrument,
-                        side: req.side,
+                        // Phase 4 (D4-01): single-leg dispatch reads
+                        // instruments[0]. CROSS scans (Plan 04-03) will
+                        // iterate the Vec twice.
+                        symbol: &leg.symbol,
+                        side: leg.side,
                         tf: req.timeframe,
                         range: sub_range_utc,
                     },
@@ -574,6 +602,17 @@ fn emit_scan_error(
 ) -> Result<(), MinerError> {
     use crate::error::ScanErrorCode;
     use crate::findings::ScanErrorFinding;
+    // Phase 4 (D4-03): populate `data_slice.sources` from req.instruments.
+    let sources: Vec<Source> = req
+        .instruments
+        .iter()
+        .map(|spec| Source {
+            source_id: source_id.to_string(),
+            symbol: spec.symbol.clone(),
+            side: spec.side.as_str().to_string(),
+            timeframe: req.timeframe.as_str().to_string(),
+        })
+        .collect();
     sink.write_envelope(&Finding::ScanError(ScanErrorFinding {
         schema_version: 1,
         scan_id_at_version: scan_id_at_version.to_string(),
@@ -583,6 +622,7 @@ fn emit_scan_error(
             range: req.sub_range.clone(),
             gap_manifest_ref: None,
             gap_manifest: None,
+            sources,
         },
         dsr: None,
         fdr_q: None,
@@ -632,7 +672,7 @@ mod tests {
     use crate::calendar::Calendar;
     use crate::config::OutputDest;
     use crate::findings::sink::VecSink;
-    use crate::reader::{Blake3Hex, RawBar, RawBarIter, Side};
+    use crate::reader::{Blake3Hex, InstrumentSpec, RawBar, RawBarIter, Side};
     use chrono::{DateTime, Duration, NaiveDate, TimeZone};
     use std::collections::BTreeMap;
 
@@ -798,8 +838,10 @@ mod tests {
         ScanRequest {
             scan_id: "stats.autocorr.ljung_box".into(),
             version: 1,
-            instrument: instrument.into(),
-            side: Side::Bid,
+            instruments: vec![InstrumentSpec {
+                symbol: instrument.into(),
+                side: Side::Bid,
+            }],
             timeframe: Timeframe::Tf15m,
             window: ClosedRangeUtc {
                 start: window_start,
@@ -1431,6 +1473,9 @@ mod tests {
         fn version(&self) -> u32 {
             1
         }
+        fn arity(&self) -> crate::scan::ScanArity {
+            crate::scan::ScanArity::Single
+        }
         fn param_schema(&self) -> serde_json::Value {
             serde_json::json!({"type":"object"})
         }
@@ -1459,6 +1504,9 @@ mod tests {
         }
         fn version(&self) -> u32 {
             1
+        }
+        fn arity(&self) -> crate::scan::ScanArity {
+            crate::scan::ScanArity::Single
         }
         fn param_schema(&self) -> serde_json::Value {
             serde_json::json!({"type":"object"})
@@ -1616,7 +1664,7 @@ mod cancellation_tests {
     use crate::aggregator::Timeframe;
     use crate::config::OutputDest;
     use crate::findings::sink::VecSink;
-    use crate::reader::{RawBar, Side};
+    use crate::reader::{InstrumentSpec, RawBar, Side};
     use chrono::{Duration, NaiveDate, TimeZone};
     use std::time::Instant;
 
@@ -1661,8 +1709,10 @@ mod cancellation_tests {
         ScanRequest {
             scan_id: "stats.autocorr.ljung_box".into(),
             version: 1,
-            instrument: "EURUSD".into(),
-            side: Side::Bid,
+            instruments: vec![InstrumentSpec {
+                symbol: "EURUSD".into(),
+                side: Side::Bid,
+            }],
             timeframe: Timeframe::Tf15m,
             window: ClosedRangeUtc { start, end },
             sub_range: TimeRange {

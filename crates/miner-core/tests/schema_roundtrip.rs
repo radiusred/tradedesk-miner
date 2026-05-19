@@ -59,6 +59,9 @@ fn sample_data_slice() -> DataSlice {
         },
         gap_manifest_ref: None,
         gap_manifest: None,
+        // Phase 4 (D4-03): leg-labelled sources Vec replaces the previous
+        // singleton `source: Source` field on ResultFinding / GapAbortedFinding.
+        sources: vec![sample_source()],
     }
 }
 
@@ -127,7 +130,6 @@ fn sample_result_no_raw() -> Finding {
         fdr_q: None,
         run_id: RunId::new(),
         produced_at_utc: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
-        source: sample_source(),
         params: serde_json::json!({"lags": 20}),
         effect: sample_effect_empty_extra(),
         raw: None,
@@ -167,7 +169,6 @@ fn sample_result_with_raw() -> Finding {
         fdr_q: None,
         run_id: RunId::new(),
         produced_at_utc: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
-        source: sample_source(),
         params: serde_json::json!({"lags": 20}),
         effect: sample_effect_empty_extra(),
         raw: Some(raw),
@@ -202,7 +203,6 @@ fn sample_gap_aborted() -> Finding {
         fdr_q: None,
         run_id: RunId::new(),
         produced_at_utc: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
-        source: sample_source(),
         gap_manifest: serde_json::json!({"gaps": []}),
     })
 }

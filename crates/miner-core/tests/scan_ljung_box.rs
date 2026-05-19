@@ -94,8 +94,12 @@ fn ljung_box_matches_statsmodels_golden() {
     let req = ScanRequest {
         scan_id: "stats.autocorr.ljung_box".into(),
         version: 1,
-        instrument: "EURUSD".into(),
-        side: Side::Bid,
+        // Phase 4 (D4-01): instruments Vec replaces the singleton
+        // instrument + side pair.
+        instruments: vec![miner_core::reader::InstrumentSpec {
+            symbol: "EURUSD".into(),
+            side: Side::Bid,
+        }],
         timeframe: Timeframe::Tf15m,
         window: ClosedRangeUtc {
             start: window_start,

@@ -1,5 +1,6 @@
 ---
 source: crates/miner-core/tests/scan_ljung_box.rs
+assertion_line: 190
 expression: masked
 ---
 {
@@ -10,7 +11,15 @@ expression: masked
     "range": {
       "end_utc": "2024-01-04T00:00:00Z",
       "start_utc": "2024-01-01T00:00:00Z"
-    }
+    },
+    "sources": [
+      {
+        "side": "bid",
+        "source_id": "dukascopy",
+        "symbol": "EURUSD",
+        "timeframe": "15m"
+      }
+    ]
   },
   "dsr": null,
   "effect": {
@@ -77,11 +86,5 @@ expression: masked
   },
   "run_id": "<masked_run_id>",
   "scan_id@version": "stats.autocorr.ljung_box@1",
-  "schema_version": 1,
-  "source": {
-    "side": "bid",
-    "source_id": "dukascopy",
-    "symbol": "EURUSD",
-    "timeframe": "15m"
-  }
+  "schema_version": 1
 }

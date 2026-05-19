@@ -47,7 +47,7 @@ use crate::findings::{
     Base64Bytes, DataSlice, Dtype, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding,
     Source,
 };
-use crate::scan::{Scan, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
+use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
 
 pub mod kernel;
 
@@ -73,6 +73,12 @@ impl Scan for LjungBoxScan {
 
     fn version(&self) -> u32 {
         SCAN_VERSION
+    }
+
+    /// Phase 4 (Plan 04-01 / D4-02): LjungBox is a single-leg ANOM scan
+    /// — arity is always [`ScanArity::Single`].
+    fn arity(&self) -> ScanArity {
+        ScanArity::Single
     }
 
     fn param_schema(&self) -> serde_json::Value {
@@ -192,6 +198,20 @@ impl Scan for LjungBoxScan {
         );
         let raw_block = Raw::new(series).map_err(|m| ScanError::Kernel(m.to_string()))?;
 
+        // Phase 4 (D4-03): populate `data_slice.sources: Vec<Source>` parallel
+        // to `req.instruments` (length 1 for ANOM single-leg). `Source.side`
+        // / `Source.timeframe` carry the canonical wire-form strings.
+        let sources: Vec<Source> = req
+            .instruments
+            .iter()
+            .map(|spec| Source {
+                source_id: ctx.bars.source_id.clone(),
+                symbol: spec.symbol.clone(),
+                side: spec.side.as_str().to_string(),
+                timeframe: req.timeframe.as_str().to_string(),
+            })
+            .collect();
+
         let result = ResultFinding {
             schema_version: 1,
             scan_id_at_version: format!("{SCAN_ID}@{SCAN_VERSION}"),
@@ -201,17 +221,12 @@ impl Scan for LjungBoxScan {
                 range: req.sub_range.clone(),
                 gap_manifest_ref: None,
                 gap_manifest: ctx.gap_manifest.cloned(),
+                sources,
             },
             dsr: None,
             fdr_q: None,
             run_id: ctx.run_id,
             produced_at_utc: Utc::now(),
-            source: Source {
-                source_id: ctx.bars.source_id.clone(),
-                symbol: req.instrument.clone(),
-                side: req.side.as_str().to_string(),
-                timeframe: req.timeframe.as_str().to_string(),
-            },
             params: req.resolved_params.clone(),
             effect,
             raw: Some(raw_block),
@@ -328,7 +343,7 @@ mod tests {
     use crate::findings::TimeRange;
     use crate::findings::run_id::RunId;
     use crate::findings::sink::VecSink;
-    use crate::reader::{Blake3Hex, ClosedRangeUtc, Side};
+    use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
     use chrono::{DateTime, Duration, TimeZone};
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
@@ -397,8 +412,10 @@ mod tests {
         ScanRequest {
             scan_id: SCAN_ID.into(),
             version: SCAN_VERSION,
-            instrument: "EURUSD".into(),
-            side: Side::Bid,
+            instruments: vec![InstrumentSpec {
+                symbol: "EURUSD".into(),
+                side: Side::Bid,
+            }],
             timeframe: Timeframe::Tf15m,
             window: ClosedRangeUtc { start, end },
             sub_range: TimeRange {
@@ -441,6 +458,19 @@ mod tests {
         let s = LjungBoxScan;
         assert_eq!(s.id(), "stats.autocorr.ljung_box");
         assert_eq!(s.version(), 1);
+    }
+
+    /// Plan 04-01 Task 2 — Behavior Test 6: `ljung_box_scan_reports_single_arity`.
+    /// `LjungBoxScan` is an ANOM scan (D4-02) and therefore reports
+    /// `ScanArity::Single`. The 22 Phase 4 scans each declare arity in the
+    /// same fashion via the new `Scan::arity()` trait method (no default
+    /// body — every impl is explicit).
+    #[test]
+    fn ljung_box_scan_reports_single_arity() {
+        let s = LjungBoxScan;
+        assert_eq!(s.arity(), ScanArity::Single);
+        assert_eq!(s.arity().expected_len(), 1);
+        assert_eq!(s.arity().as_str(), "single");
     }
 
     #[test]
@@ -570,11 +600,14 @@ mod tests {
             raw_keys.iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
             vec!["returns", "timestamps_ms"]
         );
-        // Source string-typed fields populated from req.
-        assert_eq!(r.source.source_id, "dukascopy");
-        assert_eq!(r.source.symbol, "EURUSD");
-        assert_eq!(r.source.side, "bid");
-        assert_eq!(r.source.timeframe, "15m");
+        // D4-03: leg-labelled sources Vec on data_slice (replaces the old
+        // singleton `source: Source` field on ResultFinding).
+        assert_eq!(r.data_slice.sources.len(), 1, "Single-arity -> Vec len 1");
+        let leg = &r.data_slice.sources[0];
+        assert_eq!(leg.source_id, "dukascopy");
+        assert_eq!(leg.symbol, "EURUSD");
+        assert_eq!(leg.side, "bid");
+        assert_eq!(leg.timeframe, "15m");
     }
 
     #[test]
