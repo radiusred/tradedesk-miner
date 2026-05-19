@@ -117,6 +117,7 @@ fn ljung_box_matches_statsmodels_golden() {
     };
     let ctx = ScanCtx {
         bars: &bars,
+        bars_pair: None,
         gap_manifest: None,
         run_id: RunId::new(),
         code_revision: "test-rev-abc1234",

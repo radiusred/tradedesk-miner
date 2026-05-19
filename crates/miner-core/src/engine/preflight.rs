@@ -34,8 +34,8 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, NaiveDate, Utc};
 
 use crate::error::{PreflightCode, WireError};
-use crate::reader::ClosedRangeUtc;
-use crate::scan::{Registry, Scan};
+use crate::reader::{ClosedRangeUtc, InstrumentSpec};
+use crate::scan::{Registry, Scan, ScanArity};
 
 // ---------------------------------------------------------------------------
 // resolve_scan_id_at_version — "id@version" → (String, u32)
@@ -95,6 +95,57 @@ pub fn resolve_scan<'a>(s: &str, registry: &'a Registry) -> Result<&'a dyn Scan,
             serde_json::Value::String(s.to_string()),
         )
     })
+}
+
+// ---------------------------------------------------------------------------
+// validate_arity — Phase 4 (Plan 04-02 / D4-02). Reject any request whose
+// `instruments.len()` does not match the scan's declared arity.
+// ---------------------------------------------------------------------------
+
+/// Validate that `instruments.len()` matches `scan.arity().expected_len()`.
+/// Returns `Ok(())` when the lengths match; otherwise returns a
+/// [`WireError`] carrying [`PreflightCode::WrongInstrumentArity`] plus the
+/// three context keys consumers rely on (`scan_id`, `expected_arity`,
+/// `supplied_arity`).
+///
+/// Pattern analog: `resolve_scan_id_at_version` + `resolve_scan` — both
+/// return `Result<_, WireError>` and use `WireError::preflight(...)` +
+/// `with_context(...)`. The engine call site in `run_one_with_registry`
+/// adapts the error via `MinerError::Preflight(_)` exactly the same way the
+/// existing `resolve_scan` chain does.
+///
+/// # Errors
+/// Returns [`WireError::preflight`] with [`PreflightCode::WrongInstrumentArity`]
+/// when `instruments.len() != scan.arity().expected_len()`. The
+/// context map carries the scan id and both arity values for the CLI
+/// audit-trail line on stderr.
+pub fn validate_arity(scan: &dyn Scan, instruments: &[InstrumentSpec]) -> Result<(), WireError> {
+    let expected = match scan.arity() {
+        ScanArity::Single => 1,
+        ScanArity::Pair => 2,
+    };
+    if instruments.len() != expected {
+        let supplied = instruments.len();
+        return Err(WireError::preflight(
+            PreflightCode::WrongInstrumentArity,
+            format!(
+                "{} expects {} instrument(s); got {}",
+                scan.id(),
+                expected,
+                supplied
+            ),
+        )
+        .with_context("scan_id", serde_json::Value::String(scan.id().to_string()))
+        .with_context(
+            "expected_arity",
+            serde_json::Value::Number(serde_json::Number::from(expected)),
+        )
+        .with_context(
+            "supplied_arity",
+            serde_json::Value::Number(serde_json::Number::from(supplied)),
+        ));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +395,135 @@ mod tests {
             Ok(_) => panic!("expected error for unknown scan version"),
             Err(err) => assert_eq!(err.code, "unknown_scan"),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // validate_arity — Plan 04-02 Task 2 (Behavior Tests 1-4)
+    // -----------------------------------------------------------------------
+
+    use crate::reader::Side;
+    use crate::scan::{ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
+
+    struct StubSingle;
+    impl crate::scan::Scan for StubSingle {
+        fn id(&self) -> &'static str {
+            "stub.single@1"
+        }
+        fn version(&self) -> u32 {
+            1
+        }
+        fn arity(&self) -> ScanArity {
+            ScanArity::Single
+        }
+        fn param_schema(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        fn finding_fields(&self) -> ScanFindingShape {
+            ScanFindingShape {
+                effect_extra_keys: &[],
+                raw_series_keys: &[],
+            }
+        }
+        fn run(
+            &self,
+            _ctx: &ScanCtx<'_>,
+            _req: &ScanRequest,
+            _sink: &mut dyn crate::findings::FindingSink,
+        ) -> Result<(), ScanError> {
+            Ok(())
+        }
+    }
+
+    struct StubPair;
+    impl crate::scan::Scan for StubPair {
+        fn id(&self) -> &'static str {
+            "stub.pair@1"
+        }
+        fn version(&self) -> u32 {
+            1
+        }
+        fn arity(&self) -> ScanArity {
+            ScanArity::Pair
+        }
+        fn param_schema(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        fn finding_fields(&self) -> ScanFindingShape {
+            ScanFindingShape {
+                effect_extra_keys: &[],
+                raw_series_keys: &[],
+            }
+        }
+        fn run(
+            &self,
+            _ctx: &ScanCtx<'_>,
+            _req: &ScanRequest,
+            _sink: &mut dyn crate::findings::FindingSink,
+        ) -> Result<(), ScanError> {
+            Ok(())
+        }
+    }
+
+    fn spec(sym: &str, side: Side) -> InstrumentSpec {
+        InstrumentSpec {
+            symbol: sym.into(),
+            side,
+        }
+    }
+
+    /// Behavior Test 1: Single + len 1 -> Ok.
+    #[test]
+    fn validate_arity_accepts_correct_single() {
+        let scan = StubSingle;
+        let instruments = vec![spec("EURUSD", Side::Bid)];
+        assert!(validate_arity(&scan, &instruments).is_ok());
+    }
+
+    /// Behavior Test 2: Single + len 2 -> Err with WrongInstrumentArity +
+    /// `expected_arity == 1`, `supplied_arity == 2`.
+    #[test]
+    fn validate_arity_rejects_two_instruments_for_single() {
+        let scan = StubSingle;
+        let instruments = vec![spec("EURUSD", Side::Bid), spec("GBPUSD", Side::Bid)];
+        let err = validate_arity(&scan, &instruments).expect_err("must reject");
+        assert_eq!(err.code, "wrong_instrument_arity");
+        assert_eq!(
+            err.context.get("expected_arity"),
+            Some(&serde_json::json!(1))
+        );
+        assert_eq!(
+            err.context.get("supplied_arity"),
+            Some(&serde_json::json!(2))
+        );
+        assert_eq!(
+            err.context.get("scan_id"),
+            Some(&serde_json::Value::String("stub.single@1".to_string()))
+        );
+    }
+
+    /// Behavior Test 3: Pair + len 2 -> Ok.
+    #[test]
+    fn validate_arity_accepts_pair() {
+        let scan = StubPair;
+        let instruments = vec![spec("EURUSD", Side::Bid), spec("GBPUSD", Side::Bid)];
+        assert!(validate_arity(&scan, &instruments).is_ok());
+    }
+
+    /// Behavior Test 4: Pair + len 1 -> Err with WrongInstrumentArity.
+    #[test]
+    fn validate_arity_rejects_one_instrument_for_pair() {
+        let scan = StubPair;
+        let instruments = vec![spec("EURUSD", Side::Bid)];
+        let err = validate_arity(&scan, &instruments).expect_err("must reject");
+        assert_eq!(err.code, "wrong_instrument_arity");
+        assert_eq!(
+            err.context.get("expected_arity"),
+            Some(&serde_json::json!(2))
+        );
+        assert_eq!(
+            err.context.get("supplied_arity"),
+            Some(&serde_json::json!(1))
+        );
     }
 
     // -----------------------------------------------------------------------

@@ -423,6 +423,7 @@ mod tests {
     fn make_ctx(bars: &BarFrame, cancel: Arc<AtomicBool>, sleep_ms: Option<u64>) -> ScanCtx<'_> {
         ScanCtx {
             bars,
+            bars_pair: None,
             gap_manifest: None,
             run_id: RunId::new(),
             code_revision: "abc1234",

@@ -184,6 +184,36 @@ pub fn dispatch(
 }
 
 // ---------------------------------------------------------------------------
+// dispatch_pair — Phase 4 (Plan 04-02 / D4-04). Two-leg gap-policy dispatch.
+// ---------------------------------------------------------------------------
+
+/// Two-leg gap-policy dispatch — Phase 4 (Plan 04-02 / D4-04).
+///
+/// Computes the joint manifest via
+/// [`crate::scan::primitives::time_alignment::intersect_gaps`] (the
+/// UNION of per-leg gap intervals — the joint "do not run" set for CROSS
+/// scans), then dispatches through the existing [`dispatch`] function on
+/// the joint manifest. CROSS scans (registered by Plan 04-07) call this
+/// helper from the engine's Pair branch.
+///
+/// Pattern analog: existing `dispatch` — same shape; the only delta is the
+/// `intersect_gaps` step that precedes the dispatch decision.
+///
+/// `manifest_a` and `manifest_b` are the per-leg gap manifests produced by
+/// `GapDetector::detect` for each leg of a CROSS request; `policy` and
+/// `requested` are the same shared values the engine already carries.
+#[must_use]
+pub fn dispatch_pair(
+    manifest_a: &GapManifest,
+    manifest_b: &GapManifest,
+    requested: ClosedRangeUtc,
+    policy: GapPolicyKind,
+) -> GapDispatch {
+    let joint = crate::scan::primitives::time_alignment::intersect_gaps(manifest_a, manifest_b);
+    dispatch(&joint, requested, policy)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

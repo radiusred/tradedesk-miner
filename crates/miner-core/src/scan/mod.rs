@@ -194,7 +194,17 @@ pub struct ScanCtx<'a> {
     /// The bar frame the facade fetched via `BarCache::get_or_build`. Scans
     /// read columns (`open`, `high`, `low`, `close`, `volume`, `ts_open_utc`)
     /// for their kernel input.
+    ///
+    /// For Pair-arity scans this borrow points at leg A's frame as a
+    /// default-leg anchor (matches the single-leg API surface so existing
+    /// Phase 3 scan bodies don't have to special-case Pair); CROSS scans
+    /// MUST access both legs via [`ScanCtx::bars_pair`] explicitly.
     pub bars: &'a BarFrame,
+    /// Phase 4 (Plan 04-02 / D4-02): Two-leg borrow for `ScanArity::Pair`
+    /// scans. `None` for `ScanArity::Single` scans; `Some((leg_a, leg_b))`
+    /// for CROSS scans (the order matches `ScanRequest.instruments`).
+    /// The leg-A reference is the same pointer as [`ScanCtx::bars`].
+    pub bars_pair: Option<(&'a BarFrame, &'a BarFrame)>,
     /// The partitioned gap manifest under `--gap-policy=continuous_only` (None
     /// under `strict` success-path; the strict-with-gaps path emits
     /// `Finding::GapAborted` BEFORE reaching `Scan::run`, so the kernel never
@@ -217,6 +227,83 @@ pub struct ScanCtx<'a> {
     /// or `cfg(test)` activation.
     #[cfg(any(test, feature = "test-internal"))]
     pub sleep_after_first_finding_ms: Option<u64>,
+}
+
+/// Read-only view of a [`BarFrame`] truncated at or before a cutoff timestamp
+/// — the look-ahead-safety enforcement surface (Plan 04-02 / RESEARCH §1.5).
+///
+/// Returned by [`ScanCtx::bars_up_to`]; carries borrowed slices into the
+/// underlying frame's columns. Rolling / causal scans MUST consume this
+/// (not raw `ctx.bars`) when emitting per-window outputs — the structural
+/// guarantee is that the view contains no bar whose `ts_open_utc > cutoff`.
+/// Plan 04-11 will pin this with a shuffled-future regression proptest.
+pub struct BarFrameView<'a> {
+    pub source_id: &'a str,
+    pub symbol: &'a str,
+    pub side: crate::reader::Side,
+    pub tf: Timeframe,
+    pub ts_open_utc: &'a [DateTime<Utc>],
+    pub open: &'a [f64],
+    pub high: &'a [f64],
+    pub low: &'a [f64],
+    pub close: &'a [f64],
+    pub tick_volume: &'a [f64],
+}
+
+impl BarFrameView<'_> {
+    /// Number of bars in the view (length of every column).
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.ts_open_utc.len()
+    }
+
+    /// `true` if the view contains no bars.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.ts_open_utc.is_empty()
+    }
+}
+
+impl<'a> ScanCtx<'a> {
+    /// Pair-leg accessor. Returns `Some((leg_a, leg_b))` for CROSS scans;
+    /// `None` for ANOM / SEAS single-leg scans. Convenience over reading
+    /// the public [`ScanCtx::bars_pair`] field — keeps CROSS bodies short.
+    #[must_use]
+    pub fn bars_pair(&self) -> Option<(&'a BarFrame, &'a BarFrame)> {
+        self.bars_pair
+    }
+
+    /// Return a look-ahead-safe [`BarFrameView`] of [`ScanCtx::bars`]
+    /// truncated to bars whose `ts_open_utc <= ts`. Rolling / causal scans
+    /// MUST call this (not slice `ctx.bars` directly) for any per-window
+    /// kernel output that consumers will index by timestamp.
+    ///
+    /// The cutoff is computed via `partition_point(|t| *t <= ts)` so the
+    /// returned view contains every bar with `ts_open_utc <= ts` and none
+    /// past it. Empty input or `ts` before the first bar returns an empty
+    /// view; `ts` past the last bar returns the full frame.
+    ///
+    /// Threat-model note (T-04-02-04): the `partition_point` predicate is
+    /// the SOLE source of truth for the cutoff — Plan 04-11's
+    /// shuffled-future proptest pins the invariant by comparing per-window
+    /// outputs against a frame whose post-cutoff bars are randomly
+    /// permuted.
+    #[must_use]
+    pub fn bars_up_to(&self, ts: DateTime<Utc>) -> BarFrameView<'a> {
+        let cutoff = self.bars.ts_open_utc.partition_point(|t| *t <= ts);
+        BarFrameView {
+            source_id: &self.bars.source_id,
+            symbol: &self.bars.symbol,
+            side: self.bars.side,
+            tf: self.bars.tf,
+            ts_open_utc: &self.bars.ts_open_utc[..cutoff],
+            open: &self.bars.open[..cutoff],
+            high: &self.bars.high[..cutoff],
+            low: &self.bars.low[..cutoff],
+            close: &self.bars.close[..cutoff],
+            tick_volume: &self.bars.tick_volume[..cutoff],
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -559,6 +646,7 @@ mod tests {
         let cancel = Arc::new(AtomicBool::new(false));
         let ctx = ScanCtx {
             bars: &bars,
+            bars_pair: None,
             gap_manifest: None,
             run_id: RunId::new(),
             code_revision: "abc123",
@@ -566,6 +654,67 @@ mod tests {
             sleep_after_first_finding_ms: None,
         };
         assert!(ctx.sleep_after_first_finding_ms.is_none());
+    }
+
+    /// Plan 04-02 Task 2 — Behavior Test 7:
+    /// `scan_ctx_bars_up_to_partitions_at_cutoff`. Given a BarFrame with
+    /// `ts_open_utc = [t0, t1, t2, t3]`, `ctx.bars_up_to(t1)` returns a
+    /// `BarFrameView` whose `ts_open_utc.len() == 2` (only `[t0, t1]`).
+    /// `ctx.bars_up_to(t0 - 1m)` returns len 0; `ctx.bars_up_to(t3 + 1d)`
+    /// returns len 4 (no entries past t3 — partition_point's "<=" predicate
+    /// gives an inclusive upper bound).
+    #[test]
+    fn scan_ctx_bars_up_to_partitions_at_cutoff() {
+        use chrono::{Duration, TimeZone};
+        use crate::aggregator::Timeframe;
+        use crate::reader::Side;
+        let t0 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let ts = vec![
+            t0,
+            t0 + Duration::minutes(15),
+            t0 + Duration::minutes(30),
+            t0 + Duration::minutes(45),
+        ];
+        let bars = BarFrame {
+            source_id: "test".into(),
+            symbol: "EURUSD".into(),
+            side: Side::Bid,
+            tf: Timeframe::Tf15m,
+            ts_open_utc: ts.clone(),
+            ts_close_utc: ts.iter().map(|t| *t + Duration::minutes(15)).collect(),
+            open: vec![1.0; 4],
+            high: vec![1.1; 4],
+            low: vec![0.9; 4],
+            close: vec![1.0; 4],
+            tick_volume: vec![1.0; 4],
+        };
+        let ctx = ScanCtx {
+            bars: &bars,
+            bars_pair: None,
+            gap_manifest: None,
+            run_id: RunId::new(),
+            code_revision: "test",
+            cancel: Arc::new(AtomicBool::new(false)),
+            sleep_after_first_finding_ms: None,
+        };
+        // Cutoff at t[1] -> view length 2 ([t0, t1] inclusive).
+        let view = ctx.bars_up_to(ts[1]);
+        assert_eq!(view.len(), 2, "bars_up_to(t[1]) must include t0 and t1");
+        assert_eq!(view.ts_open_utc.len(), 2);
+        assert_eq!(view.close.len(), 2);
+        // Cutoff before t[0] -> empty view.
+        let empty = ctx.bars_up_to(t0 - Duration::minutes(1));
+        assert_eq!(empty.len(), 0, "cutoff before first bar -> empty");
+        // Cutoff well past t[3] -> full view.
+        let full = ctx.bars_up_to(ts[3] + Duration::days(1));
+        assert_eq!(full.len(), 4, "cutoff past last bar -> full view");
+        // Cutoff exactly equal to last bar's ts_open -> includes it.
+        let inclusive = ctx.bars_up_to(ts[3]);
+        assert_eq!(
+            inclusive.len(),
+            4,
+            "cutoff at last bar's ts_open_utc includes it (partition_point <=)"
+        );
     }
 
     fn sample_scan_request(dry_run: bool) -> ScanRequest {

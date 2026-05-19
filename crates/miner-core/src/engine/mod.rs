@@ -197,9 +197,25 @@ pub fn run_one<R: Reader>(
 /// previously-inlined `run_one` body; the public `run_one` is now a thin
 /// wrapper passing `&crate::scan::bootstrap()`.
 ///
-/// Crate-visibility (`pub(crate)`) so the engine tests reach it without
-/// widening the public API surface (the CLI / MCP / HTTP wrappers continue
-/// to call `run_one`).
+/// Plan 04-02 (D4-02) widened the visibility to `pub` so the Phase 4
+/// integration-test scaffolds (`arity_preflight.rs`, `two_leg_facade.rs`)
+/// can inject per-test stub-Pair-arity registries without spawning the
+/// CLI. The `run_one` public wrapper remains the canonical entry for
+/// the CLI / MCP / HTTP transports.
+///
+/// # Errors
+/// Same as [`run_one`]:
+/// - `MinerError::Preflight(_)` on unknown scan or wrong instrument arity
+///   (D4-02). Stdout stays empty in both cases.
+/// - `MinerError::Scan(_)` on reader/cache/serialisation failure surfaced
+///   via the `Finding::ScanError` envelope path. Stdout already contains
+///   the `RunStart` + `ScanError` + `RunEnd` envelopes when this error
+///   surfaces; the caller treats it as `RunOutcome::HadScanErrors`.
+///
+/// # Panics
+/// `expect`s that `ScanRequest.instruments` is non-empty post-preflight —
+/// `validate_arity` (D4-02) rejects empty `instruments` before reaching
+/// the per-leg dispatch, so the panic is structurally unreachable.
 #[allow(
     clippy::too_many_lines,
     reason = "see run_one's clippy::too_many_lines justification — this is the algorithm-walk function"
@@ -208,7 +224,7 @@ pub fn run_one<R: Reader>(
     clippy::needless_pass_by_value,
     reason = "see run_one's clippy::needless_pass_by_value justification — Arc<AtomicBool> is the cancellation-flag handoff"
 )]
-pub(crate) fn run_one_with_registry<R: Reader>(
+pub fn run_one_with_registry<R: Reader>(
     req: &ScanRequest,
     cfg: &MinerConfig,
     reader: &R,
@@ -238,6 +254,13 @@ pub(crate) fn run_one_with_registry<R: Reader>(
     // -----------------------------------------------------------------------
     let scan = preflight::resolve_scan(&format!("{}@{}", req.scan_id, req.version), registry)
         .map_err(MinerError::Preflight)?;
+
+    // Phase 4 (Plan 04-02 / D4-02): arity preflight. Reject any request whose
+    // `instruments.len()` does not match `scan.arity().expected_len()` with
+    // `PreflightCode::WrongInstrumentArity`. Inserted between resolve_scan
+    // and parse_params per RESEARCH.md §1.10 (id-resolve → version-check →
+    // arity-check → params-parse).
+    preflight::validate_arity(scan, &req.instruments).map_err(MinerError::Preflight)?;
 
     // jsonschema validation of resolved_params against scan.param_schema() is
     // OUT OF SCOPE for Phase 3 (heavyweight dep + duplicated by the per-scan
@@ -461,8 +484,15 @@ pub(crate) fn run_one_with_registry<R: Reader>(
                     } else {
                         None
                     };
+                // Phase 4 (Plan 04-02 / D4-02): single-leg engine path
+                // passes `bars_pair: None`. The Pair branch lives in the
+                // CROSS dispatch (Plan 04-07 wires it via a new
+                // `dispatch_pair` path); until then, the Pair-arity
+                // preflight rejection above prevents Pair scans from
+                // reaching here.
                 let ctx = make_scan_ctx(
                     &bars,
+                    None,
                     ctx_gap_manifest,
                     run_id,
                     crate::CODE_REVISION,
@@ -573,6 +603,7 @@ pub(crate) fn run_one_with_registry<R: Reader>(
 #[cfg_attr(not(any(test, feature = "test-internal")), allow(unused_variables))]
 fn make_scan_ctx<'a>(
     bars: &'a crate::aggregator::BarFrame,
+    bars_pair: Option<(&'a crate::aggregator::BarFrame, &'a crate::aggregator::BarFrame)>,
     gap_manifest: Option<&'a crate::gap::GapManifest>,
     run_id: RunId,
     code_revision: &'a str,
@@ -581,6 +612,7 @@ fn make_scan_ctx<'a>(
 ) -> ScanCtx<'a> {
     ScanCtx {
         bars,
+        bars_pair,
         gap_manifest,
         run_id,
         code_revision,
