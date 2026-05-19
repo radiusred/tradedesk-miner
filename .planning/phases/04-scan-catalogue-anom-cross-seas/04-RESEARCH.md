@@ -1385,23 +1385,23 @@ mod tests {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 After resolving the 10 CONTEXT.md open questions in §1, the residual open items are:
 
-1. **Exact scipy/arch versions at golden-generation time.** The plan-phase author should run `pip index versions scipy` and `pip index versions arch` against PyPI on the day goldens are generated and update REFERENCE-VERSIONS.md accordingly. Recommendation: lock-file is the source of truth, REFERENCE-VERSIONS.md is the human-readable summary.
+1. RESOLVED: **Exact scipy/arch versions at golden-generation time.** The plan-phase author should run `pip index versions scipy` and `pip index versions arch` against PyPI on the day goldens are generated and update REFERENCE-VERSIONS.md accordingly. Recommendation: lock-file is the source of truth, REFERENCE-VERSIONS.md is the human-readable summary.
 
    - What we know: training-data pin recommendations (scipy 1.14.1, arch 7.0.0).
    - What's unclear: exact release-date and any post-training patch releases.
    - Recommendation: regenerate during plan 04-5 task 1 and commit the lock file.
 
-2. **Session-boundary defaults — verify against `tradedesk-dukascopy` calendar source.** [VERIFIED: CLAUDE.md "Project" §"Constraints" — miner reads dukascopy cache without modification, and the calendar logic lives somewhere in the dukascopy reader.] Plan should grep `tradedesk-dukascopy` for any existing session-boundary constants and align SEAS-03 defaults with whatever is already pinned.
+2. RESOLVED: **Session-boundary defaults — verify against `tradedesk-dukascopy` calendar source.** [VERIFIED: CLAUDE.md "Project" §"Constraints" — miner reads dukascopy cache without modification, and the calendar logic lives somewhere in the dukascopy reader.] Plan should grep `tradedesk-dukascopy` for any existing session-boundary constants and align SEAS-03 defaults with whatever is already pinned.
 
    - What we know: FX-major industry conventions match.
    - What's unclear: whether `tradedesk-dukascopy` calendar uses different ranges (unlikely but possible).
    - Recommendation: grep the dukascopy reader during plan 04-4 task 1; if different, prefer dukascopy's values for consistency.
 
-3. **Whether to extract `f64_slice_to_raw_array` to a shared `scan::shape` helper.** Phase 3 inlines this 11-line helper per-scan (LjungBox lines 302-312). With 22 scans inheriting the same helper, plan-phase may decide to lift it.
+3. RESOLVED: **Whether to extract `f64_slice_to_raw_array` to a shared `scan::shape` helper.** Phase 3 inlines this 11-line helper per-scan (LjungBox lines 302-312). With 22 scans inheriting the same helper, plan-phase may decide to lift it.
 
    - What we know: Phase 3 has it inline.
    - What's unclear: whether 22× inline is annoying enough to refactor.
