@@ -46,6 +46,7 @@ use crate::gap::GapManifest;
 use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec};
 
 pub mod ljung_box;
+pub mod primitives;
 pub mod registry;
 pub mod shape;
 

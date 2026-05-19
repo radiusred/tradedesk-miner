@@ -44,9 +44,10 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 
 use crate::findings::{
-    Base64Bytes, DataSlice, Dtype, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding,
-    Source,
+    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
+use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
+use crate::scan::primitives::returns::log_returns;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
 
 pub mod kernel;
@@ -120,7 +121,10 @@ impl Scan for LjungBoxScan {
         }
 
         // Step 2-4 — compute returns + ACF + Q-stats.
-        let returns = kernel::log_returns(&ctx.bars.close);
+        // D4-06: returns kernel lifted to `scan::primitives::returns::log_returns`
+        // (the body was a byte-identical move per Pitfall 9). The Phase 3
+        // statsmodels golden continues to pass byte-identically.
+        let returns = log_returns(&ctx.bars.close);
         let n = returns.len();
         if n < 2 {
             // No statistical content at n < 2; reject so the engine surfaces
@@ -307,24 +311,10 @@ fn lags_to_f64(lags: usize) -> f64 {
     lags as f64
 }
 
-/// Pack a `&[f64]` into a [`RawArray`] with `Dtype::F64`, shape `vec![n]`, and
-/// little-endian f64 bytes per D-01. Helper centralises the byte-layout rule
-/// so individual call sites can stay focused on the kernel math.
-#[allow(
-    clippy::cast_precision_loss,
-    reason = "slice length feeds RawArray.shape: Vec<u64>; bar counts fit in u64 trivially"
-)]
-fn f64_slice_to_raw_array(s: &[f64]) -> RawArray {
-    let mut bytes = Vec::with_capacity(s.len() * 8);
-    for v in s {
-        bytes.extend_from_slice(&v.to_le_bytes());
-    }
-    RawArray {
-        data: Base64Bytes(bytes),
-        shape: vec![s.len() as u64],
-        dtype: Dtype::F64,
-    }
-}
+// Plan 04-02 / D4-06 helper-lift: `f64_slice_to_raw_array` was lifted to
+// `crate::scan::primitives::raw_array::f64_slice_to_raw_array` so all 22
+// Phase 4 scans share one copy. The Phase 3 statsmodels golden continues
+// to pass byte-identically after the lift (the helper body is verbatim).
 
 // Workaround for clippy::needless_pass_by_value being noisy on the `n` arg
 // of `resolve_lags`: the function is small and the `n: usize` is by-value

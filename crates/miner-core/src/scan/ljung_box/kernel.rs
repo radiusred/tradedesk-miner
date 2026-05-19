@@ -17,15 +17,11 @@
 use statrs::distribution::ChiSquared;
 use statrs::distribution::ContinuousCDF;
 
-/// Compute log returns from a `close` price series: `returns[t] = ln(close[t] / close[t-1])`
-/// for `t = 1..n`. Returns a `Vec<f64>` of length `n - 1` (empty when `n < 2`).
-///
-/// Pure function — no allocations beyond the output `Vec`. Handles `len 0` and
-/// `len 1` naturally because `slice::windows(2)` yields zero elements then.
-#[inline]
-pub(super) fn log_returns(close: &[f64]) -> Vec<f64> {
-    close.windows(2).map(|w| (w[1] / w[0]).ln()).collect()
-}
+// `log_returns` was moved verbatim to `crate::scan::primitives::returns::log_returns`
+// (Plan 04-02 / D4-06 / Pitfall 9 — "move, do not rewrite"). The primitive
+// retains the byte-identical body; the Phase 3 LjungBoxScan call site now
+// imports it through `super::log_returns` (re-export below) so the kernel
+// file's external API stays stable.
 
 /// Biased sample autocorrelation up to `max_lag` lags.
 ///
@@ -152,38 +148,12 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // log_returns
+    // log_returns — Phase 3 tests moved to
+    // `crate::scan::primitives::returns::tests` (Plan 04-02 / D4-06 lift). The
+    // byte-identical-move regression gate lives in the primitive's test block
+    // (`log_returns_matches_ljung_box_kernel`) and the Phase 3 statsmodels
+    // integration test (`scan_ljung_box.rs`) continues to pass byte-identically.
     // -----------------------------------------------------------------------
-
-    #[test]
-    fn log_returns_basic() {
-        // close[t+1]/close[t] = e^1 each step -> ln = 1.0 twice.
-        let e = std::f64::consts::E;
-        let r = log_returns(&[1.0, e, e * e]);
-        assert_eq!(r.len(), 2);
-        assert!(approx_eq(r[0], 1.0, TOL), "r[0]={}", r[0]);
-        assert!(approx_eq(r[1], 1.0, TOL), "r[1]={}", r[1]);
-    }
-
-    #[test]
-    fn log_returns_empty() {
-        let r = log_returns(&[]);
-        assert!(r.is_empty());
-    }
-
-    #[test]
-    fn log_returns_singleton() {
-        let r = log_returns(&[42.0]);
-        assert!(r.is_empty());
-    }
-
-    #[test]
-    fn log_returns_length_invariant() {
-        // n closes -> n-1 returns.
-        let closes: Vec<f64> = (1..=10).map(|i| f64::from(i)).collect();
-        let r = log_returns(&closes);
-        assert_eq!(r.len(), closes.len() - 1);
-    }
 
     // -----------------------------------------------------------------------
     // biased_acf
