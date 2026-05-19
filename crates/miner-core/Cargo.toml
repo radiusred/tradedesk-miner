@@ -46,6 +46,14 @@ tempfile.workspace   = true   # atomic NamedTempFile::persist (Plan 02-05); ahea
 # (D3-04). miner-core is the ONLY crate that depends on it (Pitfall 1 — keep the chi-squared
 # kernel in one place). The dep is sync-only — no async creep into miner-core (FOUND-04).
 statrs.workspace     = true
+# Phase 4 (Plan 04-01) additions per 04-RESEARCH.md §Section 4 Dependency-Add Audit:
+# - `ndarray`        — n-dim numerical arrays / rolling-window kernels (ANOM-03, CROSS-02)
+# - `ndarray-stats`  — mean/var/quantile/correlation primitives (ANOM-02 summary, CROSS-02)
+# - `nalgebra`       — small fixed-size linear algebra (CROSS-03 rolling OLS)
+# All three are sync-only — FOUND-04 invariant preserved.
+ndarray.workspace       = true
+ndarray-stats.workspace = true
+nalgebra.workspace      = true
 
 [dev-dependencies]
 jsonschema.workspace = true

@@ -71,6 +71,16 @@ serial_test        = "3"
 # local. See RESEARCH lines 70-90 + 03-PATTERNS line 1048.
 ctrlc              = "3.5"
 statrs             = "0.17"
+# Phase 4 (Plan 04-01) additions — RESEARCH §Section 4 Dependency-Add Audit:
+# - `ndarray` 0.16 for n-dim numerical arrays / rolling-window kernels
+# - `ndarray-stats` 0.6 for mean/var/quantile/correlation primitives
+# - `nalgebra` 0.33 for small fixed-size linear algebra (CROSS-03 OLS); minimal
+#   feature set (`std` only) — no `rand`, no `serde-serialize` defaults
+# All three are sync-only (no tokio/async-std transitive add); FOUND-04 invariant
+# preserved (`cargo tree -p miner-core | grep -E 'tokio|async-std'` returns nothing).
+ndarray            = "0.16"
+ndarray-stats      = "0.6"
+nalgebra           = { version = "0.33", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
