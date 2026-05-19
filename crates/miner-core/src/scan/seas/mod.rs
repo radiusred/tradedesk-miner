@@ -21,14 +21,17 @@
 use super::Registry;
 
 pub mod bucketing;
+pub mod day_of_week;
 pub mod hour_of_day;
 
+pub use day_of_week::DayOfWeekScan;
 pub use hour_of_day::HourOfDayScan;
 
 /// Register every SEAS scan into the supplied [`Registry`]. Plans 04-09 and
 /// 04-10 append `r.register(...)` lines here alphabetical by scan-id.
 pub fn register_seas_scans(r: &mut Registry) {
-    // Plan 04-09 — SEAS-01 (alphabetical by scan-id).
+    // Plan 04-09 — SEAS-01, SEAS-02 (alphabetical by scan-id).
+    r.register(Box::new(DayOfWeekScan));
     r.register(Box::new(HourOfDayScan));
 }
 
@@ -36,20 +39,18 @@ pub fn register_seas_scans(r: &mut Registry) {
 mod tests {
     use super::*;
 
-    /// After Plan 04-09 Task 1 the helper registers exactly 1 SEAS scan
-    /// (SEAS-01 hour_of_day). Tasks 2 + 3 will bring the count to 3.
+    /// After Plan 04-09 Task 2 the helper registers 2 SEAS scans (day_of_week,
+    /// hour_of_day). Task 3 will bring the count to 3.
     #[test]
-    fn register_seas_scans_registers_hour_of_day_after_plan_04_09_task_1() {
+    fn register_seas_scans_registers_two_after_plan_04_09_task_2() {
         let mut r = Registry::new();
         let before = r.scans.len();
         register_seas_scans(&mut r);
-        // At this commit the count is 1 (hour_of_day only); Tasks 2 + 3 add
-        // day_of_week and session.
         assert!(
-            r.scans.len() > before,
-            "Plan 04-09 ships at least the hour_of_day registration"
+            r.scans.len() >= before + 2,
+            "Plan 04-09 Task 2 ships at least 2 SEAS registrations"
         );
-        // Spot-check the SEAS-01 id.
+        assert!(r.get("seas.bucket.day_of_week", 1).is_some());
         assert!(r.get("seas.bucket.hour_of_day", 1).is_some());
     }
 }
