@@ -16,38 +16,34 @@
 use super::Registry;
 
 pub mod returns;
+pub mod summary;
 
 pub use returns::ReturnsProfileScan;
+pub use summary::SummaryWelfordScan;
 
 /// Register every ANOM scan into the supplied [`Registry`]. Plan 04-03
-/// (this commit) appends `ReturnsProfileScan` (ANOM-01). Subsequent plans
-/// (04-04..04-06) append further `r.register(...)` lines here alphabetical
-/// by scan-id. Plans never modify the central `registry::bootstrap` body.
+/// (this commit) registers ANOM-01 (`stats.returns.profile`) and ANOM-02
+/// (`stats.summary.welford`). Subsequent plans (04-04..04-06) append further
+/// `r.register(...)` lines here alphabetical by scan-id. Plans never modify
+/// the central `registry::bootstrap` body.
 pub fn register_anom_scans(r: &mut Registry) {
-    // Plan 04-03 — ANOM-01 stats.returns.profile@1.
+    // Plan 04-03 — alphabetical by scan-id.
     r.register(Box::new(ReturnsProfileScan));
+    r.register(Box::new(SummaryWelfordScan));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Plan 04-03 — `register_anom_scans` now registers ANOM-01
-    /// `stats.returns.profile@1`. Subsequent ANOM plans append further
-    /// lines; Plan 04-11 tightens this to a full count assertion across
-    /// all ANOM scans.
+    /// Plan 04-03 — `register_anom_scans` registers the Wave-3 ANOM
+    /// scans. Plan 04-11 tightens this to a full count assertion across
+    /// the complete catalogue.
     #[test]
-    fn register_anom_scans_registers_returns_profile() {
+    fn register_anom_scans_registers_phase4_wave3_scans() {
         let mut r = Registry::new();
-        let before = r.scans.len();
         register_anom_scans(&mut r);
-        assert_eq!(
-            r.scans.len(),
-            before + 1,
-            "Plan 04-03 ships ANOM-01 (stats.returns.profile@1)"
-        );
-        let scan = r.get("stats.returns.profile", 1).expect("registered");
-        assert_eq!(scan.id(), "stats.returns.profile");
-        assert_eq!(scan.version(), 1);
+        assert!(r.get("stats.returns.profile", 1).is_some(), "ANOM-01");
+        assert!(r.get("stats.summary.welford", 1).is_some(), "ANOM-02");
     }
 }
