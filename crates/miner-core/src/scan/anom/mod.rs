@@ -15,38 +15,39 @@
 
 use super::Registry;
 
-/// Register every ANOM scan into the supplied [`Registry`]. Empty in Plan
-/// 04-02; subsequent plans (04-03..04-06) append `r.register(...)` lines
-/// here alphabetical by scan-id. Plans never modify the central
-/// `registry::bootstrap` body.
-#[allow(
-    clippy::needless_pass_by_ref_mut,
-    reason = "the &mut Registry is the API contract for Plans 04-03..04-06; the body is intentionally empty in Plan 04-02"
-)]
+pub mod returns;
+
+pub use returns::ReturnsProfileScan;
+
+/// Register every ANOM scan into the supplied [`Registry`]. Plan 04-03
+/// (this commit) appends `ReturnsProfileScan` (ANOM-01). Subsequent plans
+/// (04-04..04-06) append further `r.register(...)` lines here alphabetical
+/// by scan-id. Plans never modify the central `registry::bootstrap` body.
 pub fn register_anom_scans(r: &mut Registry) {
-    // Suppress unused-variable warning in the empty-body case. Plans
-    // 04-03..04-06 will delete this `let _` once they append the first
-    // `r.register(...)` call.
-    let _ = r;
+    // Plan 04-03 — ANOM-01 stats.returns.profile@1.
+    r.register(Box::new(ReturnsProfileScan));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Plan 04-02 Task 1b — Behavior Test 1: `register_anom_scans` is a
-    /// no-op in the Wave-2 baseline (Plans 04-03..04-06 will populate it).
-    /// The contract: calling the helper does NOT add any scan to the
-    /// registry. Plan 04-11 tightens this with a full count assertion.
+    /// Plan 04-03 — `register_anom_scans` now registers ANOM-01
+    /// `stats.returns.profile@1`. Subsequent ANOM plans append further
+    /// lines; Plan 04-11 tightens this to a full count assertion across
+    /// all ANOM scans.
     #[test]
-    fn register_anom_scans_is_noop_initially() {
+    fn register_anom_scans_registers_returns_profile() {
         let mut r = Registry::new();
         let before = r.scans.len();
         register_anom_scans(&mut r);
         assert_eq!(
             r.scans.len(),
-            before,
-            "Plan 04-02 ships ZERO ANOM registrations; Plans 04-03..04-06 populate"
+            before + 1,
+            "Plan 04-03 ships ANOM-01 (stats.returns.profile@1)"
         );
+        let scan = r.get("stats.returns.profile", 1).expect("registered");
+        assert_eq!(scan.id(), "stats.returns.profile");
+        assert_eq!(scan.version(), 1);
     }
 }

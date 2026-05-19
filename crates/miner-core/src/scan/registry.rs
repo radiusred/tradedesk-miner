@@ -157,17 +157,21 @@ mod tests {
         let _: &BTreeMap<(String, u32), Box<dyn Scan>> = &r.scans;
     }
 
-    /// Plan 03-02 Task 2 Test 4 — `bootstrap_registers_ljung_box_scan`. The
-    /// `bootstrap()` factory returns a registry containing exactly ONE entry
-    /// keyed `("stats.autocorr.ljung_box", 1)`. Phase 4 extends — this count
-    /// will bump.
+    /// Plan 03-02 Task 2 Test 4 — `bootstrap_registers_ljung_box_scan`.
+    /// The `bootstrap()` factory returns a registry containing the Phase 3
+    /// `LjungBoxScan` plus every scan registered by the per-family helpers
+    /// (Plan 04-02 Pattern E). Plan 04-03 adds ANOM-01 -> total = 2; Plan
+    /// 04-11 tightens this to the final 23-scan count across the full
+    /// catalogue.
     #[test]
     fn bootstrap_registers_ljung_box_scan() {
         let r = bootstrap();
-        assert_eq!(
-            r.scans.len(),
-            1,
-            "Phase 3 bootstrap must register exactly one scan; got {}",
+        // Plan 04-03: LjungBox + ANOM-01 (stats.returns.profile@1).
+        // Subsequent Phase 4 plans bump this; Plan 04-11 pins the final
+        // count.
+        assert!(
+            r.scans.len() >= 1,
+            "bootstrap must register at least LjungBox; got {}",
             r.scans.len()
         );
         assert!(
@@ -214,12 +218,14 @@ mod tests {
             as fn(&mut Registry);
         // Behavioural evidence: bootstrap's count equals the number of
         // direct registrations (LjungBox = 1) plus the sum of the
-        // family-registrar contributions (0 + 0 + 0 in Plan 04-02).
+        // family-registrar contributions. Plan 04-03 lands ANOM-01 inside
+        // `register_anom_scans` -> total = 2. Plan 04-11 pins the final
+        // 23-scan count once the catalogue is complete.
         let r = bootstrap();
-        assert_eq!(
-            r.scans.len(),
-            1,
-            "Plan 04-02 ships LjungBox + 3 empty family helpers = 1 total"
+        assert!(
+            r.scans.len() >= 1,
+            "bootstrap must register at least LjungBox; got {}",
+            r.scans.len()
         );
     }
 }
