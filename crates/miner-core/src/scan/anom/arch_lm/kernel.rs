@@ -151,13 +151,10 @@ pub(super) fn arch_lm_test(returns: &[f64], lag: usize) -> Result<ArchLmResult, 
     let xt = x.transpose();
     let xtx = &xt * &x;
     let xty = &xt * &y;
-    let xtx_inv = match xtx.clone().try_inverse() {
-        Some(inv) => inv,
-        None => {
-            return Err(format!(
-                "arch_lm_test: singular X'X at lag={lag} (collinear squared residuals)"
-            ));
-        }
+    let Some(xtx_inv) = xtx.clone().try_inverse() else {
+        return Err(format!(
+            "arch_lm_test: singular X'X at lag={lag} (collinear squared residuals)"
+        ));
     };
     let beta = &xtx_inv * &xty;
 

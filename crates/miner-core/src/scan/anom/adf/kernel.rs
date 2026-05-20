@@ -162,10 +162,8 @@ pub(super) fn select_lag_aic(
     let mut best_lag = 0usize;
     // Sequential — NOT par_iter — to keep determinism across platforms (Pitfall 4).
     for k in 0..=max_lag {
-        let fit = match fit_adf_regression(y, k, regression) {
-            Ok(f) => f,
-            Err(_) => continue, // too-short residual sample for this lag
-        };
+        // too-short residual sample for this lag
+        let Ok(fit) = fit_adf_regression(y, k, regression) else { continue };
         let nobs_f = fit.nobs as f64;
         let p_f = fit.n_regressors as f64;
         let sigma2 = fit.ss_res / nobs_f;
@@ -200,10 +198,7 @@ pub(super) fn select_lag_bic(
     let mut best_bic = f64::INFINITY;
     let mut best_lag = 0usize;
     for k in 0..=max_lag {
-        let fit = match fit_adf_regression(y, k, regression) {
-            Ok(f) => f,
-            Err(_) => continue,
-        };
+        let Ok(fit) = fit_adf_regression(y, k, regression) else { continue };
         let nobs_f = fit.nobs as f64;
         let p_f = fit.n_regressors as f64;
         let sigma2 = fit.ss_res / nobs_f;
@@ -337,13 +332,10 @@ pub(super) fn fit_adf_regression(
     let xt = x.transpose();
     let xtx = &xt * &x;
     let xty = &xt * &delta_y;
-    let xtx_inv = match xtx.clone().try_inverse() {
-        Some(inv) => inv,
-        None => {
-            return Err(format!(
-                "fit_adf_regression: singular X'X at lag k={k}"
-            ));
-        }
+    let Some(xtx_inv) = xtx.clone().try_inverse() else {
+        return Err(format!(
+            "fit_adf_regression: singular X'X at lag k={k}"
+        ));
     };
     let beta = &xtx_inv * &xty;
 
