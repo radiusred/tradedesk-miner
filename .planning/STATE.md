@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Plan 04-05 complete — ANOM-05/06/07 stationarity scans shipped (ANOM family 9/11)
-last_updated: "2026-05-20T12:23:17.000Z"
+status: verifying
+stopped_at: Plan 04-05 complete — ANOM-05/06/07 hand-derived stationarity scans shipped (ANOM family 9/11)
+last_updated: "2026-05-20T12:55:27.656Z"
 last_activity: 2026-05-20
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 31
-  completed_plans: 28
-  percent: 90
+  completed_plans: 30
+  percent: 97
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 
 Phase: 04 (scan-catalogue-anom-cross-seas) — EXECUTING
 Plan: 11 of 11 — only Plan 04-06 (ARCH-LM + JB) + 04-11 (Phase sign-off) remain
-Status: Plan 04-05 shipped (ANOM-05/06/07 hand-derived heavyweight stationarity scans)
+Status: Phase complete — ready for verification
 Last activity: 2026-05-20
 
-Progress: [█████████░] 90%
+Progress: [██████████] 97%
 
 Next: Plan 04-06 (ARCH-LM + Jarque-Bera) to complete ANOM family at 11/11, then Plan 04-11 (Phase 4 sign-off — goldens + engle_granger adf_step reconciliation + registry test tightening).
 
@@ -59,6 +59,7 @@ Next: Plan 04-06 (ARCH-LM + Jarque-Bera) to complete ANOM family at 11/11, then 
 | Phase 04 P04 | 38 | 3 tasks | 14 files |
 | Phase 04 P10 | ~45min | 3 tasks | 13 files (12 created, 1 modified) |
 | Phase 04 P05 | ~45min | 3 tasks | 13 files (12 created, 1 modified) |
+| Phase 04 P06 | 16min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,10 @@ Recent decisions affecting current work:
 - Plan 04-05: KPSS auto-lag truncation formula `int(4 * (n/100)^(1/4))` per statsmodels default; p-value linear-interpolation BOUNDED at [0.01, 0.10] per statsmodels convention.
 - Plan 04-05: VR effect.value = VR at max(k_values); effect.p_value is None; four parallel arrays {k_values, vr_values, z_stats, p_values} in effect.extra. Sequential k loop (Pitfall 4).
 - Plan 04-05: Engle-Granger local adf_step (Plan 04-08) UNTOUCHED — Plan 04-11 owns reconciliation against the canonical scan::anom::adf::kernel::adfuller.
+- [Phase 04]: Plan 04-06: ANOM-08 ARCH-LM uses nalgebra DMatrix (heap, runtime-variable L+1 columns) NOT SMatrix — same pattern as Plan 04-05 ADF. Constant-u-squared early return guards against singular X'X for alternating-sign returns; R-squared clamped to [0,1] for F-stat denominator.
+- [Phase 04]: Plan 04-06: ANOM-09 Jarque-Bera REUSES welford_pass from anom::summary::kernel — visibility bumped pub(super) -> pub(in crate::scan::anom) for sibling-submodule access. Moments byte-identical with ANOM-02 (pinned by to_bits()-equality test); JB formula = (n/6)*(S^2 + K^2/4) with statrs ChiSquared(2).
+- [Phase 04]: Plan 04-06: Full statsmodels/scipy golden parity for ARCH-LM + JB deferred to Plan 04-11. This plan ships hand-derived closed-form kernel tests within 1e-10 (statistic) + 1e-12 (p-value via statrs). Sanity tests use synthetic regime-switching ARCH(0.99) (n=1000) + exp-squared-skewed inputs (n=500).
+- [Phase 04]: Plan 04-06: ANOM family complete (11/11). All implementation Plans 04-03..04-10 shipped (11 ANOM + 4 CROSS + 6 SEAS). Plan 04-11 owns goldens, engle_granger adf_step reconciliation, and registry test tightening from >= 1 to exact final count.
 
 ### Pending Todos
 
@@ -105,7 +110,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-20T12:23:17.000Z
+Last session: 2026-05-20T12:53:47.145Z
 Stopped at: Plan 04-05 complete — ANOM-05/06/07 hand-derived stationarity scans shipped (ANOM family 9/11)
 Resume file: None
 Next action: Execute Plan 04-06 (ARCH-LM/Jarque-Bera) to complete ANOM family at 11/11, then Plan 04-11 (Phase sign-off — goldens + engle_granger adf_step reconciliation + registry test tightening).

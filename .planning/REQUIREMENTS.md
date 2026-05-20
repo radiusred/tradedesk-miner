@@ -46,8 +46,8 @@ Requirements for initial release. Each maps to a roadmap phase.
 - [x] **ANOM-05**: User can run the Augmented Dickey-Fuller (ADF) stationarity test with AIC-selected lag, trend specification, test stat, and p-value
 - [x] **ANOM-06**: User can run the KPSS stationarity test (opposite null to ADF) with stat and p-value
 - [x] **ANOM-07**: User can run the Lo-MacKinlay variance ratio test with VR(k) over multiple k, heteroskedasticity-robust z-stat, and p-value
-- [ ] **ANOM-08**: User can run the ARCH-LM test for conditional heteroskedasticity with stat and p-value
-- [ ] **ANOM-09**: User can run the Jarque-Bera normality test with JB stat, skew, excess kurtosis, p-value
+- [x] **ANOM-08**: User can run the ARCH-LM test for conditional heteroskedasticity with stat and p-value
+- [x] **ANOM-09**: User can run the Jarque-Bera normality test with JB stat, skew, excess kurtosis, p-value
 - [x] **ANOM-10**: User can run outlier / extreme-return detection (z-score, modified-z / MAD) with configurable threshold and surfaced indices + values
 - [x] **ANOM-11**: User can run a drawdown profile (max drawdown, duration, time-to-recover, distribution) on a synthetic equity curve
 
@@ -165,8 +165,8 @@ Every v1 requirement maps to exactly one phase.
 | ANOM-05 | Phase 4 | Complete |
 | ANOM-06 | Phase 4 | Complete |
 | ANOM-07 | Phase 4 | Complete |
-| ANOM-08 | Phase 4 | Pending |
-| ANOM-09 | Phase 4 | Pending |
+| ANOM-08 | Phase 4 | Complete |
+| ANOM-09 | Phase 4 | Complete |
 | ANOM-10 | Phase 4 | Complete |
 | ANOM-11 | Phase 4 | Complete |
 | CROSS-01 | Phase 4 | Pending |
