@@ -16,22 +16,24 @@
 use super::Registry;
 
 pub mod corr_rolling;
+pub mod engle_granger;
 pub mod lead_lag;
 pub mod ols_rolling;
 
 pub use corr_rolling::{PearsonRollingScan, SpearmanRollingScan};
+pub use engle_granger::EngleGrangerScan;
 pub use lead_lag::LeadLagCcfScan;
 pub use ols_rolling::OlsRollingScan;
 
 /// Register every CROSS scan into the supplied [`Registry`]. Plan 04-07
 /// appended three `r.register(...)` lines (alphabetical by scan-id):
 /// `cross.corr.pearson_rolling`, `cross.corr.spearman_rolling`, and
-/// `cross.ols.rolling`. Plan 04-08 (Wave 4) appends two more, alphabetical
-/// by scan-id: `cross.lead_lag.ccf` (after `cross.corr.*` and after
-/// `cross.ols.rolling`). Plan 04-08 Task 2 will also append
-/// `cross.cointegration.engle_granger` (sorts BEFORE the corr_rolling
-/// pair). Plans never touch `registry::bootstrap`.
+/// `cross.ols.rolling`. Plan 04-08 (Wave 4) appends two more in
+/// alphabetical-by-id order: `cross.cointegration.engle_granger` (sorts
+/// BEFORE the `corr_rolling` pair) and `cross.lead_lag.ccf` (sorts after
+/// `cross.ols.rolling`). Plans never touch `registry::bootstrap`.
 pub fn register_cross_scans(r: &mut Registry) {
+    r.register(Box::new(EngleGrangerScan));
     r.register(Box::new(PearsonRollingScan));
     r.register(Box::new(SpearmanRollingScan));
     r.register(Box::new(OlsRollingScan));
@@ -44,15 +46,20 @@ mod tests {
 
     /// Plan 04-07 — `register_cross_scans` registers three Pair-arity
     /// rolling scans (Pearson + Spearman correlation, and OLS regression).
-    /// Plan 04-08 Task 1 adds CROSS-04 `cross.lead_lag.ccf`. Subsequent
-    /// Phase-4 plans extend this helper with further scans.
+    /// Plan 04-08 Task 1 adds CROSS-04 `cross.lead_lag.ccf`. Plan 04-08
+    /// Task 2 adds CROSS-05 `cross.cointegration.engle_granger`.
+    /// Subsequent Phase-4 plans extend this helper with further scans.
     #[test]
-    fn register_cross_scans_includes_pearson_spearman_ols_and_lead_lag() {
+    fn register_cross_scans_includes_all_five_cross_scans() {
         let mut r = Registry::new();
         let before = r.scans.len();
         register_cross_scans(&mut r);
         let added = r.scans.len() - before;
-        assert!(added >= 4, "expected >= 4 CROSS scans registered; got {added}");
+        assert!(added >= 5, "expected >= 5 CROSS scans registered; got {added}");
+        assert!(
+            r.get("cross.cointegration.engle_granger", 1).is_some(),
+            "cross.cointegration.engle_granger@1 must be registered"
+        );
         assert!(
             r.get("cross.corr.pearson_rolling", 1).is_some(),
             "cross.corr.pearson_rolling@1 must be registered"

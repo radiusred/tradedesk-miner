@@ -4,8 +4,9 @@
 //! `a` and `b` over a symmetric ±`max_lag` grid. The element at the centre
 //! of the returned vector (index `max_lag`) is the full-sample Pearson
 //! correlation between the two series; positive lags `+k` represent the
-//! correlation of `a_t` with `b_{t-k}` (a leads b by k); negative lags `-k`
-//! the inverse (b leads a by k).
+//! correlation of `a_t` with `b_{t+k}` (a leads b by k bars: compare today's
+//! a with b k-bars-in-the-future); negative lags `-k` the inverse
+//! (b leads a by k bars).
 //!
 //! Reference: `scipy.signal.correlate(a, b, mode='full')` (with the
 //! normalisation step) or `statsmodels.tsa.stattools.ccf`. Tolerance 1e-10
@@ -62,10 +63,11 @@ impl LeadLagResult {
 /// Cross-correlation function over a symmetric ±`max_lag` grid.
 ///
 /// Computes, for each `lag ∈ [-max_lag..=max_lag]`, the Pearson correlation
-/// of `a` shifted by `lag` against `b` (positive lags shift `b` backwards
-/// in time, i.e. correlate `a_t` with `b_{t-lag}` — "a leads b by lag").
-/// The result vector is in ascending lag order; the middle element
-/// (`ccf_values[max_lag]`) is the full-sample Pearson correlation.
+/// of `a` and `b` shifted by `lag` (positive lags correlate `a_t` with
+/// `b_{t+lag}` — "a leads b by lag bars"; e.g. for `b_t = a_{t-2}` the CCF
+/// peaks at `lag = +2`). The result vector is in ascending lag order; the
+/// middle element (`ccf_values[max_lag]`) is the full-sample Pearson
+/// correlation.
 ///
 /// **Sequential** lag loop (NOT `par_iter`): determinism across runs is the
 /// load-bearing property; rayon would produce identical results but the
@@ -138,36 +140,47 @@ pub(super) fn lead_lag_ccf(a: &[f64], b: &[f64], max_lag: usize) -> LeadLagResul
     // default behaviour. The mean/std come from the FULL sample so the
     // estimator is the classic "unbiased mean + biased lag-N_eff covariance"
     // form rather than per-window re-centring.
+    //
+    // Sign convention: positive `k` means **a leads b by k bars**, so the
+    // CCF at lag +k correlates `a_t` with `b_{t+k}` (i.e. compare today's a
+    // with b k-bars-in-the-future); equivalently `b_t` matches `a_{t-k}` if
+    // a leads. For the test case `b[t] = a[t-2]` (a leads b by 2) the CCF
+    // peaks at k=+2 because `b_{t+2} = a_t`. Negative `k` flips the roles.
     for &k in &lags {
         let abs_k = k.unsigned_abs() as usize;
         #[allow(clippy::cast_precision_loss, reason = "n_eff bounded by n; << 2^52")]
         let n_eff_f = (n - abs_k) as f64;
         let cov = if k >= 0 {
-            // a_t correlates with b_{t - k}: sum over t ∈ [k..n) of
-            // (a_t - mean_a)(b_{t-k} - mean_b).
+            // k >= 0: a leads b by k. Sum `(a_t - μ_a)(b_{t+k} - μ_b)` over
+            // valid t ∈ [0..n-k); equivalently over the overlapping pairs.
             let mut sum = 0.0_f64;
-            for t in abs_k..n {
-                sum += (a[t] - mean_a) * (b[t - abs_k] - mean_b);
+            for t in 0..(n - abs_k) {
+                sum += (a[t] - mean_a) * (b[t + abs_k] - mean_b);
             }
             sum / n_eff_f
         } else {
-            // a_{t - |k|} correlates with b_t: sum over t ∈ [|k|..n) of
-            // (a_{t-|k|} - mean_a)(b_t - mean_b).
+            // k < 0: b leads a by |k|. Sum `(a_{t+|k|} - μ_a)(b_t - μ_b)`
+            // over valid t ∈ [0..n-|k|).
             let mut sum = 0.0_f64;
-            for t in abs_k..n {
-                sum += (a[t - abs_k] - mean_a) * (b[t] - mean_b);
+            for t in 0..(n - abs_k) {
+                sum += (a[t + abs_k] - mean_a) * (b[t] - mean_b);
             }
             sum / n_eff_f
         };
         ccf_values.push(cov / denom);
     }
 
-    // Argmax by absolute value. position_max_by is not in core; equivalent
-    // via fold with index tracking.
+    // Argmax by absolute value. Initialize with the first element so the
+    // accumulator's |value| is a real comparable quantity (a NEG_INFINITY
+    // sentinel breaks the comparison because |NEG_INFINITY| is +INFINITY,
+    // which no finite |v| can exceed — every iteration's "greater-than"
+    // check then fails and the accumulator never updates, leaving the
+    // bogus initial (0, NEG_INFINITY)).
     let (argmax_idx, argmax_value) = ccf_values
         .iter()
         .enumerate()
-        .fold((0_usize, f64::NEG_INFINITY), |acc, (i, v)| {
+        .skip(1)
+        .fold((0_usize, ccf_values[0]), |acc, (i, v)| {
             if v.abs() > acc.1.abs() { (i, *v) } else { acc }
         });
     let argmax_lag = lags[argmax_idx];
@@ -216,20 +229,30 @@ mod tests {
 
     /// Hand-derived: when `b` is `a` shifted forward by 2 bars (so `b_t = a_{t-2}`
     /// for `t >= 2`), the CCF should peak at lag = +2 (a leads b by 2).
+    ///
+    /// Uses an asymmetric chirp signal (varying frequency) so the CCF has a
+    /// UNIQUE absolute maximum at the true shift — a pure sine would alias
+    /// (cos(ω*4) ≠ 1 in general but |corr(±k)| = |corr(∓k)| under the
+    /// product-to-sum identity, making the argmax ambiguous). The chirp's
+    /// non-stationary frequency breaks that symmetry. The prefix [0..2] is
+    /// filled with the chirp extrapolated backward so legs share moments.
     #[test]
     fn lead_lag_shifted_series_argmax_matches() {
-        // Build a deterministic non-trivial sequence so the Pearson denominator
-        // is non-zero at every lag.
-        let n = 20;
+        let n = 60;
+        // Chirp: instantaneous frequency increases with i so the signal is
+        // non-stationary and the CCF is unambiguously asymmetric.
+        let chirp = |i_f: f64| -> f64 {
+            let phase = 0.3_f64 * i_f + 0.005_f64 * i_f * i_f;
+            phase.sin()
+        };
         let mut a: Vec<f64> = Vec::with_capacity(n);
         for i in 0..n {
-            let i_f = i as f64;
-            a.push((i_f * 0.4_f64).sin() + 0.3 * i_f);
+            a.push(chirp(i as f64));
         }
-        // b_t = a_{t-2} for t >= 2; fill prefix [0..2] with arbitrary values
-        // that should NOT match a's prefix exactly (otherwise lag 0 would
-        // also be high). Using zeros suffices.
+        // b_t = a_{t-2} for t >= 2; prefix extrapolates the chirp backward.
         let mut b = vec![0.0_f64; n];
+        b[0] = chirp(-2.0);
+        b[1] = chirp(-1.0);
         for t in 2..n {
             b[t] = a[t - 2];
         }
@@ -312,16 +335,24 @@ mod tests {
     }
 
     /// Reverse-shifted: `a_t = b_{t-3}` (b leads a by 3 => argmax_lag = -3).
+    /// Uses an asymmetric chirp signal (see `lead_lag_shifted_series_argmax_matches`)
+    /// so the CCF has a UNIQUE absolute maximum at the true shift.
     #[test]
     fn lead_lag_b_leads_a_argmax_negative() {
-        let n = 24;
+        let n = 60;
+        let chirp = |i_f: f64| -> f64 {
+            let phase = 0.25_f64 * i_f + 0.004_f64 * i_f * i_f;
+            phase.cos()
+        };
         let mut b: Vec<f64> = Vec::with_capacity(n);
         for i in 0..n {
-            let i_f = i as f64;
-            b.push((i_f * 0.5_f64).cos() + 0.1 * i_f);
+            b.push(chirp(i as f64));
         }
-        // a_t = b_{t-3} for t >= 3 (b leads a by 3).
+        // a_t = b_{t-3} for t >= 3; prefix [0..3] extrapolates the chirp backward.
         let mut a = vec![0.0_f64; n];
+        a[0] = chirp(-3.0);
+        a[1] = chirp(-2.0);
+        a[2] = chirp(-1.0);
         for t in 3..n {
             a[t] = b[t - 3];
         }

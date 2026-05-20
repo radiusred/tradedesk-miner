@@ -598,9 +598,13 @@ mod tests {
 
     /// Known-shifted-series argmax: when returns_b is returns_a shifted by k
     /// bars (a leads b by k), argmax_lag should be k (within ±1).
+    ///
+    /// Uses chirp closes (non-stationary frequency) so the log-return CCF
+    /// has a UNIQUE absolute maximum at the true shift. A pure sine would
+    /// alias the argmax to ±k symmetrically (sine product-to-sum identity);
+    /// the chirp's frequency drift breaks that symmetry.
     #[test]
     fn lead_lag_known_shifted_series_argmax_matches() {
-        // Build a non-trivial close series so log returns have rich content.
         let n = 200;
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let ts: Vec<DateTime<Utc>> = (0..n)
@@ -609,23 +613,24 @@ mod tests {
                 start + Duration::minutes(15 * i_i64)
             })
             .collect();
-        // Deterministic non-monotone closes so log returns vary.
-        let closes_a: Vec<f64> = (0..n)
-            .map(|i| {
-                let i_f = i as f64;
-                1.0 + 0.001 * i_f + 0.05 * (i_f * 0.3_f64).sin()
-            })
-            .collect();
-        // b is a shifted by k = 3 (a leads b by 3 bars in close space; the
-        // log returns are also shifted by 3).
+        // Chirp closes centered around 1.0 so log returns are
+        // non-stationary in frequency.
+        let chirp = |i_f: f64| -> f64 {
+            let phase = 0.2_f64 * i_f + 0.002_f64 * i_f * i_f;
+            1.0 + 0.05 * phase.sin()
+        };
+        let closes_a: Vec<f64> = (0..n).map(|i| chirp(i as f64)).collect();
+        // b is a shifted by k = 3 (a leads b by 3 bars in close space). Fill
+        // the prefix by extrapolating the chirp backwards so the prefix log
+        // returns continue the chirp pattern.
         let k = 3_usize;
         let mut closes_b = vec![1.0_f64; n];
         for t in 0..n {
             if t >= k {
                 closes_b[t] = closes_a[t - k];
             } else {
-                // arbitrary prefix; avoids the perfect identity at lag 0.
-                closes_b[t] = 0.9 + 0.01 * t as f64;
+                let back_i = (t as f64) - (k as f64);
+                closes_b[t] = chirp(back_i);
             }
         }
         let a = build_bars("EURUSD", &ts, &closes_a);
