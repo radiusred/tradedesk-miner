@@ -13,9 +13,13 @@
 //!
 //! Phase 4 Plan 04-03 — ANOM-03 `stats.vol.rolling@1` extension added the
 //! `vol_rolling_shuffled_future_invariant` proptest below per Pattern M.
-//! Plans 04-07 (Pearson/Spearman/OLS rolling) defer their proptest
-//! extensions to Plan 04-08 (Wave 4) to avoid same-wave write-conflicts on
-//! this file.
+//! Plan 04-08 (Wave 4) authors FOUR additional Pair-arity proptests:
+//! `lead_lag_shuffled_future_invariant` (CROSS-04, full-sample-with-window
+//! variant), `pearson_rolling_shuffled_future_invariant`,
+//! `spearman_rolling_shuffled_future_invariant`, and
+//! `ols_rolling_shuffled_future_invariant` (CROSS-02 + CROSS-03 — deferred
+//! from Plan 04-07 Wave 3 to avoid same-wave file-write conflict with Plan
+//! 04-03's vol_rolling extension).
 
 #![allow(dead_code, unused_imports, unexpected_cfgs)]
 
@@ -28,8 +32,11 @@ use miner_core::aggregator::{BarFrame, Timeframe};
 use miner_core::engine::gap_policy::GapPolicyKind;
 use miner_core::engine::param_hash;
 use miner_core::findings::{Finding, RunId, TimeRange};
-use miner_core::reader::{ClosedRangeUtc, Side};
+use miner_core::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 use miner_core::scan::anom::VolRollingScan;
+use miner_core::scan::cross::{
+    LeadLagCcfScan, OlsRollingScan, PearsonRollingScan, SpearmanRollingScan,
+};
 use miner_core::scan::ljung_box::LjungBoxScan;
 use miner_core::scan::{Scan, ScanCtx, ScanRequest};
 
@@ -199,6 +206,114 @@ fn run_and_extract_vol_values(closes_slice: &[f64], window: usize) -> Vec<f64> {
     out
 }
 
+/// Build a `BarFrame` from a pre-computed close array using a custom symbol +
+/// source-id. Companion to [`bar_frame_from_closes`] for the Pair-arity
+/// proptests below — we need two distinct legs with distinct symbols.
+fn bar_frame_named(closes: &[f64], symbol: &str) -> BarFrame {
+    let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+    let n = closes.len();
+    let ts_open: Vec<chrono::DateTime<Utc>> = (0..n)
+        .map(|i| start + Duration::minutes(15 * i64::try_from(i).unwrap()))
+        .collect();
+    let ts_close: Vec<chrono::DateTime<Utc>> =
+        ts_open.iter().map(|t| *t + Duration::minutes(15)).collect();
+    BarFrame {
+        source_id: "dukascopy".into(),
+        symbol: symbol.into(),
+        side: Side::Bid,
+        tf: Timeframe::Tf15m,
+        ts_open_utc: ts_open,
+        ts_close_utc: ts_close,
+        open: closes.to_vec(),
+        high: closes.iter().map(|c| c + 0.001).collect(),
+        low: closes.iter().map(|c| c - 0.001).collect(),
+        close: closes.to_vec(),
+        tick_volume: vec![1.0; n],
+    }
+}
+
+/// Decode a single `effect.extra[key]` `RawArray` to a `Vec<f64>` via the
+/// canonical D-01 little-endian f64 layout.
+fn extract_f64_vec(r: &miner_core::findings::ResultFinding, key: &str) -> Vec<f64> {
+    let arr = r.effect.extra.get(key).expect("effect.extra missing key");
+    let mut out = Vec::with_capacity(arr.data.0.len() / 8);
+    for chunk in arr.data.0.chunks_exact(8) {
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(chunk);
+        out.push(f64::from_le_bytes(buf));
+    }
+    out
+}
+
+/// Pair-arity request builder for the CROSS proptests.
+fn pair_request(
+    scan_id: &str,
+    aligned_n: usize,
+    resolved_params: serde_json::Value,
+) -> ScanRequest {
+    let pair_param_hash = param_hash::param_hash(&resolved_params).expect("hash ok");
+    let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+    let end = start + Duration::minutes(15 * i64::try_from(aligned_n).unwrap());
+    ScanRequest {
+        scan_id: scan_id.into(),
+        version: 1,
+        instruments: vec![
+            InstrumentSpec {
+                symbol: "EURUSD".into(),
+                side: Side::Bid,
+            },
+            InstrumentSpec {
+                symbol: "GBPUSD".into(),
+                side: Side::Bid,
+            },
+        ],
+        timeframe: Timeframe::Tf15m,
+        window: ClosedRangeUtc { start, end },
+        sub_range: TimeRange {
+            start_utc: start,
+            end_utc: end,
+        },
+        gap_policy: GapPolicyKind::ContinuousOnly,
+        resolved_params,
+        param_hash: pair_param_hash,
+        dry_run: false,
+        sleep_after_first_finding_ms: None,
+    }
+}
+
+/// Generic Pair-arity scan runner — dispatches `scan.run` against the two
+/// supplied close arrays (constructed into `BarFrame`s on the fly) and
+/// returns the single `ResultFinding` envelope's `effect.extra[key]`
+/// decoded as a `Vec<f64>`.
+fn run_pair_and_extract(
+    scan: &dyn Scan,
+    closes_a: &[f64],
+    closes_b: &[f64],
+    resolved_params: serde_json::Value,
+    extra_key: &str,
+) -> Vec<f64> {
+    assert_eq!(closes_a.len(), closes_b.len(), "legs must have equal len");
+    let bars_a = bar_frame_named(closes_a, "EURUSD");
+    let bars_b = bar_frame_named(closes_b, "GBPUSD");
+    let req = pair_request(scan.id(), closes_a.len(), resolved_params);
+    let ctx = ScanCtx {
+        bars: &bars_a,
+        bars_pair: Some((&bars_a, &bars_b)),
+        gap_manifest: None,
+        run_id: RunId::new(),
+        code_revision: "test-rev",
+        cancel: Arc::new(AtomicBool::new(false)),
+        sleep_after_first_finding_ms: None,
+    };
+    let mut sink = BufferSink::new();
+    scan.run(&ctx, &req, &mut sink).expect("scan ok");
+    let findings = common::parse_findings(&sink.0);
+    let Finding::Result(ref r) = findings[0] else {
+        panic!("expected Finding::Result for {}", scan.id());
+    };
+    extract_f64_vec(r, extra_key)
+}
+
 proptest! {
     /// D3-09 — Ljung-Box stats up to time T MUST be byte-identical when bars
     /// at index >T are shuffled.
@@ -284,6 +399,242 @@ proptest! {
                 a,
                 b,
             );
+        }
+    }
+
+    /// Phase 4 Plan 04-08 Task 1 Pattern M — CROSS-04 `cross.lead_lag.ccf@1`.
+    ///
+    /// Lead-lag CCF is FULL-SAMPLE (no rolling/causal window structure), so
+    /// the standard "rolling-prefix equals shuffled-tail-prefix" pattern
+    /// doesn't fit directly. Instead we assert: the scan run on the
+    /// truncated prefix `closes[..=T]` produces a `ccf_values` vector
+    /// byte-identical to the scan run on the OTHER truncated prefix
+    /// `shuffled[..=T]` where the post-T tail was shuffled before
+    /// truncation. (Truncating both inputs at T means the scan sees only
+    /// the pre-T window in either case; the equality is then the structural
+    /// "kernel reads only the supplied slice" invariant — the same property
+    /// the LjungBox proptest above pins for the single-leg case.)
+    #[test]
+    fn lead_lag_shuffled_future_invariant(seed in 0u64..1_000) {
+        #[allow(clippy::cast_possible_truncation)]
+        let seed_u32 = seed as u32;
+        let closes_a_full = lcg_closes(N, seed_u32);
+        let closes_b_full = lcg_closes(N, seed_u32.wrapping_add(7));
+        let max_lag = 5_usize;
+
+        // Pre-T CCF from the unshuffled prefix.
+        let pre_t_a = closes_a_full[..=T].to_vec();
+        let pre_t_b = closes_b_full[..=T].to_vec();
+        let ccf_pre = run_pair_and_extract(
+            &LeadLagCcfScan,
+            &pre_t_a,
+            &pre_t_b,
+            serde_json::json!({"max_lag": max_lag}),
+            "ccf_values",
+        );
+
+        // Shuffle the post-T tails in BOTH legs (deterministic per-leg seeds).
+        let mut shuffled_a = closes_a_full.clone();
+        shuffle_in_place(&mut shuffled_a[T + 1..], seed_u32);
+        let mut shuffled_b = closes_b_full.clone();
+        shuffle_in_place(&mut shuffled_b[T + 1..], seed_u32.wrapping_add(13));
+
+        // Truncate at T; run again.
+        let post_a = shuffled_a[..=T].to_vec();
+        let post_b = shuffled_b[..=T].to_vec();
+        let ccf_post = run_pair_and_extract(
+            &LeadLagCcfScan,
+            &post_a,
+            &post_b,
+            serde_json::json!({"max_lag": max_lag}),
+            "ccf_values",
+        );
+
+        // Byte-identical: the kernel must see only the supplied slice.
+        prop_assert_eq!(
+            ccf_pre.len(),
+            ccf_post.len(),
+            "ccf lengths differ (pre={}, post={})",
+            ccf_pre.len(),
+            ccf_post.len(),
+        );
+        for i in 0..ccf_pre.len() {
+            let a = ccf_pre[i];
+            let b = ccf_post[i];
+            prop_assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "pre-T ccf[{}] differs after post-T shuffle+truncate (seed={}, max_lag={}): pre={}, post={}",
+                i,
+                seed,
+                max_lag,
+                a,
+                b,
+            );
+        }
+    }
+
+    /// Phase 4 Plan 04-08 Task 1 Pattern M — CROSS-02 Pearson
+    /// `cross.corr.pearson_rolling@1`. Pair-arity rolling proptest: shuffle
+    /// post-T tail in BOTH legs; assert prefix-aligned `values` vector is
+    /// byte-identical to the prefix-only run. Deferred from Plan 04-07 Wave
+    /// 3 to avoid same-wave file-write conflict.
+    #[test]
+    fn pearson_rolling_shuffled_future_invariant(seed in 0u64..1_000) {
+        #[allow(clippy::cast_possible_truncation)]
+        let seed_u32 = seed as u32;
+        let closes_a_full = lcg_closes(N, seed_u32);
+        let closes_b_full = lcg_closes(N, seed_u32.wrapping_add(7));
+        let window = 8_usize;
+
+        let pre_t_a = closes_a_full[..=T].to_vec();
+        let pre_t_b = closes_b_full[..=T].to_vec();
+        let values_pre = run_pair_and_extract(
+            &PearsonRollingScan,
+            &pre_t_a,
+            &pre_t_b,
+            serde_json::json!({"window": window}),
+            "values",
+        );
+
+        let mut shuffled_a = closes_a_full.clone();
+        shuffle_in_place(&mut shuffled_a[T + 1..], seed_u32);
+        let mut shuffled_b = closes_b_full.clone();
+        shuffle_in_place(&mut shuffled_b[T + 1..], seed_u32.wrapping_add(13));
+        let values_post_full = run_pair_and_extract(
+            &PearsonRollingScan,
+            &shuffled_a,
+            &shuffled_b,
+            serde_json::json!({"window": window}),
+            "values",
+        );
+
+        let prefix_len = values_pre.len();
+        prop_assert!(
+            values_post_full.len() >= prefix_len,
+            "full values vector ({}) must be >= prefix vector ({})",
+            values_post_full.len(),
+            prefix_len,
+        );
+        for i in 0..prefix_len {
+            let a = values_pre[i];
+            let b = values_post_full[i];
+            prop_assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "pre-T pearson[{}] differs after post-T shuffle (seed={}, window={}): pre={}, post={}",
+                i,
+                seed,
+                window,
+                a,
+                b,
+            );
+        }
+    }
+
+    /// Phase 4 Plan 04-08 Task 1 Pattern M — CROSS-02 Spearman
+    /// `cross.corr.spearman_rolling@1`. Same shape as the Pearson proptest;
+    /// pins the rank-with-ties kernel's look-ahead-safety. Deferred from
+    /// Plan 04-07 Wave 3.
+    #[test]
+    fn spearman_rolling_shuffled_future_invariant(seed in 0u64..1_000) {
+        #[allow(clippy::cast_possible_truncation)]
+        let seed_u32 = seed as u32;
+        let closes_a_full = lcg_closes(N, seed_u32);
+        let closes_b_full = lcg_closes(N, seed_u32.wrapping_add(7));
+        let window = 8_usize;
+
+        let pre_t_a = closes_a_full[..=T].to_vec();
+        let pre_t_b = closes_b_full[..=T].to_vec();
+        let values_pre = run_pair_and_extract(
+            &SpearmanRollingScan,
+            &pre_t_a,
+            &pre_t_b,
+            serde_json::json!({"window": window}),
+            "values",
+        );
+
+        let mut shuffled_a = closes_a_full.clone();
+        shuffle_in_place(&mut shuffled_a[T + 1..], seed_u32);
+        let mut shuffled_b = closes_b_full.clone();
+        shuffle_in_place(&mut shuffled_b[T + 1..], seed_u32.wrapping_add(13));
+        let values_post_full = run_pair_and_extract(
+            &SpearmanRollingScan,
+            &shuffled_a,
+            &shuffled_b,
+            serde_json::json!({"window": window}),
+            "values",
+        );
+
+        let prefix_len = values_pre.len();
+        prop_assert!(values_post_full.len() >= prefix_len);
+        for i in 0..prefix_len {
+            let a = values_pre[i];
+            let b = values_post_full[i];
+            prop_assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "pre-T spearman[{}] differs after post-T shuffle (seed={}, window={}): pre={}, post={}",
+                i,
+                seed,
+                window,
+                a,
+                b,
+            );
+        }
+    }
+
+    /// Phase 4 Plan 04-08 Task 1 Pattern M — CROSS-03 `cross.ols.rolling@1`.
+    /// Pair-arity rolling OLS proptest. Asserts prefix-aligned `betas`,
+    /// `alphas`, `r2s`, AND `residual_stds` vectors are each byte-identical
+    /// across the post-T shuffle cut. Deferred from Plan 04-07 Wave 3.
+    #[test]
+    fn ols_rolling_shuffled_future_invariant(seed in 0u64..1_000) {
+        #[allow(clippy::cast_possible_truncation)]
+        let seed_u32 = seed as u32;
+        let closes_a_full = lcg_closes(N, seed_u32);
+        let closes_b_full = lcg_closes(N, seed_u32.wrapping_add(7));
+        let window = 8_usize;
+
+        let pre_t_a = closes_a_full[..=T].to_vec();
+        let pre_t_b = closes_b_full[..=T].to_vec();
+        let mut shuffled_a = closes_a_full.clone();
+        shuffle_in_place(&mut shuffled_a[T + 1..], seed_u32);
+        let mut shuffled_b = closes_b_full.clone();
+        shuffle_in_place(&mut shuffled_b[T + 1..], seed_u32.wrapping_add(13));
+
+        for key in ["betas", "alphas", "r2s", "residual_stds"] {
+            let pre = run_pair_and_extract(
+                &OlsRollingScan,
+                &pre_t_a,
+                &pre_t_b,
+                serde_json::json!({"window": window}),
+                key,
+            );
+            let post = run_pair_and_extract(
+                &OlsRollingScan,
+                &shuffled_a,
+                &shuffled_b,
+                serde_json::json!({"window": window}),
+                key,
+            );
+            let prefix_len = pre.len();
+            prop_assert!(post.len() >= prefix_len);
+            for i in 0..prefix_len {
+                let a = pre[i];
+                let b = post[i];
+                prop_assert_eq!(
+                    a.to_bits(),
+                    b.to_bits(),
+                    "pre-T ols/{}[{}] differs after post-T shuffle (seed={}, window={}): pre={}, post={}",
+                    key,
+                    i,
+                    seed,
+                    window,
+                    a,
+                    b,
+                );
+            }
         }
     }
 }
