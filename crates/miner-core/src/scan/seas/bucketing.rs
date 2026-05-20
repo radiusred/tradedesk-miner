@@ -61,7 +61,10 @@ pub struct BucketResult {
 )]
 pub fn bucket_stats_from_groups(per_bucket: &mut [Vec<f64>], min_obs: usize) -> BucketResult {
     let num_buckets = per_bucket.len();
-    debug_assert!(num_buckets >= 1, "bucket_stats_from_groups: num_buckets must be >= 1");
+    debug_assert!(
+        num_buckets >= 1,
+        "bucket_stats_from_groups: num_buckets must be >= 1"
+    );
     let mut means = Vec::with_capacity(num_buckets);
     let mut stds = Vec::with_capacity(num_buckets);
     let mut counts = Vec::with_capacity(num_buckets);
@@ -347,7 +350,10 @@ mod tests {
         assert_eq!(r.counts, vec![3]);
         assert!(r.means[0].is_nan(), "mean must be NaN for sparse bucket");
         assert!(r.stds[0].is_nan(), "std must be NaN for sparse bucket");
-        assert!(r.t_stats[0].is_nan(), "t_stat must be NaN for sparse bucket");
+        assert!(
+            r.t_stats[0].is_nan(),
+            "t_stat must be NaN for sparse bucket"
+        );
         assert!(r.iqrs[0].is_nan(), "iqr must be NaN for sparse bucket");
     }
 
@@ -443,17 +449,22 @@ mod tests {
         let values = vec![1.0_f64, 2.0, 3.0, 10.0, 20.0, 30.0];
         let keys = vec![0_usize, 0, 0, 1, 1, 1];
         let from_pairs = bucket_stats(&values, &keys, 2, 0);
-        let mut groups: Vec<Vec<f64>> = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![10.0, 20.0, 30.0],
-        ];
+        let mut groups: Vec<Vec<f64>> = vec![vec![1.0, 2.0, 3.0], vec![10.0, 20.0, 30.0]];
         let from_groups = bucket_stats_from_groups(&mut groups, 0);
         assert!(approx_eq(from_pairs.means[0], from_groups.means[0], TOL));
         assert!(approx_eq(from_pairs.means[1], from_groups.means[1], TOL));
         assert!(approx_eq(from_pairs.stds[0], from_groups.stds[0], TOL));
         assert!(approx_eq(from_pairs.stds[1], from_groups.stds[1], TOL));
-        assert!(approx_eq(from_pairs.t_stats[0], from_groups.t_stats[0], TOL));
-        assert!(approx_eq(from_pairs.t_stats[1], from_groups.t_stats[1], TOL));
+        assert!(approx_eq(
+            from_pairs.t_stats[0],
+            from_groups.t_stats[0],
+            TOL
+        ));
+        assert!(approx_eq(
+            from_pairs.t_stats[1],
+            from_groups.t_stats[1],
+            TOL
+        ));
         assert!(approx_eq(from_pairs.iqrs[0], from_groups.iqrs[0], TOL));
         assert!(approx_eq(from_pairs.iqrs[1], from_groups.iqrs[1], TOL));
         assert_eq!(from_pairs.counts, from_groups.counts);
@@ -463,10 +474,7 @@ mod tests {
     /// has 3 values, bucket 1 has 2 values (one shared with bucket 0).
     #[test]
     fn bucket_stats_from_groups_many_to_many() {
-        let mut groups: Vec<Vec<f64>> = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![3.0, 4.0],
-        ];
+        let mut groups: Vec<Vec<f64>> = vec![vec![1.0, 2.0, 3.0], vec![3.0, 4.0]];
         let r = bucket_stats_from_groups(&mut groups, 0);
         assert_eq!(r.counts, vec![3, 2]);
         assert!(approx_eq(r.means[0], 2.0, TOL));

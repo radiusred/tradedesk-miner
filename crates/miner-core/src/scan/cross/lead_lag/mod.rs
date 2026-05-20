@@ -54,7 +54,13 @@ const EFFECT_METRIC: &str = "lead_lag_argmax_lag";
 const DEFAULT_MAX_LAG: usize = 20;
 
 const FINDING_SHAPE: ScanFindingShape = ScanFindingShape {
-    effect_extra_keys: &["argmax_lag", "argmax_value", "ccf_values", "lags", "max_lag"],
+    effect_extra_keys: &[
+        "argmax_lag",
+        "argmax_value",
+        "ccf_values",
+        "lags",
+        "max_lag",
+    ],
     // D-03 invariant: Raw::new requires a `timestamps_ms` key. The
     // CROSS-scan body carries the aligned joint timestamps under this
     // canonical key (same data; see corr_rolling::FINDING_SHAPE doc).
@@ -106,9 +112,9 @@ impl Scan for LeadLagCcfScan {
         }
 
         // 2. Pair-arity borrow check.
-        let (bars_a, bars_b) = ctx
-            .bars_pair()
-            .ok_or_else(|| ScanError::Kernel("expected Pair arity (ctx.bars_pair is None)".into()))?;
+        let (bars_a, bars_b) = ctx.bars_pair().ok_or_else(|| {
+            ScanError::Kernel("expected Pair arity (ctx.bars_pair is None)".into())
+        })?;
 
         // 3. Inner-join (CROSS-01 primitive).
         let aligned = inner_join(bars_a, bars_b);
@@ -177,10 +183,7 @@ impl Scan for LeadLagCcfScan {
             reason = "argmax_lag bounded by max_lag << 2^52"
         )]
         let argmax_lag_f = result.argmax_lag as f64;
-        extra.insert(
-            "argmax_lag".into(),
-            f64_slice_to_raw_array(&[argmax_lag_f]),
-        );
+        extra.insert("argmax_lag".into(), f64_slice_to_raw_array(&[argmax_lag_f]));
         extra.insert(
             "argmax_value".into(),
             f64_slice_to_raw_array(&[result.argmax_value]),
@@ -296,9 +299,7 @@ fn resolve_max_lag(req: &ScanRequest, returns_n: usize) -> Result<usize, ScanErr
                 .as_i64()
                 .ok_or_else(|| ScanError::Kernel(format!("max_lag must be an integer; got {v}")))?;
             if i < 1 {
-                return Err(ScanError::Kernel(format!(
-                    "max_lag must be >= 1; got {i}"
-                )));
+                return Err(ScanError::Kernel(format!("max_lag must be >= 1; got {i}")));
             }
             usize::try_from(i)
                 .map_err(|_| ScanError::Kernel(format!("max_lag out of usize range: {i}")))?
@@ -462,7 +463,12 @@ mod tests {
         assert_eq!(schema["properties"]["max_lag"]["minimum"], 1);
         assert_eq!(schema["properties"]["max_lag"]["default"], 20);
         // No required params (max_lag has a default).
-        assert!(schema.get("required").is_none() || schema["required"].as_array().map_or(true, std::vec::Vec::is_empty));
+        assert!(
+            schema.get("required").is_none()
+                || schema["required"]
+                    .as_array()
+                    .is_none_or(std::vec::Vec::is_empty)
+        );
         assert_eq!(schema["additionalProperties"], false);
     }
 
@@ -542,7 +548,13 @@ mod tests {
         let keys: Vec<&str> = r.effect.extra.keys().map(String::as_str).collect();
         assert_eq!(
             keys,
-            vec!["argmax_lag", "argmax_value", "ccf_values", "lags", "max_lag"]
+            vec![
+                "argmax_lag",
+                "argmax_value",
+                "ccf_values",
+                "lags",
+                "max_lag"
+            ]
         );
         // lags + ccf_values have length 2*max_lag + 1 = 11.
         let lags = decode_f64(&r.effect.extra["lags"]);

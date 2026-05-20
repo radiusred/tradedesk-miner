@@ -112,9 +112,7 @@ fn scan_vol_rolling_happy_path() {
     };
 
     let mut sink = BufferSink::new();
-    VolRollingScan
-        .run(&ctx, &req, &mut sink)
-        .expect("scan ok");
+    VolRollingScan.run(&ctx, &req, &mut sink).expect("scan ok");
 
     let findings = common::parse_findings(&sink.0);
     // Pattern D / Pitfall 1 — exactly ONE envelope, vectors in extra.

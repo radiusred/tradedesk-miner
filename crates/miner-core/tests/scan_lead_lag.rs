@@ -5,6 +5,8 @@
 //! deterministic seeded fixture. Pattern J analog: `scan_corr_rolling.rs`,
 //! `scan_ols_rolling.rs`.
 
+#![allow(clippy::float_cmp)]
+
 mod common;
 
 use std::sync::Arc;
@@ -145,7 +147,13 @@ fn scan_lead_lag_happy_path() {
     assert!(raw.series.contains_key("timestamps_ms"));
 
     // effect.extra carries the documented 5 keys.
-    for key in ["argmax_lag", "argmax_value", "ccf_values", "lags", "max_lag"] {
+    for key in [
+        "argmax_lag",
+        "argmax_value",
+        "ccf_values",
+        "lags",
+        "max_lag",
+    ] {
         assert!(
             r.effect.extra.contains_key(key),
             "effect.extra missing {key}"

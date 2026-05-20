@@ -1,3 +1,14 @@
+// Plan 04-13: integration-test helpers use generic tuple return types and
+// by-value scan arguments that clippy::pedantic flags. These patterns are
+// legitimate test ergonomics (the helpers are private to the test file and
+// take ownership of synthetic scan structs); restricting them would add
+// boilerplate without improving the test's value.
+#![allow(
+    clippy::type_complexity,
+    clippy::needless_pass_by_value,
+    clippy::items_after_statements
+)]
+
 //! Phase 4 Plan 04-11 Task 2 — byte-identical-rerun integration test.
 //!
 //! Pins ROADMAP Phase 4 Success Criterion #4: "consistent Finding envelope
@@ -102,7 +113,10 @@ fn run_single_arity_twice<S: Scan>(
     scan: S,
     bars: &BarFrame,
     req: &ScanRequest,
-) -> ((Vec<u8>, Vec<serde_json::Value>), (Vec<u8>, Vec<serde_json::Value>)) {
+) -> (
+    (Vec<u8>, Vec<serde_json::Value>),
+    (Vec<u8>, Vec<serde_json::Value>),
+) {
     let ctx1 = ScanCtx {
         bars,
         bars_pair: None,
@@ -138,13 +152,19 @@ fn run_single_arity_twice<S: Scan>(
 /// (`run_pair_arity_via_engine_twice`) so the CR-01 dispatch wiring is
 /// covered by the byte-identity invariant too. Kept available for future
 /// kernel-direct pins that intentionally bypass the engine.
-#[allow(dead_code, reason = "retained for future kernel-direct Pair-arity pins; Plan 04-12 routes the CROSS byte-identical-rerun test through the engine facade")]
+#[allow(
+    dead_code,
+    reason = "retained for future kernel-direct Pair-arity pins; Plan 04-12 routes the CROSS byte-identical-rerun test through the engine facade"
+)]
 fn run_pair_arity_twice<S: Scan>(
     scan: S,
     bars_a: &BarFrame,
     bars_b: &BarFrame,
     req: &ScanRequest,
-) -> ((Vec<u8>, Vec<serde_json::Value>), (Vec<u8>, Vec<serde_json::Value>)) {
+) -> (
+    (Vec<u8>, Vec<serde_json::Value>),
+    (Vec<u8>, Vec<serde_json::Value>),
+) {
     let ctx1 = ScanCtx {
         bars: bars_a,
         bars_pair: Some((bars_a, bars_b)),
@@ -208,7 +228,10 @@ fn build_single_request(scan_id: &str) -> ScanRequest {
 /// `run_pair_arity_twice` — both are retained as future-use kernel-direct
 /// helpers. The engine-path equivalent is `run_pair_arity_via_engine_twice`
 /// (Plan 04-12) which builds the request inline against a `SyntheticCache`.
-#[allow(dead_code, reason = "paired with run_pair_arity_twice; retained for future kernel-direct pins")]
+#[allow(
+    dead_code,
+    reason = "paired with run_pair_arity_twice; retained for future kernel-direct pins"
+)]
 fn build_pair_request() -> ScanRequest {
     let resolved_params = serde_json::json!({"regression": "c"});
     let param_hash = param_hash::param_hash(&resolved_params).expect("ok");
@@ -260,7 +283,8 @@ fn byte_identical_rerun_anom_summary_welford() {
     assert_eq!(masked1.len(), 1, "exactly one envelope per run");
     assert_eq!(masked2.len(), 1, "exactly one envelope per run");
     assert_eq!(
-        masked1, masked2,
+        masked1,
+        masked2,
         "ANOM byte-identical-rerun violation:\nrun 1: {}\nrun 2: {}",
         serde_json::to_string_pretty(&masked1).unwrap_or_default(),
         serde_json::to_string_pretty(&masked2).unwrap_or_default(),
@@ -272,7 +296,10 @@ fn byte_identical_rerun_anom_summary_welford() {
         .get("kind")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    assert_eq!(kind, "result", "expected kind=result envelope; got {kind:?}");
+    assert_eq!(
+        kind, "result",
+        "expected kind=result envelope; got {kind:?}"
+    );
 }
 
 /// Drive a Pair-arity scan through `engine::run_one_with_registry` twice
@@ -294,7 +321,10 @@ fn run_pair_arity_via_engine_twice(
     day: NaiveDate,
     resolved_params: serde_json::Value,
     register_scan: fn(&mut Registry),
-) -> ((Vec<u8>, Vec<serde_json::Value>), (Vec<u8>, Vec<serde_json::Value>)) {
+) -> (
+    (Vec<u8>, Vec<serde_json::Value>),
+    (Vec<u8>, Vec<serde_json::Value>),
+) {
     let do_run = || -> (Vec<u8>, Vec<serde_json::Value>) {
         let cache = SyntheticCache::new()
             .with_deterministic_day("EURUSD", Side::Bid, day, seed_a)
@@ -385,7 +415,8 @@ fn byte_identical_rerun_cross_engle_granger() {
     );
     assert_eq!(masked2.len(), 3);
     assert_eq!(
-        masked1, masked2,
+        masked1,
+        masked2,
         "CROSS byte-identical-rerun (via engine facade) violation:\nrun 1: {}\nrun 2: {}",
         serde_json::to_string_pretty(&masked1).unwrap_or_default(),
         serde_json::to_string_pretty(&masked2).unwrap_or_default(),
@@ -400,7 +431,8 @@ fn byte_identical_rerun_cross_engle_granger() {
         .and_then(|v| v.as_str())
         .unwrap_or("");
     assert_eq!(
-        kind, "result",
+        kind,
+        "result",
         "engine-path Pair-arity dispatch must produce kind=result; got {kind:?} (CR-01 regression?)\nenvelope: {}",
         serde_json::to_string_pretty(&masked1[1]).unwrap_or_default()
     );
@@ -440,13 +472,13 @@ fn byte_identical_rerun_seas_hour_of_day() {
         sleep_after_first_finding_ms: None,
     };
 
-    let ((_raw1, masked1), (_raw2, masked2)) =
-        run_single_arity_twice(HourOfDayScan, &bars, &req);
+    let ((_raw1, masked1), (_raw2, masked2)) = run_single_arity_twice(HourOfDayScan, &bars, &req);
 
     assert_eq!(masked1.len(), 1, "exactly one envelope per run");
     assert_eq!(masked2.len(), 1, "exactly one envelope per run");
     assert_eq!(
-        masked1, masked2,
+        masked1,
+        masked2,
         "SEAS byte-identical-rerun violation:\nrun 1: {}\nrun 2: {}",
         serde_json::to_string_pretty(&masked1).unwrap_or_default(),
         serde_json::to_string_pretty(&masked2).unwrap_or_default(),

@@ -40,7 +40,9 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 use serde_json::Value as JsonValue;
 
-use crate::findings::{DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source};
+use crate::findings::{
+    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+};
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
@@ -145,11 +147,8 @@ impl Scan for OutliersZAndMadScan {
 
         // Step 2 — resolve params.
         let z_threshold = resolve_threshold(req, "z_threshold", DEFAULT_Z_THRESHOLD)?;
-        let modified_z_threshold = resolve_threshold(
-            req,
-            "modified_z_threshold",
-            DEFAULT_MODIFIED_Z_THRESHOLD,
-        )?;
+        let modified_z_threshold =
+            resolve_threshold(req, "modified_z_threshold", DEFAULT_MODIFIED_Z_THRESHOLD)?;
         let series = resolve_series(req)?;
 
         // Step 3 — N=0 guard on raw closes.
@@ -239,10 +238,8 @@ impl Scan for OutliersZAndMadScan {
         }
 
         // Step 6 — envelope construction.
-        let outlier_indices_f64: Vec<f64> = outlier_indices
-            .iter()
-            .map(|i| index_to_f64(*i))
-            .collect();
+        let outlier_indices_f64: Vec<f64> =
+            outlier_indices.iter().map(|i| index_to_f64(*i)).collect();
 
         let mut extra: BTreeMap<String, RawArray> = BTreeMap::new();
         extra.insert("mad".into(), f64_slice_to_raw_array(&[mad]));
@@ -263,10 +260,7 @@ impl Scan for OutliersZAndMadScan {
             "outlier_values_z".into(),
             f64_slice_to_raw_array(&outlier_values_z),
         );
-        extra.insert(
-            "z_threshold".into(),
-            f64_slice_to_raw_array(&[z_threshold]),
-        );
+        extra.insert("z_threshold".into(), f64_slice_to_raw_array(&[z_threshold]));
 
         let effect = Effect {
             metric: EFFECT_METRIC.to_string(),
@@ -533,10 +527,7 @@ mod tests {
         assert_eq!(schema["type"], "object");
         assert_eq!(schema["properties"]["z_threshold"]["type"], "number");
         assert_eq!(schema["properties"]["z_threshold"]["default"], 3.0);
-        assert_eq!(
-            schema["properties"]["modified_z_threshold"]["default"],
-            3.5
-        );
+        assert_eq!(schema["properties"]["modified_z_threshold"]["default"], 3.5);
         assert_eq!(schema["properties"]["series"]["default"], "log_returns");
         assert_eq!(schema["additionalProperties"], false);
     }

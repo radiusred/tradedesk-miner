@@ -32,7 +32,9 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 use serde_json::Value as JsonValue;
 
-use crate::findings::{DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source};
+use crate::findings::{
+    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+};
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
@@ -524,10 +526,7 @@ mod tests {
         let Finding::Result(r) = &findings[0] else {
             panic!("expected Result");
         };
-        assert_eq!(
-            r.effect.extra["dd_distribution_p50_p95_p99"].shape,
-            vec![3]
-        );
+        assert_eq!(r.effect.extra["dd_distribution_p50_p95_p99"].shape, vec![3]);
     }
 
     #[test]

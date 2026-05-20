@@ -8,7 +8,11 @@
 //!
 //! Pattern analog: `scan_seas_hour_of_day.rs` (Pattern J).
 
-#![allow(clippy::cast_precision_loss)]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation
+)]
 
 mod common;
 
@@ -121,9 +125,8 @@ fn build_synthetic_daily_bars(n: usize, seed: u64) -> BarFrame {
         let frac = f64::from(s) / f64::from(u32::MAX);
         closes.push(1.0 + frac);
     }
-    let ts_open: Vec<chrono::DateTime<Utc>> = (0..n)
-        .map(|i| start + Duration::days(i as i64))
-        .collect();
+    let ts_open: Vec<chrono::DateTime<Utc>> =
+        (0..n).map(|i| start + Duration::days(i as i64)).collect();
     let ts_close: Vec<chrono::DateTime<Utc>> =
         ts_open.iter().map(|t| *t + Duration::days(1)).collect();
     let opens = closes.clone();

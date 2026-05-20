@@ -25,7 +25,9 @@ use std::sync::atomic::Ordering;
 
 use chrono::Utc;
 
-use crate::findings::{DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source};
+use crate::findings::{
+    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+};
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
 
@@ -147,7 +149,10 @@ impl Scan for ReturnsProfileScan {
         // discriminator (0=log, 1=simple, 2=intraday, 3=overnight) here so
         // consumers that only parse effect.extra can recover the variant.
         let variant_id = variant_discriminant_f64(variant);
-        extra.insert("variant_label".into(), f64_slice_to_raw_array(&[variant_id]));
+        extra.insert(
+            "variant_label".into(),
+            f64_slice_to_raw_array(&[variant_id]),
+        );
 
         let effect = Effect {
             metric,

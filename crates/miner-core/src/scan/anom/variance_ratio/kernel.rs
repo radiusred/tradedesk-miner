@@ -53,10 +53,7 @@ pub(super) struct VrResult {
 /// caller guarantees `k <= returns.len() / 2` to ensure enough overlapping
 /// k-period increments for a meaningful variance estimate.
 #[inline]
-#[allow(
-    clippy::cast_precision_loss,
-    reason = "n + k are bar counts << 2^52"
-)]
+#[allow(clippy::cast_precision_loss, reason = "n + k are bar counts << 2^52")]
 #[allow(
     clippy::similar_names,
     reason = "sigma_1_sq vs sigma_k_sq is the canonical Lo-MacKinlay naming"
@@ -103,8 +100,8 @@ pub(super) fn variance_ratio(returns: &[f64], k: usize, robust: bool) -> Result<
     // We slide window of size k over centred[].
     // Build using a running sum for efficiency.
     let mut running = 0.0_f64;
-    for i in 0..k {
-        running += centred[i];
+    for &val in centred.iter().take(k) {
+        running += val;
     }
     sum_xk_sq += running * running;
     for i in k..n {
@@ -137,7 +134,11 @@ pub(super) fn variance_ratio(returns: &[f64], k: usize, robust: bool) -> Result<
     let z_stat = (vr - 1.0) / var_estimator.sqrt();
     let p_value = two_sided_p_value(z_stat);
 
-    Ok(VrResult { vr, z_stat, p_value })
+    Ok(VrResult {
+        vr,
+        z_stat,
+        p_value,
+    })
 }
 
 /// Heteroskedasticity-robust variance estimator (Lo-MacKinlay 1988 eq 13b):

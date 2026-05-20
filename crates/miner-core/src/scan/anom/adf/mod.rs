@@ -46,7 +46,9 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 use serde_json::Value as JsonValue;
 
-use crate::findings::{DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source};
+use crate::findings::{
+    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+};
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
 
@@ -172,10 +174,7 @@ impl Scan for AdfScan {
             "nobs".into(),
             f64_slice_to_raw_array(&[index_to_f64(result.nobs)]),
         );
-        extra.insert(
-            "p_value".into(),
-            f64_slice_to_raw_array(&[result.p_value]),
-        );
+        extra.insert("p_value".into(), f64_slice_to_raw_array(&[result.p_value]));
         extra.insert(
             "regression".into(),
             string_label_to_raw_array(regression_label(regression)),
@@ -573,7 +572,13 @@ mod tests {
         let extra_keys: Vec<&str> = r.effect.extra.keys().map(String::as_str).collect();
         assert_eq!(
             extra_keys,
-            vec!["crit_values", "lag_selected", "nobs", "p_value", "regression",]
+            vec![
+                "crit_values",
+                "lag_selected",
+                "nobs",
+                "p_value",
+                "regression",
+            ]
         );
         // crit_values has length 3.
         assert_eq!(r.effect.extra["crit_values"].shape, vec![3]);

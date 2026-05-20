@@ -20,9 +20,7 @@ use chrono::{DateTime, Timelike, Utc};
 #[inline]
 #[must_use]
 pub(super) fn hour_keys(ts: &[DateTime<Utc>]) -> Vec<usize> {
-    ts.iter()
-        .map(|dt| dt.hour() as usize)
-        .collect()
+    ts.iter().map(|dt| dt.hour() as usize).collect()
 }
 
 // ---------------------------------------------------------------------------

@@ -55,7 +55,10 @@ mod tests {
         let before = r.scans.len();
         register_cross_scans(&mut r);
         let added = r.scans.len() - before;
-        assert!(added >= 5, "expected >= 5 CROSS scans registered; got {added}");
+        assert!(
+            added >= 5,
+            "expected >= 5 CROSS scans registered; got {added}"
+        );
         assert!(
             r.get("cross.cointegration.engle_granger", 1).is_some(),
             "cross.cointegration.engle_granger@1 must be registered"

@@ -231,9 +231,7 @@ impl Scan for OlsRollingScan {
         // 13. D4-03: two-leg sources Vec.
         let per_leg_source_ids = (bars_a.source_id.clone(), bars_b.source_id.clone());
         let mut sources: Vec<Source> = Vec::with_capacity(2);
-        if let (Some(spec_a), Some(spec_b)) =
-            (req.instruments.first(), req.instruments.get(1))
-        {
+        if let (Some(spec_a), Some(spec_b)) = (req.instruments.first(), req.instruments.get(1)) {
             sources.push(Source {
                 source_id: per_leg_source_ids.0,
                 symbol: spec_a.symbol.clone(),
@@ -291,9 +289,8 @@ fn resolve_window(req: &ScanRequest, returns_n: usize) -> Result<usize, ScanErro
             "window must be >= 3; got {window_i64}"
         )));
     }
-    let window_us = usize::try_from(window_i64).map_err(|_| {
-        ScanError::Kernel(format!("window out of range for usize: {window_i64}"))
-    })?;
+    let window_us = usize::try_from(window_i64)
+        .map_err(|_| ScanError::Kernel(format!("window out of range for usize: {window_i64}")))?;
     if window_us > returns_n {
         return Err(ScanError::Kernel(format!(
             "window must be <= aligned_n (= {returns_n} returns); got window={window_us}"
@@ -406,11 +403,7 @@ mod tests {
         }
     }
 
-    fn make_ctx<'a>(
-        a: &'a BarFrame,
-        b: &'a BarFrame,
-        cancel: Arc<AtomicBool>,
-    ) -> ScanCtx<'a> {
+    fn make_ctx<'a>(a: &'a BarFrame, b: &'a BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'a> {
         ScanCtx {
             bars: a,
             bars_pair: Some((a, b)),

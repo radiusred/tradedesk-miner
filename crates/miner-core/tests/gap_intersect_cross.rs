@@ -1,3 +1,5 @@
+#![allow(clippy::match_wildcard_for_single_variants)]
+
 //! Phase 4 (Plan 04-02 Task 2) integration test — D4-04 two-leg
 //! gap-policy intersection via `engine::gap_policy::dispatch_pair`.
 //!
@@ -81,7 +83,10 @@ fn dispatch_pair_strict_with_overlapping_gaps_aborts() {
 fn dispatch_pair_continuous_only_partitions_around_joint_manifest() {
     // Leg A: gap [10:00, 11:00); Leg B: gap [10:30, 11:30) -> joint [10:00, 11:30).
     let leg_a = manifest("EURUSD", vec![intra_gap(t(10), t(11))]);
-    let leg_b = manifest("GBPUSD", vec![intra_gap(t(10).with_minute_30(), t(11).with_minute_30())]);
+    let leg_b = manifest(
+        "GBPUSD",
+        vec![intra_gap(t(10).with_minute_30(), t(11).with_minute_30())],
+    );
     let req = requested(t(8), t(12));
 
     let out = dispatch_pair(&leg_a, &leg_b, req, GapPolicyKind::ContinuousOnly);

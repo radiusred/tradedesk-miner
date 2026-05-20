@@ -202,10 +202,7 @@ mod tests {
         assert!(approx_eq(std, s, TOL));
         assert_eq!(z.len(), 5);
         for (i, (got, want)) in z.iter().zip(expected.iter()).enumerate() {
-            assert!(
-                approx_eq(*got, *want, TOL),
-                "z[{i}]={got} expected {want}"
-            );
+            assert!(approx_eq(*got, *want, TOL), "z[{i}]={got} expected {want}");
         }
     }
 

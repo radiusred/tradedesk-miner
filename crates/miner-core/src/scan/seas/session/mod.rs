@@ -212,8 +212,8 @@ impl Scan for SessionScan {
                 })
             })
             .collect();
-        let boundaries_bytes = serde_json::to_vec(&boundaries_json)
-            .map_err(|e| ScanError::Kernel(e.to_string()))?;
+        let boundaries_bytes =
+            serde_json::to_vec(&boundaries_json).map_err(|e| ScanError::Kernel(e.to_string()))?;
         let boundaries_len = u64::try_from(boundaries_bytes.len()).map_err(|_| {
             ScanError::Kernel("session_boundaries_utc: byte length exceeds u64".into())
         })?;
@@ -370,12 +370,22 @@ fn resolve_sessions(req: &ScanRequest) -> Result<Vec<OwnedSessionDef>, ScanError
                 "sessions[{i}].name must be non-empty"
             )));
         }
-        let start_raw = obj.get("start_utc_hour").and_then(serde_json::Value::as_i64).ok_or_else(|| {
-            ScanError::Kernel(format!("sessions[{i}].start_utc_hour must be an integer 0..=23"))
-        })?;
-        let end_raw = obj.get("end_utc_hour").and_then(serde_json::Value::as_i64).ok_or_else(|| {
-            ScanError::Kernel(format!("sessions[{i}].end_utc_hour must be an integer 0..=23"))
-        })?;
+        let start_raw = obj
+            .get("start_utc_hour")
+            .and_then(serde_json::Value::as_i64)
+            .ok_or_else(|| {
+                ScanError::Kernel(format!(
+                    "sessions[{i}].start_utc_hour must be an integer 0..=23"
+                ))
+            })?;
+        let end_raw = obj
+            .get("end_utc_hour")
+            .and_then(serde_json::Value::as_i64)
+            .ok_or_else(|| {
+                ScanError::Kernel(format!(
+                    "sessions[{i}].end_utc_hour must be an integer 0..=23"
+                ))
+            })?;
         if !(0..=23).contains(&start_raw) || !(0..=23).contains(&end_raw) {
             return Err(ScanError::Kernel(format!(
                 "sessions[{i}] UTC hour bounds must be in 0..=23; got start={start_raw}, end={end_raw}"
@@ -478,7 +488,7 @@ mod tests {
         }
     }
 
-    fn make_ctx<'a>(bars: &'a BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'a> {
+    fn make_ctx(bars: &BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'_> {
         ScanCtx {
             bars,
             bars_pair: None,
@@ -516,7 +526,10 @@ mod tests {
         let s = SessionScan;
         let schema = s.param_schema();
         assert_eq!(schema["type"], "object");
-        assert_eq!(schema["properties"]["min_obs_per_bucket"]["type"], "integer");
+        assert_eq!(
+            schema["properties"]["min_obs_per_bucket"]["type"],
+            "integer"
+        );
         assert_eq!(schema["properties"]["sessions"]["type"], "array");
         assert_eq!(schema["properties"]["sessions"]["maxItems"], MAX_SESSIONS);
     }
@@ -644,10 +657,10 @@ mod tests {
         // should fall in Asia. None in London (07-16).
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 22, 0, 0).unwrap();
         let ts: Vec<DateTime<Utc>> = vec![
-            start,                          // 22:00
-            start + Duration::minutes(15),  // 22:15
-            start + Duration::hours(1),     // 23:00
-            start + Duration::hours(5),     // 03:00 next day
+            start,                                              // 22:00
+            start + Duration::minutes(15),                      // 22:15
+            start + Duration::hours(1),                         // 23:00
+            start + Duration::hours(5),                         // 03:00 next day
             start + Duration::hours(5) + Duration::minutes(15), // 03:15
         ];
         let close = vec![1.0_f64, 1.05, 1.1, 1.15, 1.2];

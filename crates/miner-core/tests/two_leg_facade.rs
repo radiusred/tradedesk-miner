@@ -1,3 +1,5 @@
+#![allow(clippy::useless_vec)]
+
 //! Phase 4 Plan 04-12 (CR-01) — two-leg facade regression gate.
 //!
 //! ## Why this file exists in its current form
@@ -176,7 +178,8 @@ fn two_leg_facade_pair_arity_dispatch_emits_result_envelope() {
         .filter(|f| matches!(f, Finding::Result(_)))
         .count();
     assert_eq!(
-        result_count, 1,
+        result_count,
+        1,
         "expected exactly one Finding::Result envelope; sink contained {} envelopes total",
         findings.len()
     );

@@ -112,9 +112,7 @@ fn scan_ljung_box_squared_happy_path() {
     };
 
     let mut sink = BufferSink::new();
-    LjungBoxSqScan
-        .run(&ctx, &req, &mut sink)
-        .expect("scan ok");
+    LjungBoxSqScan.run(&ctx, &req, &mut sink).expect("scan ok");
 
     let findings = common::parse_findings(&sink.0);
     assert_eq!(findings.len(), 1, "exactly one envelope");

@@ -1,3 +1,8 @@
+// Plan 04-13: the `+ ` at col 5 of line 16 starts a markdown list; continuation
+// lines (17-20) are conventional prose, not indented list items. Relaxing the
+// lint for this file is cheaper than reflowing every multi-line docstring.
+#![allow(clippy::doc_lazy_continuation)]
+
 //! `ScanArgs` — clap-derive struct + window parser + `to_scan_request` conversion.
 //!
 //! Pattern analog: `cli.rs:28-84` (`Cli` clap-Parser derive + `Cli::overrides()`
@@ -246,9 +251,7 @@ pub fn parse_window(s: &str) -> Result<ClosedRangeUtc, String> {
 /// - The side leg is not one of `"bid"` / `"ask"`.
 pub fn parse_instrument_spec(s: &str) -> Result<InstrumentSpec, String> {
     let (symbol, side) = s.split_once(':').ok_or_else(|| {
-        format!(
-            "--instrument value must be of the form SYMBOL:side (e.g., EURUSD:bid); got {s:?}"
-        )
+        format!("--instrument value must be of the form SYMBOL:side (e.g., EURUSD:bid); got {s:?}")
     })?;
     if symbol.is_empty() {
         return Err(format!(
@@ -256,9 +259,7 @@ pub fn parse_instrument_spec(s: &str) -> Result<InstrumentSpec, String> {
         ));
     }
     let side = Side::from_str(side).map_err(|bad| {
-        format!(
-            "--instrument SYMBOL:side has unknown side {bad:?} (expected bid|ask); got {s:?}"
-        )
+        format!("--instrument SYMBOL:side has unknown side {bad:?} (expected bid|ask); got {s:?}")
     })?;
     Ok(InstrumentSpec {
         symbol: symbol.to_string(),

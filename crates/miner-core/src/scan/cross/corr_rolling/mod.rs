@@ -390,9 +390,8 @@ fn resolve_window(req: &ScanRequest, returns_n: usize) -> Result<usize, ScanErro
             "window must be >= 3; got {window_i64}"
         )));
     }
-    let window_us = usize::try_from(window_i64).map_err(|_| {
-        ScanError::Kernel(format!("window out of range for usize: {window_i64}"))
-    })?;
+    let window_us = usize::try_from(window_i64)
+        .map_err(|_| ScanError::Kernel(format!("window out of range for usize: {window_i64}")))?;
     if window_us > returns_n {
         return Err(ScanError::Kernel(format!(
             "window must be <= aligned_n (= {returns_n} returns); got window={window_us}"
@@ -527,7 +526,11 @@ mod tests {
         }
     }
 
-    fn make_ctx<'a>(bars_a: &'a BarFrame, bars_b: &'a BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'a> {
+    fn make_ctx<'a>(
+        bars_a: &'a BarFrame,
+        bars_b: &'a BarFrame,
+        cancel: Arc<AtomicBool>,
+    ) -> ScanCtx<'a> {
         ScanCtx {
             bars: bars_a,
             bars_pair: Some((bars_a, bars_b)),
@@ -671,10 +674,7 @@ mod tests {
         // joint-timestamps key — see FINDING_SHAPE doc-comment for rationale).
         let raw = r.raw.as_ref().expect("raw present");
         let raw_keys: Vec<&str> = raw.series.keys().map(String::as_str).collect();
-        assert_eq!(
-            raw_keys,
-            vec!["returns_a", "returns_b", "timestamps_ms"]
-        );
+        assert_eq!(raw_keys, vec!["returns_a", "returns_b", "timestamps_ms"]);
     }
 
     #[test]

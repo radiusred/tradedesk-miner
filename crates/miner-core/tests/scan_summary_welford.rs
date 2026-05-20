@@ -248,16 +248,14 @@ fn summary_welford_matches_scipy_describe_golden() {
     assert_within(
         "excess_kurtosis",
         kurt_actual,
-        exp["excess_kurtosis"].as_f64().expect("excess_kurtosis f64"),
+        exp["excess_kurtosis"]
+            .as_f64()
+            .expect("excess_kurtosis f64"),
     );
     assert_within("iqr", iqr_actual, exp["iqr"].as_f64().expect("iqr f64"));
     assert_within("min", min_actual, exp["min"].as_f64().expect("min f64"));
     assert_within("max", max_actual, exp["max"].as_f64().expect("max f64"));
-    assert_eq!(
-        n_actual,
-        exp["n"].as_u64().expect("n u64"),
-        "n mismatch"
-    );
+    assert_eq!(n_actual, exp["n"].as_u64().expect("n u64"), "n mismatch");
 }
 
 /// Decode a length-1 `effect.extra[key]` `RawArray` (LE-f64 bytes) into
@@ -270,7 +268,11 @@ fn decode_scalar(
         .get(key)
         .unwrap_or_else(|| panic!("effect.extra[{key}] present"));
     let bytes = &arr.data.0;
-    assert_eq!(bytes.len(), 8, "{key}: expected length-1 f64 array (8 bytes)");
+    assert_eq!(
+        bytes.len(),
+        8,
+        "{key}: expected length-1 f64 array (8 bytes)"
+    );
     let mut buf = [0u8; 8];
     buf.copy_from_slice(&bytes[..8]);
     f64::from_le_bytes(buf)

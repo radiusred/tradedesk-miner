@@ -42,7 +42,9 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 use serde_json::Value as JsonValue;
 
-use crate::findings::{DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source};
+use crate::findings::{
+    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+};
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
 
@@ -92,12 +94,7 @@ impl Scan for KpssScan {
 
     fn finding_fields(&self) -> ScanFindingShape {
         ScanFindingShape {
-            effect_extra_keys: &[
-                "crit_values",
-                "lag_truncation",
-                "p_value",
-                "regression",
-            ],
+            effect_extra_keys: &["crit_values", "lag_truncation", "p_value", "regression"],
             raw_series_keys: &["closes", "timestamps_ms"],
         }
     }
@@ -155,10 +152,7 @@ impl Scan for KpssScan {
             "lag_truncation".into(),
             f64_slice_to_raw_array(&[index_to_f64(result.lag_truncation)]),
         );
-        extra.insert(
-            "p_value".into(),
-            f64_slice_to_raw_array(&[result.p_value]),
-        );
+        extra.insert("p_value".into(), f64_slice_to_raw_array(&[result.p_value]));
         extra.insert(
             "regression".into(),
             string_label_to_raw_array(regression_label(regression)),

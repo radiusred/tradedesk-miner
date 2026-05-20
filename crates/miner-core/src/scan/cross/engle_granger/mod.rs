@@ -123,9 +123,9 @@ impl Scan for EngleGrangerScan {
         }
 
         // 2. Pair-arity borrow check.
-        let (bars_a, bars_b) = ctx
-            .bars_pair()
-            .ok_or_else(|| ScanError::Kernel("expected Pair arity (ctx.bars_pair is None)".into()))?;
+        let (bars_a, bars_b) = ctx.bars_pair().ok_or_else(|| {
+            ScanError::Kernel("expected Pair arity (ctx.bars_pair is None)".into())
+        })?;
 
         // 3. Inner-join (CROSS-01 primitive).
         let aligned = inner_join(bars_a, bars_b);
@@ -465,7 +465,9 @@ mod tests {
     fn engle_granger_hedge_ratio_sign_convention() {
         let n = 40;
         let ts = make_ts(n);
-        let closes_b: Vec<f64> = (1..=n).map(|i| f64::from(i32::try_from(i).unwrap())).collect();
+        let closes_b: Vec<f64> = (1..=n)
+            .map(|i| f64::from(i32::try_from(i).unwrap()))
+            .collect();
         let closes_a: Vec<f64> = closes_b.iter().map(|c| 2.0 * c).collect();
         let a = build_bars("EURUSD", &ts, &closes_a);
         let b = build_bars("GBPUSD", &ts, &closes_b);
@@ -545,7 +547,9 @@ mod tests {
     fn engle_granger_residual_std_matches_hand_derived() {
         let n = 40;
         let ts = make_ts(n);
-        let closes_b: Vec<f64> = (1..=n).map(|i| f64::from(i32::try_from(i).unwrap())).collect();
+        let closes_b: Vec<f64> = (1..=n)
+            .map(|i| f64::from(i32::try_from(i).unwrap()))
+            .collect();
         let closes_a: Vec<f64> = closes_b.iter().map(|c| 2.0 * c).collect();
         let a = build_bars("EURUSD", &ts, &closes_a);
         let b = build_bars("GBPUSD", &ts, &closes_b);
@@ -655,7 +659,9 @@ mod tests {
         let n = 40;
         let ts = make_ts(n);
         let closes_b = vec![1.0_f64; n];
-        let closes_a: Vec<f64> = (0..n).map(|i| 1.0 + 0.01 * f64::from(i32::try_from(i).unwrap())).collect();
+        let closes_a: Vec<f64> = (0..n)
+            .map(|i| 1.0 + 0.01 * f64::from(i32::try_from(i).unwrap()))
+            .collect();
         let a = build_bars("EURUSD", &ts, &closes_a);
         let b = build_bars("GBPUSD", &ts, &closes_b);
         let mut sink = VecSink::new();
@@ -666,7 +672,10 @@ mod tests {
             .expect_err("constant leg b must reject");
         match err {
             ScanError::Kernel(msg) => {
-                assert!(msg.contains("singular") || msg.contains("zero-variance"), "msg: {msg}");
+                assert!(
+                    msg.contains("singular") || msg.contains("zero-variance"),
+                    "msg: {msg}"
+                );
             }
             other => panic!("expected Kernel; got {other:?}"),
         }

@@ -133,7 +133,14 @@ fn scan_ols_rolling_happy_path() {
     assert!(raw.series.contains_key("returns_b"));
     assert!(raw.series.contains_key("timestamps_ms"));
     // effect.extra includes the four per-window stats vectors.
-    for key in ["betas", "alphas", "r2s", "residual_stds", "window_starts_ms", "window_length"] {
+    for key in [
+        "betas",
+        "alphas",
+        "r2s",
+        "residual_stds",
+        "window_starts_ms",
+        "window_length",
+    ] {
         assert!(
             r.effect.extra.contains_key(key),
             "effect.extra missing {key}"

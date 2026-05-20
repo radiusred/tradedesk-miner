@@ -7,7 +7,7 @@
 //! `windows(2).map(|w| (w[1]/w[0]).ln())`); this test pins the envelope
 //! shape via an `insta` snapshot of the masked finding.
 
-#![allow(clippy::cast_precision_loss, clippy::too_many_lines)]
+#![allow(clippy::cast_precision_loss, clippy::too_many_lines, clippy::float_cmp)]
 
 mod common;
 

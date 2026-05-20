@@ -235,9 +235,7 @@ fn resolve_min_obs(req: &ScanRequest) -> Result<usize, ScanError> {
         )));
     }
     let us = usize::try_from(v).map_err(|_| {
-        ScanError::Kernel(format!(
-            "min_obs_per_bucket out of range for usize: {v}"
-        ))
+        ScanError::Kernel(format!("min_obs_per_bucket out of range for usize: {v}"))
     })?;
     Ok(us)
 }
@@ -334,7 +332,7 @@ mod tests {
         }
     }
 
-    fn make_ctx<'a>(bars: &'a BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'a> {
+    fn make_ctx(bars: &BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'_> {
         ScanCtx {
             bars,
             bars_pair: None,
@@ -372,7 +370,10 @@ mod tests {
         let s = HourOfDayScan;
         let schema = s.param_schema();
         assert_eq!(schema["type"], "object");
-        assert_eq!(schema["properties"]["min_obs_per_bucket"]["type"], "integer");
+        assert_eq!(
+            schema["properties"]["min_obs_per_bucket"]["type"],
+            "integer"
+        );
         assert_eq!(schema["properties"]["min_obs_per_bucket"]["minimum"], 1);
         assert_eq!(schema["additionalProperties"], false);
     }

@@ -193,7 +193,10 @@ impl Scan for EventWindowScan {
             reason = "pre/post bars <= u32 bounded; fit f64 mantissa"
         )]
         let post_bars_arr: Vec<f64> = vec![post_bars as f64];
-        extra.insert("event_count".into(), f64_slice_to_raw_array(&event_count_arr));
+        extra.insert(
+            "event_count".into(),
+            f64_slice_to_raw_array(&event_count_arr),
+        );
         extra.insert(
             "pre_window_bars".into(),
             f64_slice_to_raw_array(&pre_bars_arr),
@@ -275,11 +278,7 @@ impl Scan for EventWindowScan {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn resolve_window_bars(
-    req: &ScanRequest,
-    name: &str,
-    default: i64,
-) -> Result<usize, ScanError> {
+fn resolve_window_bars(req: &ScanRequest, name: &str, default: i64) -> Result<usize, ScanError> {
     let raw = req.resolved_params.get(name);
     let v: i64 = match raw {
         Some(v) => v
@@ -404,7 +403,7 @@ mod tests {
         }
     }
 
-    fn make_ctx<'a>(bars: &'a BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'a> {
+    fn make_ctx(bars: &BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'_> {
         ScanCtx {
             bars,
             bars_pair: None,
@@ -471,8 +470,7 @@ mod tests {
         let event_ts_a = bars.ts_open_utc[100].timestamp_millis() + 60_000;
         let event_ts_b = bars.ts_open_utc[200].timestamp_millis() + 60_000;
         let mut sink = VecSink::new();
-        let req =
-            sample_request(serde_json::json!({"event_timestamps": [event_ts_a, event_ts_b]}));
+        let req = sample_request(serde_json::json!({"event_timestamps": [event_ts_a, event_ts_b]}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
         EventWindowScan.run(&ctx, &req, &mut sink).expect("ok");
         let findings = parse_sink(&sink);

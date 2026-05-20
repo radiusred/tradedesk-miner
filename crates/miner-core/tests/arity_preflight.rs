@@ -302,13 +302,16 @@ fn correct_arity_pair_scan_passes_arity_preflight() {
     assert!(
         has_result,
         "Pair-arity dispatch must produce at least one Finding::Result envelope post-preflight (Plan 04-12 tightening). Got envelopes: {:#?}",
-        findings.iter().map(|f| match f {
-            Finding::RunStart(_) => "run_start",
-            Finding::Result(_) => "result",
-            Finding::ScanError(_) => "scan_error",
-            Finding::GapAborted(_) => "gap_aborted",
-            Finding::RunEnd(_) => "run_end",
-            Finding::DryRun(_) => "dry_run",
-        }).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| match f {
+                Finding::RunStart(_) => "run_start",
+                Finding::Result(_) => "result",
+                Finding::ScanError(_) => "scan_error",
+                Finding::GapAborted(_) => "gap_aborted",
+                Finding::RunEnd(_) => "run_end",
+                Finding::DryRun(_) => "dry_run",
+            })
+            .collect::<Vec<_>>()
     );
 }

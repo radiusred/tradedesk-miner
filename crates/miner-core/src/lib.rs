@@ -5,6 +5,39 @@
 //! Plans 04 (sink + `stderr_emit` implementations) and 05 (figment builder) build
 //! on top.
 
+// Plan 04-13: Test fixtures and golden-comparison assertions legitimately use
+// patterns that clippy::pedantic flags. These allows scope to cfg(test) only —
+// production code stays under the full pedantic bar.
+//
+// - `float_cmp`: golden tests assert exact-bit f64 equality after deterministic
+//   kernel runs (Phase 3 D3-23 byte-identical-rerun contract).
+// - `cast_*`: synthetic fixture generators cast usize indices to f64/i64 to
+//   produce deterministic OHLCV bar data; sample sizes are bounded.
+// - `cast_possible_wrap`: synthetic timestamp generation from usize loop indices.
+#![cfg_attr(
+    test,
+    allow(
+        // Numeric casts — synthetic fixture generators index over usize and
+        // convert to f64 / i64 for deterministic bar data.
+        clippy::float_cmp,
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_lossless,
+        // Test ergonomics — assertions and synthetic harness loops.
+        clippy::comparison_to_empty,
+        clippy::useless_conversion,
+        clippy::unnecessary_fallible_conversions,
+        clippy::needless_range_loop,
+        clippy::manual_memcpy,
+        clippy::similar_names,
+        clippy::many_single_char_names,
+        clippy::doc_lazy_continuation,
+        clippy::len_zero,
+    )
+)]
+
 pub mod aggregator;
 pub mod cache;
 pub mod calendar;

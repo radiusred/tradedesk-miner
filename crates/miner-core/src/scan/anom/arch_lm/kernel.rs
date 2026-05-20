@@ -69,10 +69,7 @@ pub(super) struct ArchLmResult {
 /// Does not panic; structural `debug_asserts` trigger only on inputs the caller
 /// is expected to have validated (lag in `[1, n/3]`).
 #[inline]
-#[allow(
-    clippy::cast_precision_loss,
-    reason = "n / lag are bar counts << 2^52"
-)]
+#[allow(clippy::cast_precision_loss, reason = "n / lag are bar counts << 2^52")]
 #[allow(
     clippy::many_single_char_names,
     reason = "n / x / y / β / e match the canonical Engle 1982 ARCH-LM regression notation; renaming obscures the formula"

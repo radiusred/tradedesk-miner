@@ -159,7 +159,11 @@ mod tests {
         let r = event_window_stats(&returns, &timestamps_ms, &event_ts, 3, 3);
         assert_eq!(r.event_count, 1);
         // pre = returns[2..5] = [0.2, 0.3, 0.4]; mean = 0.3.
-        assert!(approx_eq(r.pre_means[0], 0.3, TOL), "pre_mean={}", r.pre_means[0]);
+        assert!(
+            approx_eq(r.pre_means[0], 0.3, TOL),
+            "pre_mean={}",
+            r.pre_means[0]
+        );
         // post = returns[5..8] = [0.5, 0.6, 0.7]; mean = 0.6.
         assert!(
             approx_eq(r.post_means[0], 0.6, TOL),
@@ -169,8 +173,16 @@ mod tests {
         // pre std (ddof=1) over [0.2, 0.3, 0.4]: variance = 0.01/2 = 0.01 wait
         // (0.2-0.3)^2 + (0.3-0.3)^2 + (0.4-0.3)^2 = 0.01 + 0 + 0.01 = 0.02;
         // /(n-1) = 0.02/2 = 0.01; sqrt = 0.1.
-        assert!(approx_eq(r.pre_stds[0], 0.1, TOL), "pre_std={}", r.pre_stds[0]);
-        assert!(approx_eq(r.post_stds[0], 0.1, TOL), "post_std={}", r.post_stds[0]);
+        assert!(
+            approx_eq(r.pre_stds[0], 0.1, TOL),
+            "pre_std={}",
+            r.pre_stds[0]
+        );
+        assert!(
+            approx_eq(r.post_stds[0], 0.1, TOL),
+            "post_std={}",
+            r.post_stds[0]
+        );
     }
 
     /// Event outside the bar range -> skipped, `event_count` == 0.
@@ -231,7 +243,11 @@ mod tests {
         let r = event_window_stats(&returns, &timestamps_ms, &event_ts, 3, 3);
         assert_eq!(r.event_count, 1);
         // pre = returns[3..6] = [0.3, 0.4, 0.5]; mean = 0.4.
-        assert!(approx_eq(r.pre_means[0], 0.4, TOL), "pre_mean={}", r.pre_means[0]);
+        assert!(
+            approx_eq(r.pre_means[0], 0.4, TOL),
+            "pre_mean={}",
+            r.pre_means[0]
+        );
         // post = returns[6..9] = [0.6, 0.7, 0.8]; mean = 0.7.
         assert!(
             approx_eq(r.post_means[0], 0.7, TOL),

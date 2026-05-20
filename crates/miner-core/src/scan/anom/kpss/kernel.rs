@@ -76,7 +76,9 @@ pub(super) fn kpss_statistic(
 ) -> Result<KpssResult, String> {
     let n = y.len();
     if n < 4 {
-        return Err(format!("kpss_statistic: need n >= 4 observations; got n={n}"));
+        return Err(format!(
+            "kpss_statistic: need n >= 4 observations; got n={n}"
+        ));
     }
 
     // Step 1 — detrend.
@@ -101,9 +103,7 @@ pub(super) fn kpss_statistic(
         NlagsParam::Auto => auto_lag_truncation(n),
         NlagsParam::Manual(l) => {
             if l >= n {
-                return Err(format!(
-                    "kpss_statistic: nlags={l} must be < n={n}"
-                ));
+                return Err(format!("kpss_statistic: nlags={l} must be < n={n}"));
             }
             l
         }
@@ -167,12 +167,12 @@ pub(super) fn detrend_with_trend(y: &[f64]) -> Result<Vec<f64>, String> {
     let mut sum_tt = 0.0_f64;
     let mut sum_y = 0.0_f64;
     let mut sum_ty = 0.0_f64;
-    for i in 0..n {
+    for (i, &yi) in y.iter().enumerate() {
         let t = (i + 1) as f64;
         sum_t += t;
         sum_tt += t * t;
-        sum_y += y[i];
-        sum_ty += t * y[i];
+        sum_y += yi;
+        sum_ty += t * yi;
     }
 
     // Solve the 2x2 normal equations.
@@ -186,9 +186,9 @@ pub(super) fn detrend_with_trend(y: &[f64]) -> Result<Vec<f64>, String> {
     let beta = coef[1];
 
     let mut residuals = Vec::with_capacity(n);
-    for i in 0..n {
+    for (i, &yi) in y.iter().enumerate() {
         let t = (i + 1) as f64;
-        residuals.push(y[i] - alpha - beta * t);
+        residuals.push(yi - alpha - beta * t);
     }
     Ok(residuals)
 }
@@ -205,7 +205,10 @@ pub(super) fn detrend_with_trend(y: &[f64]) -> Result<Vec<f64>, String> {
 )]
 pub(super) fn long_run_variance_bartlett(residuals: &[f64], lag: usize) -> f64 {
     let n = residuals.len();
-    debug_assert!(!residuals.is_empty(), "long_run_variance_bartlett: empty input");
+    debug_assert!(
+        !residuals.is_empty(),
+        "long_run_variance_bartlett: empty input"
+    );
     debug_assert!(lag < n, "long_run_variance_bartlett: lag must be < n");
     let n_f = n as f64;
     // γ_0
@@ -217,10 +220,7 @@ pub(super) fn long_run_variance_bartlett(residuals: &[f64], lag: usize) -> f64 {
     let l_p1 = (lag + 1) as f64;
     for j in 1..=lag {
         let weight = 1.0 - (j as f64) / l_p1;
-        let gamma_j: f64 = (j..n)
-            .map(|t| residuals[t] * residuals[t - j])
-            .sum::<f64>()
-            / n_f;
+        let gamma_j: f64 = (j..n).map(|t| residuals[t] * residuals[t - j]).sum::<f64>() / n_f;
         sum += 2.0 * weight * gamma_j;
     }
     sum
@@ -360,7 +360,10 @@ mod tests {
     fn long_run_variance_bartlett_positive_for_nontrivial_input() {
         let r: Vec<f64> = (0..20).map(|i| ((i as f64) * 0.1) - 1.0).collect();
         let v = long_run_variance_bartlett(&r, 4);
-        assert!(v >= 0.0, "long-run variance should be non-negative; got {v}");
+        assert!(
+            v >= 0.0,
+            "long-run variance should be non-negative; got {v}"
+        );
     }
 
     // -----------------------------------------------------------------------

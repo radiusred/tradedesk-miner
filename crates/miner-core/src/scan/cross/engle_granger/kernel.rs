@@ -97,8 +97,16 @@ pub struct EngleGrangerResult {
 /// `residual_std`).
 #[inline]
 #[must_use]
-pub(super) fn engle_granger(y: &[f64], x: &[f64], _regression: AdfRegression) -> EngleGrangerResult {
-    debug_assert_eq!(y.len(), x.len(), "engle_granger: y.len() must equal x.len()");
+pub(super) fn engle_granger(
+    y: &[f64],
+    x: &[f64],
+    _regression: AdfRegression,
+) -> EngleGrangerResult {
+    debug_assert_eq!(
+        y.len(),
+        x.len(),
+        "engle_granger: y.len() must equal x.len()"
+    );
     let n = y.len();
 
     // ---- Step 1: OLS y = α + β x + ε via nalgebra DMatrix normal eqns.
@@ -130,7 +138,10 @@ pub(super) fn engle_granger(y: &[f64], x: &[f64], _regression: AdfRegression) ->
     let ou_half_life = ou_half_life_from_residuals(&residuals);
 
     // ---- residual_std (ddof=1 sample std).
-    #[allow(clippy::cast_precision_loss, reason = "n bounded by aligned bars; << 2^52")]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "n bounded by aligned bars; << 2^52"
+    )]
     let n_f = n as f64;
     let mean_r: f64 = residuals.iter().sum::<f64>() / n_f;
     let ss_r: f64 = residuals.iter().map(|r| (r - mean_r).powi(2)).sum();
@@ -278,7 +289,10 @@ fn adf_step(residuals: &[f64]) -> (f64, f64) {
 /// For -3.43 <= τ <= -2.57: 3-point linear interp on (1%, 5%, 10%) brackets
 /// For τ > -2.57:  p ≈ 0.10 + linear ramp toward 1.0 at τ = 0
 #[inline]
-#[allow(clippy::similar_names, reason = "crit_{1,5,10}pct are the three reference critical values; the lint conflicts with the canonical MacKinnon naming")]
+#[allow(
+    clippy::similar_names,
+    reason = "crit_{1,5,10}pct are the three reference critical values; the lint conflicts with the canonical MacKinnon naming"
+)]
 fn mackinnon_p_constant(tau: f64) -> f64 {
     if !tau.is_finite() {
         return f64::NAN;
@@ -295,7 +309,11 @@ fn mackinnon_p_constant(tau: f64) -> f64 {
         // p(crit_1pct) = 0.01 and p(τ) < 0.01 strictly for τ < crit_1pct.
         let p = 0.01_f64 * (tau - crit_1pct).exp();
         // Guard against overflow when tau is e.g. -inf.
-        if p.is_finite() { p.clamp(0.0, 0.01) } else { 0.0 }
+        if p.is_finite() {
+            p.clamp(0.0, 0.01)
+        } else {
+            0.0
+        }
     } else if tau <= crit_5pct {
         // Interpolate between 1% (tau = -3.43, p = 0.01) and 5%
         // (tau = -2.86, p = 0.05).
@@ -383,7 +401,7 @@ mod tests {
     /// space) -> regression y ~ x yields β = 2, α = 0, residuals all zero.
     #[test]
     fn engle_granger_perfect_2x_yields_beta_two() {
-        let x: Vec<f64> = (1..=50).map(|i| f64::from(i)).collect();
+        let x: Vec<f64> = (1..=50).map(f64::from).collect();
         let y: Vec<f64> = x.iter().map(|xi| 2.0 * xi).collect();
         let res = engle_granger(&y, &x, AdfRegression::Constant);
         assert!(
@@ -410,7 +428,7 @@ mod tests {
     /// Hand-derived: y = 3 + 2x — β = 2, α = 3, residuals all zero.
     #[test]
     fn engle_granger_known_intercept_slope() {
-        let x: Vec<f64> = (1..=40).map(|i| f64::from(i)).collect();
+        let x: Vec<f64> = (1..=40).map(f64::from).collect();
         let y: Vec<f64> = x.iter().map(|xi| 3.0 + 2.0 * xi).collect();
         let res = engle_granger(&y, &x, AdfRegression::Constant);
         assert!(approx_eq(res.hedge_ratio_beta, 2.0, TOL));
@@ -423,7 +441,11 @@ mod tests {
         let x = vec![1.0_f64; 40];
         let y: Vec<f64> = (0..40).map(|i| 1.0 + 0.1 * f64::from(i)).collect();
         let res = engle_granger(&y, &x, AdfRegression::Constant);
-        assert!(res.hedge_ratio_beta.is_nan(), "β = {}", res.hedge_ratio_beta);
+        assert!(
+            res.hedge_ratio_beta.is_nan(),
+            "β = {}",
+            res.hedge_ratio_beta
+        );
         assert!(res.hedge_ratio_alpha.is_nan());
         assert!(res.adf_stat.is_nan());
         assert!(res.adf_p_value.is_nan());
@@ -437,7 +459,9 @@ mod tests {
         // the OLS Δr ~ r_{t-1} sense, i.e. very stationary AR(1)).
         let n = 200;
         // x = linear trend.
-        let x: Vec<f64> = (0..n).map(|i| f64::from(i32::try_from(i).unwrap()) * 0.01).collect();
+        let x: Vec<f64> = (0..n)
+            .map(|i| f64::from(i32::try_from(i).unwrap()) * 0.01)
+            .collect();
         // Stationary AR(1): r_t = 0.5 * r_{t-1} + η_t where the AR(1)
         // coefficient ON THE LEVELS form is φ = 0.5 (i.e. ρ on the
         // Δr = α + ρ r_{t-1} regression is φ - 1 = -0.5).
@@ -445,7 +469,9 @@ mod tests {
         let mut residuals = Vec::with_capacity(n);
         let mut prev = 0.0_f64;
         for _ in 0..n {
-            rng_state = rng_state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            rng_state = rng_state
+                .wrapping_mul(1_664_525)
+                .wrapping_add(1_013_904_223);
             let frac = f64::from(rng_state) / f64::from(u32::MAX);
             let eta = (frac - 0.5) * 0.1; // small noise
             let r = 0.5_f64 * prev + eta;
@@ -453,7 +479,11 @@ mod tests {
             prev = r;
         }
         // y = β * x + residual; β = 1, α = 0.
-        let y: Vec<f64> = x.iter().zip(residuals.iter()).map(|(xi, ri)| xi + ri).collect();
+        let y: Vec<f64> = x
+            .iter()
+            .zip(residuals.iter())
+            .map(|(xi, ri)| xi + ri)
+            .collect();
         let res = engle_granger(&y, &x, AdfRegression::Constant);
         // β should be close to 1 (the noise is small relative to x's range).
         assert!(
@@ -517,7 +547,7 @@ mod tests {
     /// is `f64::INFINITY` (per the kernel doc-comment).
     #[test]
     fn engle_granger_perfect_fit_ou_half_life_inf() {
-        let x: Vec<f64> = (1..=40).map(|i| f64::from(i)).collect();
+        let x: Vec<f64> = (1..=40).map(f64::from).collect();
         let y: Vec<f64> = x.iter().map(|xi| 2.0 * xi).collect();
         let res = engle_granger(&y, &x, AdfRegression::Constant);
         // residuals are all zero -> AR(1) regressor has zero variance ->

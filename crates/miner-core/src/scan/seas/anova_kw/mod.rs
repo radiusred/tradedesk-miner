@@ -143,8 +143,7 @@ impl Scan for AnovaKruskalScan {
         let groups = derive_groups(buckets_via, &returns, &ts_for_returns);
 
         // Filter groups by min_obs.
-        let filtered: Vec<Vec<f64>> =
-            groups.into_iter().filter(|g| g.len() >= min_obs).collect();
+        let filtered: Vec<Vec<f64>> = groups.into_iter().filter(|g| g.len() >= min_obs).collect();
         if filtered.len() < 2 {
             return Err(ScanError::Kernel(format!(
                 "seas.test.anova_kruskal: need >= 2 non-empty groups after min_obs={min_obs} filter; got {}",
@@ -282,9 +281,8 @@ fn resolve_min_obs_per_group(req: &ScanRequest) -> Result<usize, ScanError> {
             "min_obs_per_group must be >= 1; got {v}"
         )));
     }
-    let us = usize::try_from(v).map_err(|_| {
-        ScanError::Kernel(format!("min_obs_per_group out of range for usize: {v}"))
-    })?;
+    let us = usize::try_from(v)
+        .map_err(|_| ScanError::Kernel(format!("min_obs_per_group out of range for usize: {v}")))?;
     Ok(us)
 }
 
@@ -343,11 +341,9 @@ fn derive_groups(
             let calendar = Calendar::fx_major();
             let mut groups: Vec<Vec<f64>> = (0..num_buckets).map(|_| Vec::new()).collect();
             for (i, t) in ts.iter().enumerate() {
-                if let Some(b) =
-                    crate::scan::seas::eom_som::kernel::trading_day_of_month_bucket(
-                        *t, cutoff, &calendar,
-                    )
-                {
+                if let Some(b) = crate::scan::seas::eom_som::kernel::trading_day_of_month_bucket(
+                    *t, cutoff, &calendar,
+                ) {
                     groups[b].push(returns[i]);
                 }
             }
@@ -436,7 +432,7 @@ mod tests {
         }
     }
 
-    fn make_ctx<'a>(bars: &'a BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'a> {
+    fn make_ctx(bars: &BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'_> {
         ScanCtx {
             bars,
             bars_pair: None,
@@ -490,7 +486,10 @@ mod tests {
             .iter()
             .map(|v| v.as_str().unwrap())
             .collect();
-        assert_eq!(opts, vec!["hour_of_day", "day_of_week", "session", "eom_som"]);
+        assert_eq!(
+            opts,
+            vec!["hour_of_day", "day_of_week", "session", "eom_som"]
+        );
     }
 
     #[test]
@@ -630,10 +629,7 @@ mod tests {
             .expect_err("must reject");
         match err {
             ScanError::Kernel(msg) => {
-                assert!(
-                    msg.contains("need >= 2 non-empty groups"),
-                    "msg={msg}"
-                );
+                assert!(msg.contains("need >= 2 non-empty groups"), "msg={msg}");
             }
             other => panic!("got {other:?}"),
         }

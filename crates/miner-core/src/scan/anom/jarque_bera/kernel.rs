@@ -264,7 +264,7 @@ mod tests {
     /// regression invariant).
     #[test]
     fn jarque_bera_moments_match_welford_pass() {
-        let values: Vec<f64> = (1..=20).map(|i| f64::from(i)).collect();
+        let values: Vec<f64> = (1..=20).map(f64::from).collect();
         let result = jarque_bera(&values).expect("ok");
         let stats = welford_pass(&values);
         assert_eq!(

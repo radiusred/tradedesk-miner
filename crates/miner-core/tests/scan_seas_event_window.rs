@@ -7,7 +7,11 @@
 //!
 //! Pattern analog: `scan_seas_hour_of_day.rs` (Pattern J).
 
-#![allow(clippy::cast_precision_loss)]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation
+)]
 
 mod common;
 

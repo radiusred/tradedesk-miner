@@ -129,7 +129,10 @@ fn scan_variance_ratio_happy_path() {
     };
     assert_eq!(r.scan_id_at_version, "stats.variance_ratio.lo_mackinlay@1");
     assert_eq!(r.effect.metric, "variance_ratio_max_k");
-    assert!(r.effect.p_value.is_none(), "VR uses parallel arrays, no headline p");
+    assert!(
+        r.effect.p_value.is_none(),
+        "VR uses parallel arrays, no headline p"
+    );
 
     let extra_keys: Vec<&str> = r.effect.extra.keys().map(String::as_str).collect();
     assert_eq!(

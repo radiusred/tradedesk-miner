@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_lines)]
+
 //! Phase 4 (Plan 04-08 Task 2) integration test — CROSS-05 Engle-Granger
 //! two-step cointegration scan.
 //!
@@ -284,7 +286,10 @@ fn scan_engle_granger_happy_path_via_engine_facade() {
             _ => None,
         })
         .expect("Result envelope present");
-    assert_eq!(result.scan_id_at_version, "cross.cointegration.engle_granger@1");
+    assert_eq!(
+        result.scan_id_at_version,
+        "cross.cointegration.engle_granger@1"
+    );
     assert_eq!(result.effect.metric, "engle_granger_hedge_ratio");
     assert_eq!(result.data_slice.sources.len(), 2);
     assert_eq!(result.data_slice.sources[0].symbol, "EURUSD");
@@ -493,7 +498,11 @@ fn decode_vec_eg(
         .get(key)
         .unwrap_or_else(|| panic!("effect.extra[{key}] present"));
     let bytes = &arr.data.0;
-    assert_eq!(bytes.len() % 8, 0, "{key}: byte length must be multiple of 8");
+    assert_eq!(
+        bytes.len() % 8,
+        0,
+        "{key}: byte length must be multiple of 8"
+    );
     let mut out = Vec::with_capacity(bytes.len() / 8);
     for chunk in bytes.chunks_exact(8) {
         let mut buf = [0u8; 8];

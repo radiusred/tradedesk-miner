@@ -81,10 +81,7 @@ pub(super) fn one_way_anova(groups: &[Vec<f64>]) -> AnovaResult {
     // Drop empty groups.
     let groups: Vec<&Vec<f64>> = groups.iter().filter(|g| !g.is_empty()).collect();
     let k = groups.len();
-    debug_assert!(
-        k >= 2,
-        "one_way_anova: need >= 2 non-empty groups; got {k}"
-    );
+    debug_assert!(k >= 2, "one_way_anova: need >= 2 non-empty groups; got {k}");
 
     let total_n: usize = groups.iter().map(|g| g.len()).sum();
     debug_assert!(
@@ -321,7 +318,11 @@ mod tests {
         let r = kruskal_wallis(&groups);
         assert!(approx_eq(r.h_stat, 7.2, TOL_F), "H={}", r.h_stat);
         // p-value under ChiSquared(2): 1 - chi2.cdf(7.2, 2) ≈ 0.02732.
-        assert!(approx_eq(r.p_value, 0.027_323_722_447_2, 1e-6), "p={}", r.p_value);
+        assert!(
+            approx_eq(r.p_value, 0.027_323_722_447_2, 1e-6),
+            "p={}",
+            r.p_value
+        );
     }
 
     /// Kruskal-Wallis with ties: groups [1,1,2] and [2,3,3] have the same

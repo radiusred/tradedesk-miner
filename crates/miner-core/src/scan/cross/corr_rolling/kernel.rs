@@ -39,7 +39,11 @@
 #[inline]
 #[must_use]
 pub(super) fn rolling_pearson(a: &[f64], b: &[f64], window: usize) -> Vec<f64> {
-    debug_assert_eq!(a.len(), b.len(), "rolling_pearson: a.len() must equal b.len()");
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "rolling_pearson: a.len() must equal b.len()"
+    );
     debug_assert!(window >= 2, "rolling_pearson: window must be >= 2");
     let n = a.len();
     if n < window {
@@ -73,11 +77,7 @@ pub(super) fn rolling_pearson(a: &[f64], b: &[f64], window: usize) -> Vec<f64> {
             var_b += db * db;
         }
         let denom = (var_a * var_b).sqrt();
-        let r = if denom == 0.0 {
-            f64::NAN
-        } else {
-            cov / denom
-        };
+        let r = if denom == 0.0 { f64::NAN } else { cov / denom };
         out.push(r);
     }
     out
@@ -92,7 +92,11 @@ pub(super) fn rolling_pearson(a: &[f64], b: &[f64], window: usize) -> Vec<f64> {
 #[inline]
 #[must_use]
 pub(super) fn rolling_spearman(a: &[f64], b: &[f64], window: usize) -> Vec<f64> {
-    debug_assert_eq!(a.len(), b.len(), "rolling_spearman: a.len() must equal b.len()");
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "rolling_spearman: a.len() must equal b.len()"
+    );
     debug_assert!(window >= 2, "rolling_spearman: window must be >= 2");
     let n = a.len();
     if n < window {
@@ -126,11 +130,7 @@ pub(super) fn rolling_spearman(a: &[f64], b: &[f64], window: usize) -> Vec<f64> 
             var_b += db * db;
         }
         let denom = (var_a * var_b).sqrt();
-        let r = if denom == 0.0 {
-            f64::NAN
-        } else {
-            cov / denom
-        };
+        let r = if denom == 0.0 { f64::NAN } else { cov / denom };
         out.push(r);
     }
     out

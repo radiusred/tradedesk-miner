@@ -60,7 +60,10 @@ pub(crate) fn trading_day_of_month_bucket(
     cutoff_n: usize,
     calendar: &Calendar,
 ) -> Option<usize> {
-    debug_assert!(cutoff_n >= 1, "trading_day_of_month_bucket: cutoff_n must be >= 1");
+    debug_assert!(
+        cutoff_n >= 1,
+        "trading_day_of_month_bucket: cutoff_n must be >= 1"
+    );
 
     let year = ts.year();
     let month = ts.month();

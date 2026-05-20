@@ -41,7 +41,9 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 use serde_json::Value as JsonValue;
 
-use crate::findings::{DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source};
+use crate::findings::{
+    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+};
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
@@ -463,7 +465,10 @@ mod tests {
         let schema = VarianceRatioScan.param_schema();
         assert_eq!(schema["type"], "object");
         assert_eq!(schema["properties"]["robust"]["default"], true);
-        assert_eq!(schema["properties"]["k_values"]["default"], serde_json::json!([2, 4, 8, 16]));
+        assert_eq!(
+            schema["properties"]["k_values"]["default"],
+            serde_json::json!([2, 4, 8, 16])
+        );
         assert_eq!(schema["additionalProperties"], false);
     }
 
@@ -590,7 +595,9 @@ mod tests {
         let mut sink = VecSink::new();
         let req = sample_request_with_params(serde_json::json!({"k_values": [1]}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
-        let err = VarianceRatioScan.run(&ctx, &req, &mut sink).expect_err("reject k=1");
+        let err = VarianceRatioScan
+            .run(&ctx, &req, &mut sink)
+            .expect_err("reject k=1");
         assert!(matches!(err, ScanError::Kernel(_)));
     }
 
@@ -601,7 +608,9 @@ mod tests {
         let mut sink = VecSink::new();
         let req = sample_request_with_params(serde_json::json!({"k_values": [20]}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
-        let err = VarianceRatioScan.run(&ctx, &req, &mut sink).expect_err("reject k too large");
+        let err = VarianceRatioScan
+            .run(&ctx, &req, &mut sink)
+            .expect_err("reject k too large");
         assert!(matches!(err, ScanError::Kernel(_)));
     }
 
@@ -611,7 +620,9 @@ mod tests {
         let mut sink = VecSink::new();
         let req = sample_request_with_params(serde_json::json!({}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
-        let err = VarianceRatioScan.run(&ctx, &req, &mut sink).expect_err("reject n=0");
+        let err = VarianceRatioScan
+            .run(&ctx, &req, &mut sink)
+            .expect_err("reject n=0");
         match err {
             ScanError::Kernel(msg) => assert!(msg.contains("InsufficientData"), "{msg}"),
             other => panic!("expected Kernel; got {other:?}"),
@@ -624,7 +635,9 @@ mod tests {
         let mut sink = VecSink::new();
         let req = sample_request_with_params(serde_json::json!({"k_values": "garbage"}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
-        let err = VarianceRatioScan.run(&ctx, &req, &mut sink).expect_err("reject non-array");
+        let err = VarianceRatioScan
+            .run(&ctx, &req, &mut sink)
+            .expect_err("reject non-array");
         assert!(matches!(err, ScanError::Kernel(_)));
     }
 

@@ -23,7 +23,9 @@ use std::sync::atomic::Ordering;
 
 use chrono::Utc;
 
-use crate::findings::{DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source};
+use crate::findings::{
+    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+};
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
@@ -123,34 +125,38 @@ impl Scan for SummaryWelfordScan {
         }
 
         // Step 4 — compute the target series.
-        let (values, series_label, ts_label, ts_ms): (Vec<f64>, &'static str, &'static str, Vec<f64>) =
-            match series {
-                SummarySeries::Close => {
-                    let ts: Vec<f64> = ctx
-                        .bars
-                        .ts_open_utc
-                        .iter()
-                        .map(|t| ts_to_f64(t.timestamp_millis()))
-                        .collect();
-                    (ctx.bars.close.clone(), "closes", "timestamps_ms", ts)
+        let (values, series_label, ts_label, ts_ms): (
+            Vec<f64>,
+            &'static str,
+            &'static str,
+            Vec<f64>,
+        ) = match series {
+            SummarySeries::Close => {
+                let ts: Vec<f64> = ctx
+                    .bars
+                    .ts_open_utc
+                    .iter()
+                    .map(|t| ts_to_f64(t.timestamp_millis()))
+                    .collect();
+                (ctx.bars.close.clone(), "closes", "timestamps_ms", ts)
+            }
+            SummarySeries::LogReturns => {
+                if n_closes < 2 {
+                    return Err(ScanError::Kernel(format!(
+                        "stats.summary.welford: need >= 2 closes for log_returns; got n={n_closes} (InsufficientData)"
+                    )));
                 }
-                SummarySeries::LogReturns => {
-                    if n_closes < 2 {
-                        return Err(ScanError::Kernel(format!(
-                            "stats.summary.welford: need >= 2 closes for log_returns; got n={n_closes} (InsufficientData)"
-                        )));
-                    }
-                    let returns = log_returns(&ctx.bars.close);
-                    let ts: Vec<f64> = ctx
-                        .bars
-                        .ts_open_utc
-                        .iter()
-                        .skip(1)
-                        .map(|t| ts_to_f64(t.timestamp_millis()))
-                        .collect();
-                    (returns, "returns", "timestamps_ms", ts)
-                }
-            };
+                let returns = log_returns(&ctx.bars.close);
+                let ts: Vec<f64> = ctx
+                    .bars
+                    .ts_open_utc
+                    .iter()
+                    .skip(1)
+                    .map(|t| ts_to_f64(t.timestamp_millis()))
+                    .collect();
+                (returns, "returns", "timestamps_ms", ts)
+            }
+        };
 
         let n = values.len();
         if n == 0 {
@@ -164,12 +170,22 @@ impl Scan for SummaryWelfordScan {
         // path per the plan's behaviour test: emit a Result with mean=value,
         // std=skew=kurt=0.0, iqr=0.0, min==max==value.
         let (mean, std, skew, kurt, iqr_val, lo, hi) = if n == 1 {
-            (values[0], 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, values[0], values[0])
+            (
+                values[0], 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, values[0], values[0],
+            )
         } else {
             let stats = kernel::welford_pass(&values);
             let q = kernel::iqr(&values);
             let (lo, hi) = kernel::min_max(&values);
-            (stats.mean, stats.std, stats.skew, stats.excess_kurtosis, q, lo, hi)
+            (
+                stats.mean,
+                stats.std,
+                stats.skew,
+                stats.excess_kurtosis,
+                q,
+                lo,
+                hi,
+            )
         };
 
         // Step 6 — envelope.
@@ -469,7 +485,7 @@ mod tests {
     /// Hand-derived excess kurtosis within 1e-12.
     #[test]
     fn summary_welford_excess_kurtosis_matches_hand_derived() {
-        let values: Vec<f64> = (1..=8).map(|i| f64::from(i)).collect();
+        let values: Vec<f64> = (1..=8).map(f64::from).collect();
         let s = kernel::welford_pass(&values);
         let expected = -1.2_f64;
         assert!(

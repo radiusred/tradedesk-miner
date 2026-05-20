@@ -29,7 +29,10 @@
     reason = "window is bounded above by values.len() (a bar count); fits trivially in f64's 52-bit mantissa"
 )]
 pub(super) fn rolling_std(values: &[f64], window: usize) -> Vec<f64> {
-    debug_assert!(window >= 2, "rolling_std: window must be >= 2; got {window}");
+    debug_assert!(
+        window >= 2,
+        "rolling_std: window must be >= 2; got {window}"
+    );
     debug_assert!(
         window <= values.len(),
         "rolling_std: window ({window}) must be <= values.len() ({})",

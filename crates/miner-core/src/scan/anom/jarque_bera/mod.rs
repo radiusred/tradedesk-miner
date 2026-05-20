@@ -41,7 +41,9 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 use serde_json::Value as JsonValue;
 
-use crate::findings::{DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source};
+use crate::findings::{
+    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+};
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
@@ -187,11 +189,11 @@ impl Scan for JarqueBeraScan {
             "excess_kurtosis".into(),
             f64_slice_to_raw_array(&[result.excess_kurtosis]),
         );
-        extra.insert("n".into(), f64_slice_to_raw_array(&[index_to_f64(result.n)]));
         extra.insert(
-            "p_value".into(),
-            f64_slice_to_raw_array(&[result.p_value]),
+            "n".into(),
+            f64_slice_to_raw_array(&[index_to_f64(result.n)]),
         );
+        extra.insert("p_value".into(), f64_slice_to_raw_array(&[result.p_value]));
         extra.insert("skew".into(), f64_slice_to_raw_array(&[result.skew]));
 
         let effect = Effect {
@@ -463,10 +465,7 @@ mod tests {
         // 80 closes -> 79 log_returns.
         assert_eq!(r.effect.n, Some(79));
         let extra_keys: Vec<&str> = r.effect.extra.keys().map(String::as_str).collect();
-        assert_eq!(
-            extra_keys,
-            vec!["excess_kurtosis", "n", "p_value", "skew"]
-        );
+        assert_eq!(extra_keys, vec!["excess_kurtosis", "n", "p_value", "skew"]);
         let raw = r.raw.as_ref().expect("raw");
         let raw_keys: Vec<&str> = raw.series.keys().map(String::as_str).collect();
         assert_eq!(raw_keys, vec!["returns", "timestamps_ms"]);
@@ -479,7 +478,9 @@ mod tests {
         let mut sink = VecSink::new();
         let req = sample_request_with_params(serde_json::json!({}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(true)));
-        JarqueBeraScan.run(&ctx, &req, &mut sink).expect("cancel ok");
+        JarqueBeraScan
+            .run(&ctx, &req, &mut sink)
+            .expect("cancel ok");
         assert!(sink.0.is_empty());
     }
 

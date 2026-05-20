@@ -7,7 +7,11 @@
 //!
 //! Pattern analog: `scan_seas_hour_of_day.rs` (Pattern J).
 
-#![allow(clippy::cast_precision_loss)]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation
+)]
 
 mod common;
 
@@ -31,8 +35,7 @@ fn scan_seas_anova_kruskal_happy_path() {
     // 7 days × 24h × 4 bars/h = 672 bars at 15m.
     let bars = build_synthetic_15m_bars(672, 0xABCD_1234);
 
-    let resolved_params =
-        serde_json::json!({"buckets_via": "hour_of_day", "min_obs_per_group": 5});
+    let resolved_params = serde_json::json!({"buckets_via": "hour_of_day", "min_obs_per_group": 5});
     let param_hash = param_hash::param_hash(&resolved_params).expect("param_hash ok");
     let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
     let end = start + Duration::days(7);

@@ -1,3 +1,9 @@
+#![allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation
+)]
+
 //! Plan 04-09 Task 1 integration test — SEAS-01 hour-of-day envelope snapshot.
 //!
 //! Builds a deterministic 7-day × 24h × 4 bars/h `BarFrame` at 15m timeframe
@@ -237,7 +243,11 @@ fn decode_vec_h(
         .get(key)
         .unwrap_or_else(|| panic!("effect.extra[{key}] present"));
     let bytes = &arr.data.0;
-    assert_eq!(bytes.len() % 8, 0, "{key}: byte length must be multiple of 8");
+    assert_eq!(
+        bytes.len() % 8,
+        0,
+        "{key}: byte length must be multiple of 8"
+    );
     let mut out = Vec::with_capacity(bytes.len() / 8);
     for chunk in bytes.chunks_exact(8) {
         let mut buf = [0u8; 8];

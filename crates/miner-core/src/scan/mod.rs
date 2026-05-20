@@ -665,9 +665,9 @@ mod tests {
     /// gives an inclusive upper bound).
     #[test]
     fn scan_ctx_bars_up_to_partitions_at_cutoff() {
-        use chrono::{Duration, TimeZone};
         use crate::aggregator::Timeframe;
         use crate::reader::Side;
+        use chrono::{Duration, TimeZone};
         let t0 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let ts = vec![
             t0,

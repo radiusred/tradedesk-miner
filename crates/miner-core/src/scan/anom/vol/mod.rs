@@ -28,7 +28,9 @@ use std::sync::atomic::Ordering;
 
 use chrono::Utc;
 
-use crate::findings::{DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source};
+use crate::findings::{
+    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+};
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
@@ -527,7 +529,11 @@ mod tests {
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
         VolRollingScan.run(&ctx, &req, &mut sink).expect("run ok");
         let findings = parse_sink_to_findings(&sink);
-        assert_eq!(findings.len(), 1, "exactly ONE envelope (Pattern D / Pitfall 1)");
+        assert_eq!(
+            findings.len(),
+            1,
+            "exactly ONE envelope (Pattern D / Pitfall 1)"
+        );
     }
 
     #[test]

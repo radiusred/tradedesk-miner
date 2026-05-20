@@ -100,7 +100,10 @@ pub(super) fn lead_lag_ccf(a: &[f64], b: &[f64], max_lag: usize) -> LeadLagResul
     // by sigma_a * sigma_b uses the full-sample sigmas; per-lag windows
     // re-use these moments (the standard non-windowed CCF definition,
     // matching scipy.signal.correlate after normalisation).
-    #[allow(clippy::cast_precision_loss, reason = "n bounded by aligned bars; << 2^52")]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "n bounded by aligned bars; << 2^52"
+    )]
     let n_f = n as f64;
     let mean_a = a.iter().copied().sum::<f64>() / n_f;
     let mean_b = b.iter().copied().sum::<f64>() / n_f;
@@ -111,7 +114,10 @@ pub(super) fn lead_lag_ccf(a: &[f64], b: &[f64], max_lag: usize) -> LeadLagResul
 
     // Build the lag grid: [-max_lag, ..., -1, 0, 1, ..., max_lag].
     let mut lags: Vec<i64> = Vec::with_capacity(lag_count);
-    #[allow(clippy::cast_possible_wrap, reason = "max_lag bounded above by n/2 << i64::MAX")]
+    #[allow(
+        clippy::cast_possible_wrap,
+        reason = "max_lag bounded above by n/2 << i64::MAX"
+    )]
     let max_lag_i = max_lag as i64;
     for k in -max_lag_i..=max_lag_i {
         lags.push(k);
@@ -180,13 +186,14 @@ pub(super) fn lead_lag_ccf(a: &[f64], b: &[f64], max_lag: usize) -> LeadLagResul
     // which no finite |v| can exceed — every iteration's "greater-than"
     // check then fails and the accumulator never updates, leaving the
     // bogus initial (0, NEG_INFINITY)).
-    let (argmax_idx, argmax_value) = ccf_values
-        .iter()
-        .enumerate()
-        .skip(1)
-        .fold((0_usize, ccf_values[0]), |acc, (i, v)| {
-            if v.abs() > acc.1.abs() { (i, *v) } else { acc }
-        });
+    let (argmax_idx, argmax_value) =
+        ccf_values
+            .iter()
+            .enumerate()
+            .skip(1)
+            .fold((0_usize, ccf_values[0]), |acc, (i, v)| {
+                if v.abs() > acc.1.abs() { (i, *v) } else { acc }
+            });
     let argmax_lag = lags[argmax_idx];
 
     LeadLagResult {

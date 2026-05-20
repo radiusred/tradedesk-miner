@@ -65,7 +65,10 @@ pub(super) struct DrawdownProfile {
 /// Panics via `debug_assert` when input is empty.
 #[inline]
 pub(super) fn cumulative_log_equity(log_returns: &[f64]) -> Vec<f64> {
-    debug_assert!(!log_returns.is_empty(), "cumulative_log_equity: empty slice");
+    debug_assert!(
+        !log_returns.is_empty(),
+        "cumulative_log_equity: empty slice"
+    );
     let mut out = Vec::with_capacity(log_returns.len());
     let mut acc = 0.0_f64;
     for r in log_returns {
@@ -143,9 +146,8 @@ pub(super) fn compute_drawdown_profile(
             if in_drawdown {
                 peaks.push(episode_peak_idx);
                 troughs.push(trough_idx);
-                let dur = ts[trough_idx]
-                    .timestamp_millis()
-                    - ts[episode_peak_idx].timestamp_millis();
+                let dur =
+                    ts[trough_idx].timestamp_millis() - ts[episode_peak_idx].timestamp_millis();
                 durations_ms.push(dur);
                 let rec = ts[t].timestamp_millis() - ts[trough_idx].timestamp_millis();
                 time_to_recover_ms.push(rec);

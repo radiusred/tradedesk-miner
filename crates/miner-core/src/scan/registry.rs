@@ -207,12 +207,9 @@ mod tests {
     fn bootstrap_invokes_all_three_family_registrars() {
         // Type-level evidence the three helpers are reachable from
         // bootstrap()'s namespace (`crate::scan::{anom,cross,seas}::register_*_scans`).
-        let _ = crate::scan::anom::register_anom_scans
-            as fn(&mut Registry);
-        let _ = crate::scan::cross::register_cross_scans
-            as fn(&mut Registry);
-        let _ = crate::scan::seas::register_seas_scans
-            as fn(&mut Registry);
+        let _ = crate::scan::anom::register_anom_scans as fn(&mut Registry);
+        let _ = crate::scan::cross::register_cross_scans as fn(&mut Registry);
+        let _ = crate::scan::seas::register_seas_scans as fn(&mut Registry);
         // Behavioural evidence: bootstrap's count equals the LjungBox direct
         // registration plus the sum of family-registrar contributions.
         // Lower-bound assertion so per-family Phase-4 plans (04-03..04-10)

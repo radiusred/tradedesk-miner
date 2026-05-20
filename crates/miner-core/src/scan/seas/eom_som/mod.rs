@@ -111,6 +111,11 @@ impl Scan for EomSomScan {
         req: &ScanRequest,
         sink: &mut dyn FindingSink,
     ) -> Result<(), ScanError> {
+        // Cancel-poll cadence: every 4096 iterations is sufficient for the
+        // typical bar count (1m..6y / 15m ~= 1.4M bars) without hot-loop
+        // overhead. Hoisted to function head per clippy::items_after_statements.
+        const CANCEL_POLL_CADENCE: usize = 4096;
+
         // Cancel-poll at entry.
         if ctx.cancel.load(Ordering::Relaxed) {
             return Ok(());
@@ -141,13 +146,10 @@ impl Scan for EomSomScan {
 
         // Build parallel (values, bucket_keys) — only including returns whose
         // bar lands in an EOM/SOM window. Cancel-poll inside the assignment
-        // loop (Pattern 4 site 2).
+        // loop (Pattern 4 site 2). CANCEL_POLL_CADENCE is hoisted to the
+        // function head above.
         let mut values: Vec<f64> = Vec::with_capacity(n);
         let mut keys: Vec<usize> = Vec::with_capacity(n);
-        // Cancel-poll cadence: every 4096 iterations is sufficient for the
-        // typical bar count (1m..6y / 15m ~= 1.4M bars) without hot-loop
-        // overhead.
-        const CANCEL_POLL_CADENCE: usize = 4096;
         for (i, ts) in ts_for_returns.iter().enumerate() {
             if i % CANCEL_POLL_CADENCE == 0 && ctx.cancel.load(Ordering::Relaxed) {
                 return Ok(());
@@ -285,12 +287,12 @@ impl Scan for EomSomScan {
 fn resolve_cutoff_n(req: &ScanRequest) -> Result<usize, ScanError> {
     let raw = req.resolved_params.get("cutoff_n");
     let v: i64 = match raw {
-        Some(v) => v.as_i64().ok_or_else(|| {
-            ScanError::Kernel(format!("cutoff_n must be an integer; got {v}"))
-        })?,
+        Some(v) => v
+            .as_i64()
+            .ok_or_else(|| ScanError::Kernel(format!("cutoff_n must be an integer; got {v}")))?,
         None => DEFAULT_CUTOFF_N,
     };
-    if v < 1 || v > MAX_CUTOFF_N {
+    if !(1..=MAX_CUTOFF_N).contains(&v) {
         return Err(ScanError::Kernel(format!(
             "cutoff_n must be in 1..={MAX_CUTOFF_N}; got {v}"
         )));
@@ -358,11 +360,9 @@ mod tests {
             let frac = f64::from(s) / f64::from(u32::MAX);
             closes.push(1.0 + frac);
         }
-        let ts_open: Vec<DateTime<Utc>> = (0..n)
-            .map(|i| start + Duration::days(i as i64))
-            .collect();
-        let ts_close: Vec<DateTime<Utc>> =
-            ts_open.iter().map(|t| *t + Duration::days(1)).collect();
+        let ts_open: Vec<DateTime<Utc>> =
+            (0..n).map(|i| start + Duration::days(i as i64)).collect();
+        let ts_close: Vec<DateTime<Utc>> = ts_open.iter().map(|t| *t + Duration::days(1)).collect();
         let opens = closes.clone();
         let highs: Vec<f64> = closes.iter().map(|c| c + 0.001).collect();
         let lows: Vec<f64> = closes.iter().map(|c| c - 0.001).collect();
@@ -406,7 +406,7 @@ mod tests {
         }
     }
 
-    fn make_ctx<'a>(bars: &'a BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'a> {
+    fn make_ctx(bars: &BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'_> {
         ScanCtx {
             bars,
             bars_pair: None,
@@ -455,11 +455,7 @@ mod tests {
     fn eom_som_default_cutoff_3_produces_6_buckets() {
         // 6 months of daily bars (~180 days) gives every month enough trading
         // days to fully populate the EOM/SOM windows.
-        let bars = lcg_daily_bar_frame(
-            180,
-            17,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-        );
+        let bars = lcg_daily_bar_frame(180, 17, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
         let mut sink = VecSink::new();
         let req = sample_request(serde_json::json!({"min_obs_per_bucket": 1}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
@@ -475,8 +471,7 @@ mod tests {
         }
         // bucket_labels JSON decodes to 6 strings.
         let labels_bytes = &r.effect.extra["bucket_labels"].data.0;
-        let labels: Vec<String> =
-            serde_json::from_slice(labels_bytes).expect("bucket_labels JSON");
+        let labels: Vec<String> = serde_json::from_slice(labels_bytes).expect("bucket_labels JSON");
         assert_eq!(
             labels,
             vec!["EOM-3", "EOM-2", "EOM-1", "SOM-1", "SOM-2", "SOM-3"]
@@ -486,11 +481,7 @@ mod tests {
     /// `cutoff_n=5` -> 10 buckets.
     #[test]
     fn eom_som_cutoff_5_produces_10_buckets() {
-        let bars = lcg_daily_bar_frame(
-            180,
-            19,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-        );
+        let bars = lcg_daily_bar_frame(180, 19, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
         let mut sink = VecSink::new();
         let req = sample_request(serde_json::json!({"cutoff_n": 5, "min_obs_per_bucket": 1}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
@@ -510,11 +501,7 @@ mod tests {
 
     #[test]
     fn eom_som_invalid_cutoff_zero() {
-        let bars = lcg_daily_bar_frame(
-            60,
-            1,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-        );
+        let bars = lcg_daily_bar_frame(60, 1, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
         let mut sink = VecSink::new();
         let req = sample_request(serde_json::json!({"cutoff_n": 0}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
@@ -526,11 +513,7 @@ mod tests {
 
     #[test]
     fn eom_som_invalid_cutoff_too_large() {
-        let bars = lcg_daily_bar_frame(
-            60,
-            2,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-        );
+        let bars = lcg_daily_bar_frame(60, 2, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
         let mut sink = VecSink::new();
         let req = sample_request(serde_json::json!({"cutoff_n": 11}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
@@ -622,11 +605,7 @@ mod tests {
 
     #[test]
     fn eom_som_emits_one_result() {
-        let bars = lcg_daily_bar_frame(
-            120,
-            3,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-        );
+        let bars = lcg_daily_bar_frame(120, 3, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
         let mut sink = VecSink::new();
         let req = sample_request(serde_json::json!({"min_obs_per_bucket": 1}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
@@ -637,11 +616,7 @@ mod tests {
 
     #[test]
     fn eom_som_result_envelope_shape() {
-        let bars = lcg_daily_bar_frame(
-            120,
-            4,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-        );
+        let bars = lcg_daily_bar_frame(120, 4, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
         let mut sink = VecSink::new();
         let req = sample_request(serde_json::json!({"min_obs_per_bucket": 1}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
@@ -677,11 +652,7 @@ mod tests {
 
     #[test]
     fn eom_som_cancellation() {
-        let bars = lcg_daily_bar_frame(
-            60,
-            5,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-        );
+        let bars = lcg_daily_bar_frame(60, 5, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
         let mut sink = VecSink::new();
         let req = sample_request(serde_json::json!({}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(true)));
@@ -715,7 +686,10 @@ mod tests {
     }
 
     fn decode_counts(extra: &BTreeMap<String, RawArray>) -> Vec<u64> {
-        decode_f64(extra, "counts").iter().map(|x| *x as u64).collect()
+        decode_f64(extra, "counts")
+            .iter()
+            .map(|x| *x as u64)
+            .collect()
     }
 
     fn decode_f64(extra: &BTreeMap<String, RawArray>, key: &str) -> Vec<f64> {

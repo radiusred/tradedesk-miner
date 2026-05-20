@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn log_returns_length_invariant() {
         // n closes -> n-1 returns.
-        let closes: Vec<f64> = (1..=10).map(|i| f64::from(i)).collect();
+        let closes: Vec<f64> = (1..=10).map(f64::from).collect();
         let r = log_returns(&closes);
         assert_eq!(r.len(), closes.len() - 1);
     }

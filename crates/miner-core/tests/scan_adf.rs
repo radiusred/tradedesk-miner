@@ -127,7 +127,13 @@ fn scan_adf_happy_path() {
     let extra_keys: Vec<&str> = r.effect.extra.keys().map(String::as_str).collect();
     assert_eq!(
         extra_keys,
-        vec!["crit_values", "lag_selected", "nobs", "p_value", "regression",]
+        vec![
+            "crit_values",
+            "lag_selected",
+            "nobs",
+            "p_value",
+            "regression",
+        ]
     );
     assert_eq!(r.effect.extra["crit_values"].shape, vec![3]);
 

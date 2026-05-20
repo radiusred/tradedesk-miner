@@ -178,7 +178,11 @@ mod tests {
         assert_eq!(res.len(), 3);
         for i in 0..3 {
             assert!(approx_eq(res.betas[i], 1.0, TOL), "β[{i}]={}", res.betas[i]);
-            assert!(approx_eq(res.alphas[i], 0.0, TOL), "α[{i}]={}", res.alphas[i]);
+            assert!(
+                approx_eq(res.alphas[i], 0.0, TOL),
+                "α[{i}]={}",
+                res.alphas[i]
+            );
             assert!(approx_eq(res.r2s[i], 1.0, TOL), "R²[{i}]={}", res.r2s[i]);
             assert!(
                 approx_eq(res.residual_stds[i], 0.0, TOL),
@@ -198,7 +202,11 @@ mod tests {
         assert_eq!(res.len(), 2);
         for i in 0..2 {
             assert!(approx_eq(res.betas[i], 0.5, TOL), "β[{i}]={}", res.betas[i]);
-            assert!(approx_eq(res.alphas[i], 0.0, TOL), "α[{i}]={}", res.alphas[i]);
+            assert!(
+                approx_eq(res.alphas[i], 0.0, TOL),
+                "α[{i}]={}",
+                res.alphas[i]
+            );
             assert!(approx_eq(res.r2s[i], 1.0, TOL), "R²[{i}]={}", res.r2s[i]);
         }
     }

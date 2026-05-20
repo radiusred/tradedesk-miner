@@ -210,9 +210,7 @@ fn resolve_min_obs(req: &ScanRequest) -> Result<usize, ScanError> {
         )));
     }
     let us = usize::try_from(v).map_err(|_| {
-        ScanError::Kernel(format!(
-            "min_obs_per_bucket out of range for usize: {v}"
-        ))
+        ScanError::Kernel(format!("min_obs_per_bucket out of range for usize: {v}"))
     })?;
     Ok(us)
 }
@@ -256,11 +254,9 @@ mod tests {
             let frac = f64::from(s) / f64::from(u32::MAX);
             closes.push(1.0 + frac);
         }
-        let ts_open: Vec<DateTime<Utc>> = (0..n)
-            .map(|i| start + Duration::days(i as i64))
-            .collect();
-        let ts_close: Vec<DateTime<Utc>> =
-            ts_open.iter().map(|t| *t + Duration::days(1)).collect();
+        let ts_open: Vec<DateTime<Utc>> =
+            (0..n).map(|i| start + Duration::days(i as i64)).collect();
+        let ts_close: Vec<DateTime<Utc>> = ts_open.iter().map(|t| *t + Duration::days(1)).collect();
         let opens = closes.clone();
         let highs: Vec<f64> = closes.iter().map(|c| c + 0.001).collect();
         let lows: Vec<f64> = closes.iter().map(|c| c - 0.001).collect();
@@ -304,7 +300,7 @@ mod tests {
         }
     }
 
-    fn make_ctx<'a>(bars: &'a BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'a> {
+    fn make_ctx(bars: &BarFrame, cancel: Arc<AtomicBool>) -> ScanCtx<'_> {
         ScanCtx {
             bars,
             bars_pair: None,
@@ -342,7 +338,10 @@ mod tests {
         let s = DayOfWeekScan;
         let schema = s.param_schema();
         assert_eq!(schema["type"], "object");
-        assert_eq!(schema["properties"]["min_obs_per_bucket"]["type"], "integer");
+        assert_eq!(
+            schema["properties"]["min_obs_per_bucket"]["type"],
+            "integer"
+        );
         assert_eq!(schema["properties"]["min_obs_per_bucket"]["minimum"], 1);
         assert_eq!(schema["additionalProperties"], false);
     }
@@ -350,11 +349,7 @@ mod tests {
     #[test]
     fn day_of_week_emits_one_result() {
         // 28-day series at daily timeframe.
-        let bars = lcg_daily_bar_frame(
-            28,
-            7,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-        );
+        let bars = lcg_daily_bar_frame(28, 7, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
         let mut sink = VecSink::new();
         let req = sample_request(serde_json::json!({"min_obs_per_bucket": 1}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
@@ -365,11 +360,7 @@ mod tests {
 
     #[test]
     fn day_of_week_result_envelope_shape() {
-        let bars = lcg_daily_bar_frame(
-            28,
-            8,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-        );
+        let bars = lcg_daily_bar_frame(28, 8, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
         let mut sink = VecSink::new();
         let req = sample_request(serde_json::json!({"min_obs_per_bucket": 1}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
@@ -467,11 +458,7 @@ mod tests {
 
     #[test]
     fn day_of_week_cancellation() {
-        let bars = lcg_daily_bar_frame(
-            28,
-            9,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-        );
+        let bars = lcg_daily_bar_frame(28, 9, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
         let mut sink = VecSink::new();
         let req = sample_request(serde_json::json!({}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(true)));

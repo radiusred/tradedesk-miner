@@ -649,6 +649,10 @@ pub fn run_one_with_registry<R: Reader>(
     clippy::too_many_arguments,
     reason = "All arguments come from the caller's stack frame; introducing a context struct only to satisfy this lint would obscure the data flow"
 )]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "cancel: Arc<AtomicBool> follows the by-value convention used by every other facade function (run_one, run_one_with_registry, dispatch_single_arity_body); switching to &Arc here would diverge from the sibling signatures"
+)]
 fn dispatch_pair_arity_body<R: Reader>(
     req: &ScanRequest,
     cfg: &MinerConfig,
@@ -670,7 +674,14 @@ fn dispatch_pair_arity_body<R: Reader>(
         Ok(m) => m,
         Err(e) => {
             let msg = format!("reader (leg a): {e}");
-            emit_scan_error(sink, run_id, scan_id_at_version, req, reader.source_id(), &msg)?;
+            emit_scan_error(
+                sink,
+                run_id,
+                scan_id_at_version,
+                req,
+                reader.source_id(),
+                &msg,
+            )?;
             summary.scan_errors += 1;
             summary
                 .per_scan
@@ -687,7 +698,14 @@ fn dispatch_pair_arity_body<R: Reader>(
         Ok(m) => m,
         Err(e) => {
             let msg = format!("reader (leg b): {e}");
-            emit_scan_error(sink, run_id, scan_id_at_version, req, reader.source_id(), &msg)?;
+            emit_scan_error(
+                sink,
+                run_id,
+                scan_id_at_version,
+                req,
+                reader.source_id(),
+                &msg,
+            )?;
             summary.scan_errors += 1;
             summary
                 .per_scan
@@ -930,7 +948,10 @@ fn dispatch_pair_arity_body<R: Reader>(
 #[cfg_attr(not(any(test, feature = "test-internal")), allow(unused_variables))]
 fn make_scan_ctx<'a>(
     bars: &'a crate::aggregator::BarFrame,
-    bars_pair: Option<(&'a crate::aggregator::BarFrame, &'a crate::aggregator::BarFrame)>,
+    bars_pair: Option<(
+        &'a crate::aggregator::BarFrame,
+        &'a crate::aggregator::BarFrame,
+    )>,
     gap_manifest: Option<&'a crate::gap::GapManifest>,
     run_id: RunId,
     code_revision: &'a str,

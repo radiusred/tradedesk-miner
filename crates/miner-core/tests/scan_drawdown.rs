@@ -122,7 +122,11 @@ fn scan_drawdown_happy_path() {
     assert_eq!(r.scan_id_at_version, "stats.drawdown.profile@1");
     assert_eq!(r.effect.metric, "max_drawdown");
     // Drawdown is always <= 0.0.
-    assert!(r.effect.value <= 0.0, "max_dd must be <= 0; got {}", r.effect.value);
+    assert!(
+        r.effect.value <= 0.0,
+        "max_dd must be <= 0; got {}",
+        r.effect.value
+    );
 
     let extra_keys: Vec<&str> = r.effect.extra.keys().map(String::as_str).collect();
     assert_eq!(

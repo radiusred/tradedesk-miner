@@ -114,9 +114,7 @@ pub(super) fn adfuller(
         return Err(format!("adfuller: need n >= 4 observations; got n={n}"));
     }
     if max_lag >= n {
-        return Err(format!(
-            "adfuller: max_lag={max_lag} must be < n={n}"
-        ));
+        return Err(format!("adfuller: max_lag={max_lag} must be < n={n}"));
     }
 
     // Step 1 — select lag.
@@ -149,10 +147,7 @@ pub(super) fn adfuller(
 /// the number of regressors (this matches statsmodels' `_autolag(maxlag=...,
 /// method='aic')` formulation).
 #[inline]
-#[allow(
-    clippy::cast_precision_loss,
-    reason = "nobs/p are bar counts << 2^52"
-)]
+#[allow(clippy::cast_precision_loss, reason = "nobs/p are bar counts << 2^52")]
 pub(super) fn select_lag_aic(
     y: &[f64],
     max_lag: usize,
@@ -163,7 +158,9 @@ pub(super) fn select_lag_aic(
     // Sequential — NOT par_iter — to keep determinism across platforms (Pitfall 4).
     for k in 0..=max_lag {
         // too-short residual sample for this lag
-        let Ok(fit) = fit_adf_regression(y, k, regression) else { continue };
+        let Ok(fit) = fit_adf_regression(y, k, regression) else {
+            continue;
+        };
         let nobs_f = fit.nobs as f64;
         let p_f = fit.n_regressors as f64;
         let sigma2 = fit.ss_res / nobs_f;
@@ -186,10 +183,7 @@ pub(super) fn select_lag_aic(
 
 /// BIC lag selection — same sequential discipline as AIC, with BIC = n·ln(σ̂²) + ln(n)·p.
 #[inline]
-#[allow(
-    clippy::cast_precision_loss,
-    reason = "nobs/p are bar counts << 2^52"
-)]
+#[allow(clippy::cast_precision_loss, reason = "nobs/p are bar counts << 2^52")]
 pub(super) fn select_lag_bic(
     y: &[f64],
     max_lag: usize,
@@ -198,7 +192,9 @@ pub(super) fn select_lag_bic(
     let mut best_bic = f64::INFINITY;
     let mut best_lag = 0usize;
     for k in 0..=max_lag {
-        let Ok(fit) = fit_adf_regression(y, k, regression) else { continue };
+        let Ok(fit) = fit_adf_regression(y, k, regression) else {
+            continue;
+        };
         let nobs_f = fit.nobs as f64;
         let p_f = fit.n_regressors as f64;
         let sigma2 = fit.ss_res / nobs_f;
@@ -247,10 +243,7 @@ pub(super) struct AdfFit {
 /// deviation. The heap allocation is bounded (at most `max_lag+4` columns ≈
 /// dozens) and runs once per regression — not a hot-loop concern.
 #[inline]
-#[allow(
-    clippy::cast_precision_loss,
-    reason = "i is a bar index << 2^52"
-)]
+#[allow(clippy::cast_precision_loss, reason = "i is a bar index << 2^52")]
 #[allow(
     clippy::similar_names,
     reason = "delta_y / lag_y / y_lag are canonical names for the ADF regression columns"
@@ -337,9 +330,7 @@ pub(super) fn fit_adf_regression(
     let xtx = &xt * &x;
     let xty = &xt * &delta_y;
     let Some(xtx_inv) = xtx.clone().try_inverse() else {
-        return Err(format!(
-            "fit_adf_regression: singular X'X at lag k={k}"
-        ));
+        return Err(format!("fit_adf_regression: singular X'X at lag k={k}"));
     };
     let beta = &xtx_inv * &xty;
 
@@ -489,7 +480,10 @@ mod tests {
     #[test]
     fn mackinnon_p_value_very_negative_is_small() {
         let p = mackinnon_p_value(-10.0, RegressionVariant::C);
-        assert!(p < 0.01 && p >= 0.0, "very negative tau -> p << 0.01; got {p}");
+        assert!(
+            (0.0..0.01).contains(&p),
+            "very negative tau -> p << 0.01; got {p}"
+        );
     }
 
     #[test]
