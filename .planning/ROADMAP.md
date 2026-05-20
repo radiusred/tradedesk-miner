@@ -108,7 +108,7 @@ Plans:
 - [ ] 04-05-PLAN.md — ANOM batch C: stats.stationarity.adf (ANOM-05 hand-derived AIC), stats.stationarity.kpss (ANOM-06 hand-derived Bartlett), stats.variance_ratio.lo_mackinlay (ANOM-07 hand-derived overlapping VR)
 - [ ] 04-06-PLAN.md — ANOM batch D: stats.heteroskedasticity.arch_lm (ANOM-08 Engle 1982), stats.normality.jarque_bera (ANOM-09 chi-squared df=2)
 - [x] 04-07-PLAN.md — CROSS batch A: cross.corr.pearson_rolling + cross.corr.spearman_rolling (CROSS-02), cross.ols.rolling (CROSS-03 nalgebra) + shuffled-future extensions
-- [ ] 04-08-PLAN.md — CROSS batch B: cross.lead_lag.ccf (CROSS-04 symmetric ±max_lag), cross.cointegration.engle_granger (CROSS-05 two-step + OU half-life, reuses ANOM-05 ADF)
+- [x] 04-08-PLAN.md — CROSS batch B: cross.lead_lag.ccf (CROSS-04 symmetric ±max_lag), cross.cointegration.engle_granger (CROSS-05 two-step + OU half-life, reuses ANOM-05 ADF)
 - [x] 04-09-PLAN.md — SEAS batch A: seas.bucket.hour_of_day (SEAS-01), seas.bucket.day_of_week (SEAS-02), seas.bucket.session (SEAS-03 FX-major defaults per RESEARCH §1.8) + shared bucketing helper
 - [ ] 04-10-PLAN.md — SEAS batch B: seas.bucket.eom_som (SEAS-04 trading-day-of-month via Calendar), seas.test.anova_kruskal (SEAS-05 F + KW), seas.event.pre_post_window (SEAS-06)
 - [ ] 04-11-PLAN.md — Goldens (ANOM-02 + CROSS-05 + SEAS-01) + schema regen + byte-identical-rerun test + README Quickstart + Phase 4 sign-off memo + human checkpoint
