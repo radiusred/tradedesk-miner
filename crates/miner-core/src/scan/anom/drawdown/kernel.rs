@@ -297,11 +297,11 @@ mod tests {
     /// (we construct it directly, bypassing log-returns).
     #[test]
     fn drawdown_profile_v_shape() {
-        let equity = vec![0.0_f64, -0.6931471805599453, 0.0];
+        let equity = vec![0.0_f64, -std::f64::consts::LN_2, 0.0];
         let ts = equispaced_ts(3);
         let profile = compute_drawdown_profile(&equity, &ts);
         // Max drawdown is the dip at t=1.
-        assert!(approx_eq(profile.max_dd, -0.6931471805599453, TOL));
+        assert!(approx_eq(profile.max_dd, -std::f64::consts::LN_2, TOL));
         // One closed episode: peak at 0, trough at 1, recovery at 2.
         assert_eq!(profile.peaks, vec![0]);
         assert_eq!(profile.troughs, vec![1]);
@@ -309,9 +309,9 @@ mod tests {
         assert_eq!(profile.durations_ms, vec![900_000]);
         // Recovery = ts[2] - ts[1] = 15 minutes = 900_000 ms.
         assert_eq!(profile.time_to_recover_ms, vec![900_000]);
-        // Percentiles of single-element [0.6931..]: all three == that value.
+        // Percentiles of single-element [ln(2)]: all three == that value.
         for p in profile.dd_dist_percentiles {
-            assert!(approx_eq(p, 0.6931471805599453, TOL));
+            assert!(approx_eq(p, std::f64::consts::LN_2, TOL));
         }
     }
 
