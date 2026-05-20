@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundations & Contracts** - Workspace, types, locked findings envelope, stdout/stderr discipline, config precedence (completed 2026-05-17)
 - [x] **Phase 2: Reader, Aggregator & Derived-Bar Cache** - Dukascopy reader, deterministic aggregator, derived-bar cache, gap manifest (completed 2026-05-18)
 - [ ] **Phase 3: Scan Engine, Facade & CLI** - Scan trait/registry, facade, look-ahead-safe windowing, gap-policy enforcement, CLI wrapper
-- [ ] **Phase 4: Scan Catalogue (ANOM, CROSS, SEAS)** - All v1 statistical, cross-instrument, and seasonality scans
+- [x] **Phase 4: Scan Catalogue (ANOM, CROSS, SEAS)** - All v1 statistical, cross-instrument, and seasonality scans (completed 2026-05-20)
 - [ ] **Phase 5: Statistical Hygiene & Sweep Runner** - Effect sizes, bootstrap, phase-scramble nulls, BH-FDR, sweep manifest
 - [ ] **Phase 6: MCP & HTTP Wrappers** - rmcp-based MCP server and axum-based HTTP server with parity to CLI
 - [ ] **Phase 7: Hardening, Benchmarks & Reproducibility** - Golden-file tests, noise-replay, flamegraph, bench harness, README caveats

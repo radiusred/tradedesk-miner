@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Plan 04-05 complete — ANOM-05/06/07 hand-derived stationarity scans shipped (ANOM family 9/11)
-last_updated: "2026-05-20T17:31:48.214Z"
-last_activity: 2026-05-20
+status: phase_complete
+stopped_at: Phase 04 verified pass after Plan 04-12 (CR-01 resolved); ready for Phase 5
+last_updated: "2026-05-20T18:30:00.000Z"
+last_activity: 2026-05-20 -- Phase 04 verification PASS after CR-01 closure
 progress:
   total_phases: 7
   completed_phases: 4
@@ -25,14 +25,14 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 
 ## Current Position
 
-Phase: 04 (scan-catalogue-anom-cross-seas) — EXECUTING
-Plan: 11 of 11 — only Plan 04-06 (ARCH-LM + JB) + 04-11 (Phase sign-off) remain
-Status: Phase complete — ready for verification
-Last activity: 2026-05-20
+Phase: 04 (scan-catalogue-anom-cross-seas) — COMPLETE
+Plan: 12 of 12 (11 original + 04-12 gap-closure for CR-01)
+Status: Verified PASS — supersedes the prior gaps_found verdict after 04-12 closed CR-01
+Last activity: 2026-05-20 -- Phase 04 verification PASS after CR-01 closure
 
 Progress: [██████████] 100%
 
-Next: Plan 04-06 (ARCH-LM + Jarque-Bera) to complete ANOM family at 11/11, then Plan 04-11 (Phase 4 sign-off — goldens + engle_granger adf_step reconciliation + registry test tightening).
+Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, phase-scramble nulls, BH-FDR, sweep manifest. Begin with `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
 
 ## Performance Metrics
 
