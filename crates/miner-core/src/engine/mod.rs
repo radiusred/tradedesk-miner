@@ -1235,6 +1235,12 @@ mod tests {
             resolved_params: resolved,
             param_hash,
             dry_run,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }
@@ -2165,6 +2171,12 @@ mod tests {
             resolved_params: resolved,
             param_hash,
             dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }
@@ -2403,6 +2415,12 @@ mod cancellation_tests {
             resolved_params: resolved,
             param_hash,
             dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
             sleep_after_first_finding_ms: sleep_after_ms,
         }
     }

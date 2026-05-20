@@ -126,6 +126,12 @@ fn run_and_extract_q_stats(closes_slice: &[f64]) -> Vec<f64> {
         resolved_params,
         param_hash,
         dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
         sleep_after_first_finding_ms: None,
     };
     let ctx = ScanCtx {
@@ -179,6 +185,12 @@ fn run_and_extract_vol_values(closes_slice: &[f64], window: usize) -> Vec<f64> {
         resolved_params,
         param_hash,
         dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
         sleep_after_first_finding_ms: None,
     };
     let ctx = ScanCtx {
@@ -277,6 +289,12 @@ fn pair_request(
         resolved_params,
         param_hash: pair_param_hash,
         dry_run: false,
+    master_seed: None,
+    job_seed: None,
+    bootstrap_method: None,
+    bootstrap_n: None,
+    null_method: None,
+    null_n: None,
         sleep_after_first_finding_ms: None,
     }
 }

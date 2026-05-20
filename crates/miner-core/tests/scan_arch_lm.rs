@@ -99,6 +99,12 @@ fn scan_arch_lm_happy_path() {
         resolved_params,
         param_hash,
         dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
         #[cfg(any(test, feature = "test-internal"))]
         sleep_after_first_finding_ms: None,
     };

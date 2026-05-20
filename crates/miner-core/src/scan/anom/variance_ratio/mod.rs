@@ -425,6 +425,12 @@ mod tests {
             resolved_params: params,
             param_hash: blake3_hex_zero(),
             dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }
