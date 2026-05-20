@@ -24,6 +24,7 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
+    "effect_size": null,
     "extra": {
       "event_count": {
         "data": "AAAAAAAACEA=",
@@ -111,6 +112,7 @@ expression: masked
       }
     }
   },
+  "repro": null,
   "run_id": "<masked_run_id>",
   "scan_id@version": "seas.event.pre_post_window@1",
   "schema_version": 1

@@ -313,6 +313,7 @@ fn correct_arity_pair_scan_passes_arity_preflight() {
                 Finding::GapAborted(_) => "gap_aborted",
                 Finding::RunEnd(_) => "run_end",
                 Finding::DryRun(_) => "dry_run",
+                Finding::SweepSummary(_) => "sweep_summary",
             })
             .collect::<Vec<_>>()
     );

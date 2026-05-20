@@ -144,5 +144,6 @@ fn envelope_kind(f: &Finding) -> &'static str {
         Finding::GapAborted(_) => "gap_aborted",
         Finding::RunEnd(_) => "run_end",
         Finding::DryRun(_) => "dry_run",
+        Finding::SweepSummary(_) => "sweep_summary",
     }
 }

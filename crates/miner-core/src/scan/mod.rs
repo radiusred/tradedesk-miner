@@ -105,6 +105,47 @@ impl ScanArity {
 }
 
 // ---------------------------------------------------------------------------
+// NullMethod — Phase 5 (Plan 05-01 / D5-04) null-distribution methods.
+// ---------------------------------------------------------------------------
+
+/// Phase 5 (Plan 05-01 / D5-04) — null-distribution resampling method used by
+/// the scan's hygiene pass (HYG-04).
+///
+/// Mirrors [`ScanArity`] on the wire (same derives, same
+/// `#[serde(rename_all = "snake_case")]`, sibling `as_str` helper). The two
+/// v1 methods are `PhaseScramble` (FFT phase randomisation; preserves the
+/// power spectrum and the autocorrelation function) and `CircularShift`
+/// (random rotation by `k` bars; trivially serialisable as the canonical
+/// fallback when `realfft` is unavailable).
+///
+/// Mirrored on the wire by `crate::findings::NullSpec.method`
+/// (open-string field) for forward-compat — adding a new variant here is
+/// schema-additive (`schemars 1.x` `oneOf` gains a new option without
+/// invalidating existing parsers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NullMethod {
+    /// FFT phase randomisation — preserves the marginal distribution and
+    /// power spectrum; canonical null for autocorrelation-based scans.
+    PhaseScramble,
+    /// Random rotation of the bar series by `k` bars. Universal fallback
+    /// available without an FFT crate.
+    CircularShift,
+}
+
+impl NullMethod {
+    /// `snake_case` wire form — mirrors `ScanArity::as_str` (Pattern F at
+    /// PATTERNS.md `scan/mod.rs (MODIFIED — Scan trait extension)`).
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NullMethod::PhaseScramble => "phase_scramble",
+            NullMethod::CircularShift => "circular_shift",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Scan trait — D3-14, mirrors `reader.rs:198-258` Send+Sync+&'static str shape.
 // ---------------------------------------------------------------------------
 
@@ -166,6 +207,39 @@ pub trait Scan: Send + Sync {
         req: &ScanRequest,
         sink: &mut dyn FindingSink,
     ) -> Result<(), ScanError>;
+
+    /// Phase 5 (Plan 05-01 / D5-04) — does this scan opt into bootstrap
+    /// resampling (HYG-03)?
+    ///
+    /// Default-false; every scan opts in EXPLICITLY in Plan 05-02 (per-scan
+    /// opt-in table at PATTERNS §"Scan trait extension"). The Phase 5
+    /// sweep runner (Plan 05-04) reads this to decide whether to allocate
+    /// bootstrap budget per job; if the user requests bootstrap on a scan
+    /// that returns `false` here, the engine rejects with
+    /// `PreflightCode::HygieneNotSupported`.
+    ///
+    /// No generics, no `where Self: Sized` — the method is dyn-safe (the
+    /// `scan_trait_object_safe` regression gate compiles the type-erased
+    /// coercion and fails the build if a future change introduces a
+    /// non-dyn-safe self-type).
+    fn supports_bootstrap(&self) -> bool {
+        false
+    }
+
+    /// Phase 5 (Plan 05-01 / D5-04) — does this scan opt into the given
+    /// null-distribution method (HYG-04)?
+    ///
+    /// Default-false; every scan opts in EXPLICITLY in Plan 05-02 (per-scan
+    /// opt-in table at PATTERNS §"Scan trait extension"). Scans MAY support
+    /// `PhaseScramble` without `CircularShift` or vice versa — the method
+    /// is per-`NullMethod`, not per-scan. If the user requests a null
+    /// method that returns `false` here, the engine rejects with
+    /// `PreflightCode::HygieneNotSupported`.
+    ///
+    /// No generics, no `where Self: Sized` — the method is dyn-safe.
+    fn supports_null_method(&self, _method: NullMethod) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------

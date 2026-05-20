@@ -256,7 +256,7 @@ pub struct ReproEnvelope {
     /// run for cross-finding correlation).
     pub master_seed: u64,
     /// Per-job seed derived from `master_seed` + the canonical job key
-    /// (scan_id@version, instrument(s), timeframe, window, param_hash).
+    /// (`scan_id@version`, instrument(s), timeframe, window, `param_hash`).
     pub job_seed: u64,
     /// Optional bootstrap descriptor — `None` when the finding's p-value did
     /// not involve a bootstrap pass.
@@ -1148,8 +1148,8 @@ mod tests {
     /// Plan 05-01 Task 2 — Behavior Test 4 (`sweep_summary_finding_uses_snake_case_kind`):
     /// `Finding::SweepSummary(_)` serialises with the top-level `"kind":"sweep_summary"`
     /// discriminant produced by the existing `#[serde(rename_all = "snake_case")]`
-    /// attribute on `Finding`. `fdr_by_family` BTreeMap ordering is alphabetic
-    /// per OUT-03 (proves we are not using a HashMap — the test serialises and
+    /// attribute on `Finding`. `fdr_by_family` `BTreeMap` ordering is alphabetic
+    /// per OUT-03 (proves we are not using a `HashMap` — the test serialises and
     /// checks the JSON string for stable key ordering).
     #[test]
     fn sweep_summary_finding_uses_snake_case_kind() {

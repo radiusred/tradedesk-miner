@@ -24,6 +24,7 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
+    "effect_size": null,
     "extra": {
       "acf": {
         "data": "AAAAAAAA8D80EpCHRKLSv/DhVhE1R7i/+vgtIG1jtr+BajVVU+eEP5ltPPyHIUY/xdG8nUKZpr8WV+ylVM+TPwumpJg0BLk/p1+mvGarvb/w91bTWkeuPw==",
@@ -84,6 +85,7 @@ expression: masked
       }
     }
   },
+  "repro": null,
   "run_id": "<masked_run_id>",
   "scan_id@version": "stats.autocorr.ljung_box@1",
   "schema_version": 1
