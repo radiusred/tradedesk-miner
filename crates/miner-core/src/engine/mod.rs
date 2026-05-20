@@ -262,6 +262,15 @@ pub fn run_one_with_registry<R: Reader>(
     // arity-check → params-parse).
     preflight::validate_arity(scan, &req.instruments).map_err(MinerError::Preflight)?;
 
+    // Phase 5 (Plan 05-03 / D5-04 / HYG-03 + HYG-04): hygiene-support preflight.
+    // Reject any request whose `bootstrap_method` / `null_method` targets a
+    // scan that has not opted into the requested method per the per-scan
+    // matrix. Inserted between `validate_arity` and parse_params per the
+    // RESEARCH.md preflight ordering (id-resolve → version-check →
+    // arity-check → hygiene-check → params-parse).
+    preflight::validate_hygiene_support(scan, req.bootstrap_method, req.null_method)
+        .map_err(MinerError::Preflight)?;
+
     // jsonschema validation of resolved_params against scan.param_schema() is
     // OUT OF SCOPE for Phase 3 (heavyweight dep + duplicated by the per-scan
     // internal checks like LjungBoxScan's lags-range guard). The typed-fallback

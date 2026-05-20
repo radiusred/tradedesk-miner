@@ -35,7 +35,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 
 use crate::error::{PreflightCode, WireError};
 use crate::reader::{ClosedRangeUtc, InstrumentSpec};
-use crate::scan::{Registry, Scan, ScanArity};
+use crate::scan::{BootstrapMethod, NullMethod, Registry, Scan, ScanArity};
 
 // ---------------------------------------------------------------------------
 // resolve_scan_id_at_version — "id@version" → (String, u32)
@@ -144,6 +144,81 @@ pub fn validate_arity(scan: &dyn Scan, instruments: &[InstrumentSpec]) -> Result
             "supplied_arity",
             serde_json::Value::Number(serde_json::Number::from(supplied)),
         ));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// validate_hygiene_support — Plan 05-03 / D5-04 / HYG-03 + HYG-04
+// ---------------------------------------------------------------------------
+
+/// Phase 5 (Plan 05-03) — reject hygiene requests targeting scans that have
+/// not opted into the requested method via [`Scan::supports_bootstrap`] /
+/// [`Scan::supports_null_method`].
+///
+/// Returns `Ok(())` when the caller's request is compatible with the scan's
+/// opt-in matrix (i.e., none of bootstrap / null requested, OR the scan
+/// supports each method that was requested). Returns
+/// [`WireError::preflight`] with [`PreflightCode::HygieneNotSupported`] on
+/// the first mismatch — bootstrap is checked before null so the diagnostic
+/// names the bootstrap method when both are unsupported.
+///
+/// Pattern analog: [`validate_arity`] — same `Result<(), WireError>`
+/// signature; the engine call site in `run_one_with_registry` adapts via
+/// `MinerError::Preflight(_)`.
+///
+/// # Errors
+/// Returns [`WireError::preflight`] with [`PreflightCode::HygieneNotSupported`]
+/// when the caller requests a bootstrap or null method whose corresponding
+/// `Scan::supports_*` returns `false`. Context map: `scan_id`,
+/// `requested_method` (verb-form: `"bootstrap"` or `"null"`),
+/// `method` (the unsupported variant's `snake_case` wire form).
+pub fn validate_hygiene_support(
+    scan: &dyn Scan,
+    bootstrap_method: Option<BootstrapMethod>,
+    null_method: Option<NullMethod>,
+) -> Result<(), WireError> {
+    if let Some(bm) = bootstrap_method {
+        if !scan.supports_bootstrap() {
+            return Err(WireError::preflight(
+                PreflightCode::HygieneNotSupported,
+                format!(
+                    "{} does not support bootstrap method {:?}",
+                    scan.id(),
+                    bm.as_str()
+                ),
+            )
+            .with_context("scan_id", serde_json::Value::String(scan.id().to_string()))
+            .with_context(
+                "requested_method",
+                serde_json::Value::String("bootstrap".to_string()),
+            )
+            .with_context(
+                "method",
+                serde_json::Value::String(bm.as_str().to_string()),
+            ));
+        }
+    }
+    if let Some(nm) = null_method {
+        if !scan.supports_null_method(nm) {
+            return Err(WireError::preflight(
+                PreflightCode::HygieneNotSupported,
+                format!(
+                    "{} does not support null method {:?}",
+                    scan.id(),
+                    nm.as_str()
+                ),
+            )
+            .with_context("scan_id", serde_json::Value::String(scan.id().to_string()))
+            .with_context(
+                "requested_method",
+                serde_json::Value::String("null".to_string()),
+            )
+            .with_context(
+                "method",
+                serde_json::Value::String(nm.as_str().to_string()),
+            ));
+        }
     }
     Ok(())
 }
@@ -523,6 +598,147 @@ mod tests {
         assert_eq!(
             err.context.get("supplied_arity"),
             Some(&serde_json::json!(1))
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // validate_hygiene_support — Plan 05-03 Task 3 (Tests 1-3)
+    // -----------------------------------------------------------------------
+
+    /// A stub scan with explicit hygiene opt-ins for testing.
+    struct StubHygiene {
+        b: bool,
+        ns: bool, // supports CircularShift
+        np: bool, // supports PhaseScramble
+    }
+    impl crate::scan::Scan for StubHygiene {
+        fn id(&self) -> &'static str {
+            "stub.hygiene"
+        }
+        fn version(&self) -> u32 {
+            1
+        }
+        fn arity(&self) -> ScanArity {
+            ScanArity::Single
+        }
+        fn param_schema(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        fn finding_fields(&self) -> ScanFindingShape {
+            ScanFindingShape {
+                effect_extra_keys: &[],
+                raw_series_keys: &[],
+            }
+        }
+        fn run(
+            &self,
+            _ctx: &ScanCtx<'_>,
+            _req: &ScanRequest,
+            _sink: &mut dyn crate::findings::FindingSink,
+        ) -> Result<(), ScanError> {
+            Ok(())
+        }
+        fn supports_bootstrap(&self) -> bool {
+            self.b
+        }
+        fn supports_null_method(&self, m: NullMethod) -> bool {
+            match m {
+                NullMethod::CircularShift => self.ns,
+                NullMethod::PhaseScramble => self.np,
+            }
+        }
+    }
+
+    /// Plan 05-03 Task 3 Test 1 — both methods None → Ok.
+    #[test]
+    fn validate_hygiene_support_no_methods_requested_is_ok() {
+        let scan = StubHygiene {
+            b: false,
+            ns: false,
+            np: false,
+        };
+        assert!(validate_hygiene_support(&scan, None, None).is_ok());
+    }
+
+    /// Plan 05-03 Task 3 Test 2 — bootstrap requested on `supports_bootstrap=false` → Err.
+    #[test]
+    fn validate_hygiene_support_rejects_unsupported_bootstrap() {
+        let scan = StubHygiene {
+            b: false,
+            ns: true,
+            np: true,
+        };
+        let err = validate_hygiene_support(&scan, Some(BootstrapMethod::Stationary), None)
+            .expect_err("must reject");
+        assert_eq!(err.code, "hygiene_not_supported");
+        assert_eq!(
+            err.context.get("requested_method"),
+            Some(&serde_json::Value::String("bootstrap".to_string()))
+        );
+        assert_eq!(
+            err.context.get("method"),
+            Some(&serde_json::Value::String("stationary".to_string()))
+        );
+    }
+
+    /// Plan 05-03 Task 3 Test 3 — null requested on `supports_null_method=false` → Err.
+    #[test]
+    fn validate_hygiene_support_rejects_unsupported_null() {
+        let scan = StubHygiene {
+            b: true,
+            ns: false,
+            np: false,
+        };
+        let err = validate_hygiene_support(&scan, None, Some(NullMethod::CircularShift))
+            .expect_err("must reject");
+        assert_eq!(err.code, "hygiene_not_supported");
+        assert_eq!(
+            err.context.get("requested_method"),
+            Some(&serde_json::Value::String("null".to_string()))
+        );
+        assert_eq!(
+            err.context.get("method"),
+            Some(&serde_json::Value::String("circular_shift".to_string()))
+        );
+    }
+
+    /// Plan 05-03 Task 3 Test 4 — bootstrap supported but null unsupported.
+    /// The bootstrap check passes; the null check fails second.
+    #[test]
+    fn validate_hygiene_support_rejects_partial_opt_in() {
+        let scan = StubHygiene {
+            b: true,
+            ns: true,
+            np: false, // PhaseScramble unsupported
+        };
+        let err = validate_hygiene_support(
+            &scan,
+            Some(BootstrapMethod::Stationary),
+            Some(NullMethod::PhaseScramble),
+        )
+        .expect_err("must reject");
+        assert_eq!(err.code, "hygiene_not_supported");
+        assert_eq!(
+            err.context.get("method"),
+            Some(&serde_json::Value::String("phase_scramble".to_string()))
+        );
+    }
+
+    /// Plan 05-03 Task 3 Test 5 — both supported → Ok.
+    #[test]
+    fn validate_hygiene_support_accepts_full_opt_in() {
+        let scan = StubHygiene {
+            b: true,
+            ns: true,
+            np: true,
+        };
+        assert!(
+            validate_hygiene_support(
+                &scan,
+                Some(BootstrapMethod::Block),
+                Some(NullMethod::CircularShift)
+            )
+            .is_ok()
         );
     }
 
