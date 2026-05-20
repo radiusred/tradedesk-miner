@@ -554,19 +554,34 @@ mod tests {
             expected
         );
         assert!(expected >= 1, "Phase 3 ships at least one scan");
-        // Parse each line and assert the four required properties.
+        // Parse each line and assert the four required properties on every
+        // catalogue entry. Phase 4 adds more registered scans (Plan 04-03
+        // ships the first three under stats.{returns.profile,summary.welford,
+        // vol.rolling}); the per-line shape contract is invariant across
+        // the catalogue.
+        let mut ids: Vec<String> = Vec::with_capacity(lines.len());
         for line in &lines {
             let v: serde_json::Value = serde_json::from_slice(line).expect("line parses as JSON");
-            for key in ["scan_id", "version", "params", "finding_fields"] {
+            for key in ["scan_id", "version", "params", "finding_fields", "arity"] {
                 assert!(
                     v.get(key).is_some(),
                     "catalogue line missing required key {key:?}: {v}"
                 );
             }
-            // Spot-check the Phase 3 catalogue line's scan_id.
-            assert_eq!(v["scan_id"], "stats.autocorr.ljung_box");
-            assert_eq!(v["version"], 1);
+            assert_eq!(v["version"], 1, "all v1 scans in the Phase 3+ catalogue");
+            ids.push(
+                v["scan_id"]
+                    .as_str()
+                    .expect("scan_id is a string")
+                    .to_string(),
+            );
         }
+        // Spot-check the Phase 3 LjungBox entry is present (it is the only
+        // scan whose `scan_id` survives every Phase 4 wave).
+        assert!(
+            ids.iter().any(|s| s == "stats.autocorr.ljung_box"),
+            "catalogue must include stats.autocorr.ljung_box; got {ids:?}"
+        );
     }
 
     /// Test-only seam — Blocker 1 / Pitfall 8 ingress sanity check.

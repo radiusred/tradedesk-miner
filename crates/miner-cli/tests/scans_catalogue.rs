@@ -52,55 +52,62 @@ fn scans_emits_one_line_per_registered_scan() {
         .filter(|l| !l.is_empty())
         .map(|l| serde_json::from_str(l).expect("line is valid JSON"))
         .collect();
-    assert_eq!(
-        lines.len(),
-        1,
-        "Phase 3 ships one registered scan; got {} lines",
+    // Phase 4 (Plan 04-03) expands the catalogue beyond LjungBox; we assert
+    // the catalogue is non-empty and the LjungBox entry is present rather
+    // than pinning a Phase 3 count of 1.
+    assert!(
+        !lines.is_empty(),
+        "catalogue must have at least one entry; got {} lines",
         lines.len(),
     );
 
-    let line = &lines[0];
-    // Required keys per D3-20 + Plan 04-02 / D4-02 (`arity`).
-    for key in ["scan_id", "version", "arity", "params", "finding_fields"] {
-        assert!(
-            line.get(key).is_some(),
-            "catalogue line missing required key {key:?}: {line}",
-        );
-    }
-    assert_eq!(line["scan_id"], "stats.autocorr.ljung_box");
-    assert_eq!(line["version"], 1);
-    // Plan 04-02 / D4-02: LjungBoxScan is single-leg.
-    assert_eq!(line["arity"], "single");
-    // finding_fields.effect_extra_keys is a non-empty array.
-    let extra_keys = line["finding_fields"]["effect_extra_keys"]
-        .as_array()
-        .expect("effect_extra_keys is array");
-    assert!(!extra_keys.is_empty(), "Phase 3 scan declares extra keys");
-    // The four extra keys from D3-04.
-    let mut got: Vec<&str> = extra_keys.iter().map(|v| v.as_str().unwrap()).collect();
-    got.sort_unstable();
-    assert_eq!(got, vec!["acf", "lags", "p_values", "q_stats"]);
-    // The two raw.series keys from D3-04.
-    let raw_keys = line["finding_fields"]["raw_series_keys"]
-        .as_array()
-        .expect("raw_series_keys is array");
-    let mut got_raw: Vec<&str> = raw_keys.iter().map(|v| v.as_str().unwrap()).collect();
-    got_raw.sort_unstable();
-    assert_eq!(got_raw, vec!["returns", "timestamps_ms"]);
-
-    // Positive: validates against schemas/scans-catalogue-v1.schema.json.
     let catalogue_validator = load_validator("scans-catalogue-v1.schema.json");
-    let errors_catalogue: Vec<_> = catalogue_validator.iter_errors(line).collect();
-    assert!(
-        errors_catalogue.is_empty(),
-        "catalogue line failed scans-catalogue-v1 schema: {errors_catalogue:?}\nline: {line}",
-    );
-
-    // Negative: must NOT validate as a Finding (the catalogue lines are
-    // structurally distinct from envelopes per Pitfall 7 / Open Question 8).
     let findings_validator = load_validator("findings-v1.schema.json");
-    assert!(
-        !findings_validator.is_valid(line),
-        "catalogue line MUST NOT pass findings-v1.schema.json (it has no `kind` field)",
-    );
+
+    let mut found_ljung_box = false;
+    for line in &lines {
+        // Required keys per D3-20 + Plan 04-02 / D4-02 (`arity`).
+        for key in ["scan_id", "version", "arity", "params", "finding_fields"] {
+            assert!(
+                line.get(key).is_some(),
+                "catalogue line missing required key {key:?}: {line}",
+            );
+        }
+        assert_eq!(line["version"], 1, "all v1 scans");
+        // Plan 04-02 / D4-02: every Phase 4 wave-3 scan is single-leg.
+        assert_eq!(line["arity"], "single");
+
+        // Positive: validates against schemas/scans-catalogue-v1.schema.json.
+        let errors_catalogue: Vec<_> = catalogue_validator.iter_errors(line).collect();
+        assert!(
+            errors_catalogue.is_empty(),
+            "catalogue line failed scans-catalogue-v1 schema: {errors_catalogue:?}\nline: {line}",
+        );
+
+        // Negative: must NOT validate as a Finding (the catalogue lines are
+        // structurally distinct from envelopes per Pitfall 7 / Open Question 8).
+        assert!(
+            !findings_validator.is_valid(line),
+            "catalogue line MUST NOT pass findings-v1.schema.json (it has no `kind` field)",
+        );
+
+        if line["scan_id"] == "stats.autocorr.ljung_box" {
+            found_ljung_box = true;
+            // LjungBox-specific shape pin (Phase 3 D3-04 carryover).
+            let extra_keys = line["finding_fields"]["effect_extra_keys"]
+                .as_array()
+                .expect("effect_extra_keys is array");
+            assert!(!extra_keys.is_empty(), "LjungBox declares extra keys");
+            let mut got: Vec<&str> = extra_keys.iter().map(|v| v.as_str().unwrap()).collect();
+            got.sort_unstable();
+            assert_eq!(got, vec!["acf", "lags", "p_values", "q_stats"]);
+            let raw_keys = line["finding_fields"]["raw_series_keys"]
+                .as_array()
+                .expect("raw_series_keys is array");
+            let mut got_raw: Vec<&str> = raw_keys.iter().map(|v| v.as_str().unwrap()).collect();
+            got_raw.sort_unstable();
+            assert_eq!(got_raw, vec!["returns", "timestamps_ms"]);
+        }
+    }
+    assert!(found_ljung_box, "catalogue must include LjungBox scan");
 }

@@ -17,19 +17,23 @@ use super::Registry;
 
 pub mod returns;
 pub mod summary;
+pub mod vol;
 
 pub use returns::ReturnsProfileScan;
 pub use summary::SummaryWelfordScan;
+pub use vol::VolRollingScan;
 
 /// Register every ANOM scan into the supplied [`Registry`]. Plan 04-03
-/// (this commit) registers ANOM-01 (`stats.returns.profile`) and ANOM-02
-/// (`stats.summary.welford`). Subsequent plans (04-04..04-06) append further
-/// `r.register(...)` lines here alphabetical by scan-id. Plans never modify
-/// the central `registry::bootstrap` body.
+/// (this commit) registers ANOM-01 (`stats.returns.profile`), ANOM-02
+/// (`stats.summary.welford`), and ANOM-03 (`stats.vol.rolling`). Subsequent
+/// plans (04-04..04-06) append further `r.register(...)` lines here
+/// alphabetical by scan-id. Plans never modify the central
+/// `registry::bootstrap` body.
 pub fn register_anom_scans(r: &mut Registry) {
     // Plan 04-03 — alphabetical by scan-id.
     r.register(Box::new(ReturnsProfileScan));
     r.register(Box::new(SummaryWelfordScan));
+    r.register(Box::new(VolRollingScan));
 }
 
 #[cfg(test)]
@@ -45,5 +49,6 @@ mod tests {
         register_anom_scans(&mut r);
         assert!(r.get("stats.returns.profile", 1).is_some(), "ANOM-01");
         assert!(r.get("stats.summary.welford", 1).is_some(), "ANOM-02");
+        assert!(r.get("stats.vol.rolling", 1).is_some(), "ANOM-03");
     }
 }
