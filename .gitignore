@@ -1,3 +1,6 @@
 # Cargo build artifacts
 target/
 **/*.rs.bk
+
+# Claude Code agent state (per-developer; never committed)
+.claude/
