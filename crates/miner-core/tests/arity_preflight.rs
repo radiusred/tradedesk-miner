@@ -118,9 +118,11 @@ impl Scan for StubPair {
                 p_value: None,
                 n: None,
                 ci95: None,
+                effect_size: None,
                 extra: std::collections::BTreeMap::new(),
             },
             raw: Some(raw),
+            repro: None,
         });
         sink.write_envelope(&result)?;
         Ok(())

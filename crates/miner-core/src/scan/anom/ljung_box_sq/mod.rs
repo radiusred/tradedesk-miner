@@ -183,6 +183,7 @@ impl Scan for LjungBoxSqScan {
             )]
             n: Some(n as u64),
             ci95: None,
+            effect_size: None,
             extra,
         };
 
@@ -244,6 +245,7 @@ impl Scan for LjungBoxSqScan {
             params: req.resolved_params.clone(),
             effect,
             raw: Some(raw_block),
+            repro: None,
         };
 
         // Step 6 — emit.

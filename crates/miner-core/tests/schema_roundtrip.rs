@@ -81,6 +81,7 @@ fn sample_effect_empty_extra() -> Effect {
         p_value: Some(0.012),
         n: Some(1024),
         ci95: Some([0.5, 1.5]),
+        effect_size: None,
         extra: BTreeMap::new(),
     }
 }
@@ -133,6 +134,7 @@ fn sample_result_no_raw() -> Finding {
         params: serde_json::json!({"lags": 20}),
         effect: sample_effect_empty_extra(),
         raw: None,
+        repro: None,
     })
 }
 
@@ -172,6 +174,7 @@ fn sample_result_with_raw() -> Finding {
         params: serde_json::json!({"lags": 20}),
         effect: sample_effect_empty_extra(),
         raw: Some(raw),
+        repro: None,
     })
 }
 

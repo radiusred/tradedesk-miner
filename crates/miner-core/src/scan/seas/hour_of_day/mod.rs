@@ -147,6 +147,7 @@ impl Scan for HourOfDayScan {
             )]
             n: Some(n as u64),
             ci95: None,
+            effect_size: None,
             extra,
         };
 
@@ -207,6 +208,7 @@ impl Scan for HourOfDayScan {
             params: req.resolved_params.clone(),
             effect,
             raw: Some(raw_block),
+            repro: None,
         };
 
         sink.write_envelope(&Finding::Result(result))?;

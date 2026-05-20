@@ -291,6 +291,7 @@ fn run_corr_rolling(
         )]
         n: Some(values.len() as u64),
         ci95: None,
+        effect_size: None,
         extra,
     };
 
@@ -370,6 +371,7 @@ fn run_corr_rolling(
         params: req.resolved_params.clone(),
         effect,
         raw: Some(raw_block),
+        repro: None,
     };
 
     sink.write_envelope(&Finding::Result(result))?;
