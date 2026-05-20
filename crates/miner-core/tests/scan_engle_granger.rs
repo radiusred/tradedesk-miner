@@ -188,6 +188,112 @@ fn scan_engle_granger_happy_path() {
 }
 
 // ---------------------------------------------------------------------------
+// Plan 04-12 (CR-01) — engine-facade variant of the happy-path test.
+//
+// The direct-ScanCtx test above pins the kernel (CROSS-05's OLS + ADF + OU
+// half-life pipeline against a hand-crafted cointegrated fixture). This
+// engine-facade variant pins the dispatch wiring: drive the scan through
+// `engine::run_one_with_registry` against a SyntheticCache so a future
+// regression of the Pair-arity branch trips here too.
+// ---------------------------------------------------------------------------
+
+/// CR-01 engine-facade variant of `scan_engle_granger_happy_path`.
+#[test]
+fn scan_engle_granger_happy_path_via_engine_facade() {
+    use chrono::NaiveDate;
+    use miner_core::config::{MinerConfig, OutputDest};
+    use miner_core::engine::{RunOutcome, run_one_with_registry};
+    use miner_core::scan::Registry;
+    use miner_reader_dukascopy::DukascopyReader;
+
+    use common::synthetic_cache::SyntheticCache;
+
+    let day = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
+    // Different seeds per leg so the inputs aren't degenerate; we only
+    // assert envelope shape here (the kernel's correctness is pinned by
+    // the direct-ScanCtx test above against the hand-crafted cointegrated
+    // fixture).
+    let cache = SyntheticCache::new()
+        .with_deterministic_day("EURUSD", Side::Bid, day, 0x1357_9BDF)
+        .with_deterministic_day("GBPUSD", Side::Bid, day, 0x0ACE_F123);
+    let cfg = MinerConfig {
+        cache_root: cache.cache_root().to_path_buf(),
+        bar_cache_root: cache.bar_cache_root().to_path_buf(),
+        output: OutputDest::Stdout,
+    };
+    let reader = DukascopyReader::new(cache.cache_root());
+    let mut registry = Registry::new();
+    registry.register(Box::new(EngleGrangerScan));
+
+    let start = day.and_hms_opt(0, 0, 0).unwrap().and_utc();
+    let end = start + chrono::Duration::days(1);
+    let resolved_params = serde_json::json!({"regression": "c"});
+    let param_hash = param_hash::param_hash(&resolved_params).expect("hash ok");
+    let req = miner_core::scan::ScanRequest {
+        scan_id: "cross.cointegration.engle_granger".into(),
+        version: 1,
+        instruments: vec![
+            InstrumentSpec {
+                symbol: "EURUSD".into(),
+                side: Side::Bid,
+            },
+            InstrumentSpec {
+                symbol: "GBPUSD".into(),
+                side: Side::Bid,
+            },
+        ],
+        timeframe: Timeframe::Tf15m,
+        window: ClosedRangeUtc { start, end },
+        sub_range: TimeRange {
+            start_utc: start,
+            end_utc: end,
+        },
+        gap_policy: GapPolicyKind::ContinuousOnly,
+        resolved_params,
+        param_hash,
+        dry_run: false,
+        sleep_after_first_finding_ms: None,
+    };
+
+    let mut sink = BufferSink::new();
+    let outcome = run_one_with_registry(
+        &req,
+        &cfg,
+        &reader,
+        &mut sink,
+        Arc::new(AtomicBool::new(false)),
+        &registry,
+    )
+    .expect("engine::run_one_with_registry ok");
+    assert_eq!(outcome, RunOutcome::Ok);
+
+    let findings = common::parse_findings(&sink.0);
+    for f in &findings {
+        if let Finding::ScanError(se) = f {
+            assert!(
+                !se.message.contains("expected Pair arity"),
+                "CR-01 regression: {:?}",
+                se.message
+            );
+        }
+    }
+    let result = findings
+        .iter()
+        .find_map(|f| match f {
+            Finding::Result(r) => Some(r),
+            _ => None,
+        })
+        .expect("Result envelope present");
+    assert_eq!(result.scan_id_at_version, "cross.cointegration.engle_granger@1");
+    assert_eq!(result.effect.metric, "engle_granger_hedge_ratio");
+    assert_eq!(result.data_slice.sources.len(), 2);
+    assert_eq!(result.data_slice.sources[0].symbol, "EURUSD");
+    assert_eq!(result.data_slice.sources[1].symbol, "GBPUSD");
+    assert!(result.effect.value.is_finite());
+    assert!(result.effect.p_value.is_some());
+}
+
+// ---------------------------------------------------------------------------
 // Plan 04-11 Task 1 — golden cross-check (#[ignore]d until pinned regen)
 // ---------------------------------------------------------------------------
 

@@ -43,19 +43,21 @@ mod common;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use chrono::{Duration, TimeZone, Utc};
+use chrono::{Duration, NaiveDate, TimeZone, Utc};
 
 use miner_core::aggregator::{BarFrame, Timeframe};
+use miner_core::config::{MinerConfig, OutputDest};
 use miner_core::engine::gap_policy::GapPolicyKind;
-use miner_core::engine::param_hash;
-use miner_core::findings::{Finding, RunId, TimeRange};
+use miner_core::engine::{param_hash, run_one_with_registry};
+use miner_core::findings::{RunId, TimeRange};
 use miner_core::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 use miner_core::scan::anom::SummaryWelfordScan;
 use miner_core::scan::cross::EngleGrangerScan;
 use miner_core::scan::seas::HourOfDayScan;
-use miner_core::scan::{Scan, ScanCtx, ScanRequest};
+use miner_core::scan::{Registry, Scan, ScanCtx, ScanRequest};
+use miner_reader_dukascopy::DukascopyReader;
 
-use common::BufferSink;
+use common::{BufferSink, synthetic_cache::SyntheticCache};
 
 #[allow(clippy::cast_possible_truncation)]
 fn lcg_closes(n: usize, seed: u64) -> Vec<f64> {
@@ -130,6 +132,13 @@ fn run_single_arity_twice<S: Scan>(
     ((sink1.0, masked1), (sink2.0, masked2))
 }
 
+/// Pair-arity twice-run helper that drives `Scan::run` DIRECTLY (kernel-only
+/// path, no engine). Plan 04-12 retired the byte-identical-rerun CROSS test
+/// from this helper in favour of the engine-path variant
+/// (`run_pair_arity_via_engine_twice`) so the CR-01 dispatch wiring is
+/// covered by the byte-identity invariant too. Kept available for future
+/// kernel-direct pins that intentionally bypass the engine.
+#[allow(dead_code, reason = "retained for future kernel-direct Pair-arity pins; Plan 04-12 routes the CROSS byte-identical-rerun test through the engine facade")]
 fn run_pair_arity_twice<S: Scan>(
     scan: S,
     bars_a: &BarFrame,
@@ -195,6 +204,11 @@ fn build_single_request(scan_id: &str) -> ScanRequest {
     }
 }
 
+/// Pair-arity request builder for the kernel-direct path. See
+/// `run_pair_arity_twice` — both are retained as future-use kernel-direct
+/// helpers. The engine-path equivalent is `run_pair_arity_via_engine_twice`
+/// (Plan 04-12) which builds the request inline against a SyntheticCache.
+#[allow(dead_code, reason = "paired with run_pair_arity_twice; retained for future kernel-direct pins")]
 fn build_pair_request() -> ScanRequest {
     let resolved_params = serde_json::json!({"regression": "c"});
     let param_hash = param_hash::param_hash(&resolved_params).expect("ok");
@@ -261,45 +275,134 @@ fn byte_identical_rerun_anom_summary_welford() {
     assert_eq!(kind, "result", "expected kind=result envelope; got {kind:?}");
 }
 
-/// CROSS-05 byte-identical-rerun pin (Pair-arity). The Engle-Granger
-/// kernel does sequential OLS + ADF + OU — every step is deterministic
-/// on f64 inputs.
+/// Drive a Pair-arity scan through `engine::run_one_with_registry` twice
+/// against a fresh SyntheticCache populated with the same per-leg seeds.
+/// Returns both runs' raw JSONL bytes and the masked envelope Vecs (RunStart
+/// + Result + RunEnd, parsed through `common::parse_and_mask_jsonl`).
+///
+/// Plan 04-12 refactor: previously the helper hand-built `ScanCtx { bars_pair:
+/// Some((a, b)), .. }` directly, bypassing the engine. That kernel-level pin
+/// missed CR-01 (the engine hard-coded `bars_pair: None` for every dispatch).
+/// The new helper drives the production code path — `DukascopyReader` →
+/// `BarCache::get_or_build` → `engine::dispatch_pair_arity_body` →
+/// `Scan::run` — so a future CR-01 regression trips here too.
+fn run_pair_arity_via_engine_twice(
+    scan_id: &str,
+    version: u32,
+    seed_a: u32,
+    seed_b: u32,
+    day: NaiveDate,
+    resolved_params: serde_json::Value,
+    register_scan: fn(&mut Registry),
+) -> ((Vec<u8>, Vec<serde_json::Value>), (Vec<u8>, Vec<serde_json::Value>)) {
+    let do_run = || -> (Vec<u8>, Vec<serde_json::Value>) {
+        let cache = SyntheticCache::new()
+            .with_deterministic_day("EURUSD", Side::Bid, day, seed_a)
+            .with_deterministic_day("GBPUSD", Side::Bid, day, seed_b);
+        let cfg = MinerConfig {
+            cache_root: cache.cache_root().to_path_buf(),
+            bar_cache_root: cache.bar_cache_root().to_path_buf(),
+            output: OutputDest::Stdout,
+        };
+        let reader = DukascopyReader::new(cache.cache_root());
+
+        let mut registry = Registry::new();
+        register_scan(&mut registry);
+
+        let start = day.and_hms_opt(0, 0, 0).expect("00:00:00").and_utc();
+        let end = start + Duration::days(1);
+        let param_hash = param_hash::param_hash(&resolved_params).expect("ok");
+        let req = ScanRequest {
+            scan_id: scan_id.into(),
+            version,
+            instruments: vec![
+                InstrumentSpec {
+                    symbol: "EURUSD".into(),
+                    side: Side::Bid,
+                },
+                InstrumentSpec {
+                    symbol: "GBPUSD".into(),
+                    side: Side::Bid,
+                },
+            ],
+            timeframe: Timeframe::Tf15m,
+            window: ClosedRangeUtc { start, end },
+            sub_range: TimeRange {
+                start_utc: start,
+                end_utc: end,
+            },
+            gap_policy: GapPolicyKind::ContinuousOnly,
+            resolved_params: resolved_params.clone(),
+            param_hash,
+            dry_run: false,
+            #[cfg(any(test, feature = "test-internal"))]
+            sleep_after_first_finding_ms: None,
+        };
+
+        let mut sink = BufferSink::new();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let _outcome = run_one_with_registry(&req, &cfg, &reader, &mut sink, cancel, &registry)
+            .expect("engine::run_one_with_registry ok");
+        let masked = common::parse_and_mask_jsonl(&sink.0);
+        (sink.0, masked)
+    };
+    (do_run(), do_run())
+}
+
+/// CROSS-05 byte-identical-rerun pin (Pair-arity) via the engine facade.
+///
+/// Plan 04-12 refactor: the previous version of this test constructed
+/// `ScanCtx { bars_pair: Some(..), .. }` by hand and ran `Scan::run`
+/// directly — kernel-correct but facade-broken (this is exactly what
+/// CR-01 was). The new version drives the scan through
+/// `engine::run_one_with_registry` against a `SyntheticCache` so the
+/// byte-identity invariant covers the full RunStart / Result / RunEnd
+/// envelope chain (D3-23) AND CR-01 itself: if the engine ever regresses
+/// to hard-coded single-leg dispatch, the `Finding::ScanError "expected
+/// Pair arity"` envelope it would emit cannot byte-match a different
+/// RunStart's masked output, and this test fires.
 #[test]
 fn byte_identical_rerun_cross_engle_granger() {
-    let n = 200;
-    let mut s_b: u32 = 0x1357_9BDF;
-    let mut closes_b = Vec::with_capacity(n);
-    let mut acc = 1.0_f64;
-    for _ in 0..n {
-        s_b = s_b.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        let dx = (f64::from(s_b) / f64::from(u32::MAX) - 0.5) * 0.01;
-        acc += dx;
-        closes_b.push(acc);
-    }
-    let mut s_e: u32 = 0x0ACE_F123;
-    let mut closes_a = Vec::with_capacity(n);
-    let mut e_prev = 0.0_f64;
-    for cb in &closes_b {
-        s_e = s_e.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        let noise = (f64::from(s_e) / f64::from(u32::MAX) - 0.5) * 0.005;
-        let e_t = 0.3_f64 * e_prev + noise;
-        closes_a.push(*cb + e_t);
-        e_prev = e_t;
-    }
-    let a = build_bars("EURUSD", n, &closes_a);
-    let b = build_bars("GBPUSD", n, &closes_b);
+    let day = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
+    let ((_raw1, masked1), (_raw2, masked2)) = run_pair_arity_via_engine_twice(
+        "cross.cointegration.engle_granger",
+        1,
+        0x1357_9BDF,
+        0x0ACE_F123,
+        day,
+        serde_json::json!({"regression": "c"}),
+        |r| r.register(Box::new(EngleGrangerScan)),
+    );
 
-    let req = build_pair_request();
-    let ((_raw1, masked1), (_raw2, masked2)) =
-        run_pair_arity_twice(EngleGrangerScan, &a, &b, &req);
-
-    assert_eq!(masked1.len(), 1, "exactly one envelope per run");
-    assert_eq!(masked2.len(), 1, "exactly one envelope per run");
+    // Engine emits RunStart + Result + RunEnd (3 envelopes per run after
+    // the dispatch reaches the kernel via dispatch_pair_arity_body).
+    assert_eq!(
+        masked1.len(),
+        3,
+        "expected RunStart + Result + RunEnd envelopes per engine run; got {} envelopes\nmasked: {}",
+        masked1.len(),
+        serde_json::to_string_pretty(&masked1).unwrap_or_default(),
+    );
+    assert_eq!(masked2.len(), 3);
     assert_eq!(
         masked1, masked2,
-        "CROSS byte-identical-rerun violation:\nrun 1: {}\nrun 2: {}",
+        "CROSS byte-identical-rerun (via engine facade) violation:\nrun 1: {}\nrun 2: {}",
         serde_json::to_string_pretty(&masked1).unwrap_or_default(),
         serde_json::to_string_pretty(&masked2).unwrap_or_default(),
+    );
+
+    // Plan 04-12 CR-01 sibling pin: the second envelope is a Result, NOT
+    // a ScanError. The masked envelope still carries the `kind`
+    // discriminant (assigned at serialization-time by the Finding enum's
+    // serde-tag).
+    let kind = masked1[1]
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert_eq!(
+        kind, "result",
+        "engine-path Pair-arity dispatch must produce kind=result; got {kind:?} (CR-01 regression?)\nenvelope: {}",
+        serde_json::to_string_pretty(&masked1[1]).unwrap_or_default()
     );
 }
 
