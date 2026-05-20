@@ -36,15 +36,20 @@ use crate::config::MinerConfig;
 use crate::error::MinerError;
 use crate::findings::run_id::RunId;
 use crate::findings::{
-    DataSlice, DryRunFinding, Finding, FindingSink, GapAbortedFinding, PerScanCounts, RunSummary,
-    Source, TimeRange,
+    BootstrapSpec, DataSlice, DryRunFinding, Finding, FindingSink, GapAbortedFinding, NullSpec,
+    PerScanCounts, ReproEnvelope, ResultFinding, RunSummary, Source, TimeRange,
 };
 use crate::gap::GapDetector;
 use crate::reader::{ClosedRangeUtc, Reader};
-use crate::scan::{ScanCtx, ScanError, ScanRequest};
+use crate::scan::hygiene::{bootstrap as hygiene_bootstrap, null as hygiene_null, seed as hygiene_seed};
+use crate::scan::{BootstrapMethod, NullMethod, ScanCtx, ScanError, ScanRequest};
+
+use hygiene_buffering_sink::HygieneBufferingSink;
 
 pub mod framing;
 pub mod gap_policy;
+pub(crate) mod hygiene_buffering_sink;
+pub(crate) mod hygiene_dispatch;
 pub mod param_hash;
 pub mod preflight;
 
@@ -537,15 +542,56 @@ pub fn run_one_with_registry<R: Reader>(
                     req,
                 );
 
+                // Plan 05-03 continuation: wrap the user sink in a
+                // HygieneBufferingSink only when hygiene is requested.
+                // When hygiene is inactive, the wrapper is a thin
+                // pass-through (preserves per-envelope-flush PITFALLS #4
+                // — the Plan 06 SIGINT integration test depends on
+                // Result envelopes hitting stdout BEFORE the scan body's
+                // cancel-aware sleep loop fires).
+                let hygiene_active =
+                    per_sub_req.bootstrap_method.is_some() || per_sub_req.null_method.is_some();
+                let dispatch_result = {
+                    let mut buf_sink = HygieneBufferingSink::new(sink, hygiene_active);
+                    let scan_res = scan.run(&ctx, &per_sub_req, &mut buf_sink);
+                    let (buffered, inner) = buf_sink.into_parts();
+                    (scan_res, buffered, inner)
+                };
                 // Dispatch the scan and handle the typed result.
-                match scan.run(&ctx, &per_sub_req, sink) {
+                match dispatch_result.0 {
                     Ok(()) => {
-                        summary.results_emitted += 1;
-                        summary
-                            .per_scan
-                            .entry(scan_id_at_version.clone())
-                            .or_insert_with(PerScanCounts::default)
-                            .results += 1;
+                        let inner = dispatch_result.2;
+                        let buffered = dispatch_result.1;
+                        if hygiene_active {
+                            for raw_result in buffered {
+                                let mutated = apply_hygiene_mutations(
+                                    raw_result,
+                                    &per_sub_req,
+                                    &bars.close,
+                                    &cancel,
+                                );
+                                inner.write_envelope(&Finding::Result(mutated))?;
+                                summary.results_emitted += 1;
+                                summary
+                                    .per_scan
+                                    .entry(scan_id_at_version.clone())
+                                    .or_insert_with(PerScanCounts::default)
+                                    .results += 1;
+                            }
+                        } else {
+                            // hygiene_active == false: Results already
+                            // flowed through to the inner sink during
+                            // Scan::run. We still increment the
+                            // counter — one Result per scan.run Ok per
+                            // sub-range, matching the pre-continuation
+                            // contract exactly.
+                            summary.results_emitted += 1;
+                            summary
+                                .per_scan
+                                .entry(scan_id_at_version.clone())
+                                .or_insert_with(PerScanCounts::default)
+                                .results += 1;
+                        }
                     }
                     Err(ScanError::Cancelled) => break,
                     Err(ScanError::Kernel(msg)) => {
@@ -871,14 +917,48 @@ fn dispatch_pair_arity_body<R: Reader>(
                     req,
                 );
 
-                match scan.run(&ctx, &per_sub_req, sink) {
+                // Plan 05-03 continuation: same buffering-sink wrapping
+                // for the Pair-arity dispatch. Pair-arity hygiene
+                // dispatch (joint per-leg resampling) is DEFERRED to
+                // Phase 7 — `apply_hygiene_mutations` returns the
+                // envelope unchanged for Pair-arity scan ids (the
+                // hygiene_dispatch table returns None for them).
+                let hygiene_active =
+                    per_sub_req.bootstrap_method.is_some() || per_sub_req.null_method.is_some();
+                let dispatch_result = {
+                    let mut buf_sink = HygieneBufferingSink::new(sink, hygiene_active);
+                    let scan_res = scan.run(&ctx, &per_sub_req, &mut buf_sink);
+                    let (buffered, inner) = buf_sink.into_parts();
+                    (scan_res, buffered, inner)
+                };
+                match dispatch_result.0 {
                     Ok(()) => {
-                        summary.results_emitted += 1;
-                        summary
-                            .per_scan
-                            .entry(scan_id_at_version.to_string())
-                            .or_default()
-                            .results += 1;
+                        let inner = dispatch_result.2;
+                        let buffered = dispatch_result.1;
+                        if hygiene_active {
+                            for raw_result in buffered {
+                                let mutated = apply_hygiene_mutations(
+                                    raw_result,
+                                    &per_sub_req,
+                                    &bars_a.close,
+                                    &cancel,
+                                );
+                                inner.write_envelope(&Finding::Result(mutated))?;
+                                summary.results_emitted += 1;
+                                summary
+                                    .per_scan
+                                    .entry(scan_id_at_version.to_string())
+                                    .or_default()
+                                    .results += 1;
+                            }
+                        } else {
+                            summary.results_emitted += 1;
+                            summary
+                                .per_scan
+                                .entry(scan_id_at_version.to_string())
+                                .or_default()
+                                .results += 1;
+                        }
                     }
                     Err(ScanError::Cancelled) => break,
                     Err(ScanError::Kernel(msg)) => {
@@ -948,6 +1028,202 @@ fn dispatch_pair_arity_body<R: Reader>(
     } else {
         Ok(RunOutcome::Ok)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Hygiene-pass helpers (Plan 05-03 continuation / HYG-03 + HYG-04 + HYG-05).
+//
+// Cap per T-05-03-V5: bootstrap_n / null_n clamp ceiling.
+// ---------------------------------------------------------------------------
+
+/// Cap per T-05-03-V5: `bootstrap_n` / `null_n` clamp ceiling.
+pub(crate) const HYGIENE_RESAMPLE_CEILING: u32 = 100_000;
+/// Default resample count when the caller passes `Some(method)` with
+/// `None` (or 0) for the count.
+pub(crate) const HYGIENE_RESAMPLE_DEFAULT: u32 = 1000;
+
+/// Clamp a user-supplied resample count to `HYGIENE_RESAMPLE_CEILING`.
+/// `None` and `Some(0)` both fall back to `HYGIENE_RESAMPLE_DEFAULT`.
+#[inline]
+fn clamp_resample_n(n: Option<u32>) -> u32 {
+    let raw = n.unwrap_or(HYGIENE_RESAMPLE_DEFAULT);
+    let raw = if raw == 0 { HYGIENE_RESAMPLE_DEFAULT } else { raw };
+    raw.min(HYGIENE_RESAMPLE_CEILING)
+}
+
+/// Apply post-`Scan::run` hygiene kernels (bootstrap CI + null p-value
+/// replacement) to a buffered `ResultFinding`, populating
+/// `effect.ci95`, possibly replacing `effect.p_value`, and attaching
+/// `repro` per HYG-05.
+///
+/// Returns the mutated `ResultFinding`. When neither bootstrap nor null
+/// was requested OR the scan is not wired into the dispatch table, the
+/// envelope is returned unchanged (the engine treats this as "no
+/// hygiene work to do" for that scan — Plan 05-03 continuation SUMMARY
+/// documents the unwired-scan gap).
+///
+/// `close` is the borrowed close-price column from the scan's leg-A bars
+/// (Single-arity uses leg A only; Pair-arity passes leg A by the same
+/// contract — the dispatch closure ignores it for the Pair-arity case
+/// until Phase 7 lands joint resampling).
+#[allow(
+    clippy::too_many_lines,
+    reason = "linear post-Scan::run hygiene walk: clamp + derive seed + bootstrap-arm + cancel-poll + null-arm + repro-attach. Splitting the linear sequence into 5+ helpers obscures the cancel-cadence interleave that RESEARCH Pitfall 7 pins."
+)]
+fn apply_hygiene_mutations(
+    mut result: ResultFinding,
+    req: &ScanRequest,
+    close: &[f64],
+    cancel: &Arc<AtomicBool>,
+) -> ResultFinding {
+    // Early exit: no hygiene requested.
+    if req.bootstrap_method.is_none() && req.null_method.is_none() {
+        return result;
+    }
+    // RESEARCH Pitfall 7 — outer-engine cadence: poll cancel BEFORE the
+    // hygiene step. The kernels themselves run uninterruptibly (small n).
+    if cancel.load(Ordering::Relaxed) {
+        return result;
+    }
+
+    let scan_id_at_version = result.scan_id_at_version.clone();
+    let Some(values) = hygiene_dispatch::input_series_for(&scan_id_at_version, close) else {
+        // Scan not wired into the dispatch table — leave the envelope
+        // untouched. The preflight (`validate_hygiene_support`) only
+        // gated `supports_*`, so the engine quietly no-ops on
+        // unwired-but-opted-in scans (Plan 05-03 continuation
+        // SUMMARY documents this gap).
+        return result;
+    };
+    if values.len() < 2 {
+        return result;
+    }
+
+    // Derive (or accept) the job seed.
+    let master_seed = req.master_seed.unwrap_or(0);
+    let job_seed = req.job_seed.unwrap_or_else(|| {
+        hygiene_seed::derive_job_seed(
+            master_seed,
+            &scan_id_at_version,
+            &req.instruments,
+            req.timeframe,
+            &req.window,
+            req.param_hash.as_str(),
+        )
+    });
+
+    let stat = hygiene_dispatch::stat_closure_for(&scan_id_at_version, req);
+
+    // Bootstrap CI population.
+    let bootstrap_spec = if let Some(method) = req.bootstrap_method {
+        let n = clamp_resample_n(req.bootstrap_n);
+        if let Some(ref stat_fn) = stat {
+            let ci = match method {
+                BootstrapMethod::Stationary => {
+                    let block_len_raw = hygiene_bootstrap::block_length_pwppw(&values);
+                    let block_len = if block_len_raw.is_finite() && block_len_raw > 0.0 {
+                        block_len_raw.max(3.0)
+                    } else {
+                        3.0
+                    };
+                    hygiene_bootstrap::stationary_bootstrap_ci(
+                        &values, stat_fn, n, block_len, job_seed, 0.95,
+                    )
+                }
+                BootstrapMethod::Block => {
+                    let block_len_raw = hygiene_bootstrap::block_length_pwppw(&values);
+                    let block_len_usize = if block_len_raw.is_finite() && block_len_raw > 0.0 {
+                        #[allow(
+                            clippy::cast_possible_truncation,
+                            clippy::cast_sign_loss,
+                            reason = "block_length_pwppw output is bounded by the values length"
+                        )]
+                        let v = block_len_raw.ceil() as usize;
+                        v.max(3)
+                    } else {
+                        3
+                    };
+                    hygiene_bootstrap::block_bootstrap_ci(
+                        &values,
+                        stat_fn,
+                        n,
+                        block_len_usize,
+                        job_seed,
+                        0.95,
+                    )
+                }
+            };
+            if ci[0].is_finite() && ci[1].is_finite() {
+                result.effect.ci95 = Some(ci);
+            }
+        }
+        Some(BootstrapSpec {
+            method: method.as_str().to_string(),
+            n,
+        })
+    } else {
+        None
+    };
+
+    // Cancel poll between bootstrap and null (cadence inside the
+    // hygiene step, per RESEARCH Pitfall 7).
+    if cancel.load(Ordering::Relaxed) {
+        // Still attach repro for whatever ran.
+        result.repro = Some(ReproEnvelope {
+            master_seed,
+            job_seed,
+            bootstrap: bootstrap_spec,
+            null: None,
+        });
+        return result;
+    }
+
+    // Null p-value replacement.
+    let null_spec = if let Some(method) = req.null_method {
+        let n = clamp_resample_n(req.null_n);
+        if let Some(ref stat_fn) = stat {
+            // Use the observed Q-stat (Effect.value) as the reference
+            // statistic so the empirical p computation matches the
+            // analytic distribution's tail-comparison semantics.
+            let observed_stat = result.effect.value;
+            let p = match method {
+                NullMethod::CircularShift => {
+                    hygiene_null::circular_shift_null_p(&values, observed_stat, stat_fn, n, job_seed)
+                }
+                NullMethod::PhaseScramble => {
+                    // IAAFT phase-scramble defers to Phase 7 per Plan
+                    // 05-02 SUMMARY; preflight (validate_hygiene_support)
+                    // rejects PhaseScramble on every scan whose
+                    // `supports_null_method(PhaseScramble)` is false, but
+                    // belt-and-braces: the kernel is unavailable, so
+                    // skip the mutation and let the scan keep its
+                    // analytic p-value. The repro envelope still echoes
+                    // the requested method so the consumer sees what
+                    // the engine attempted.
+                    f64::NAN
+                }
+            };
+            if p.is_finite() && (0.0..=1.0).contains(&p) {
+                result.effect.p_value = Some(p);
+            }
+        }
+        Some(NullSpec {
+            method: method.as_str().to_string(),
+            n,
+        })
+    } else {
+        None
+    };
+
+    if bootstrap_spec.is_some() || null_spec.is_some() {
+        result.repro = Some(ReproEnvelope {
+            master_seed,
+            job_seed,
+            bootstrap: bootstrap_spec,
+            null: null_spec,
+        });
+    }
+    result
 }
 
 /// Build a [`ScanCtx`] with the cfg-gated `sleep_after_first_finding_ms`
