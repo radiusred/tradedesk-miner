@@ -147,6 +147,10 @@ pub(super) fn lead_lag_ccf(a: &[f64], b: &[f64], max_lag: usize) -> LeadLagResul
     // a leads. For the test case `b[t] = a[t-2]` (a leads b by 2) the CCF
     // peaks at k=+2 because `b_{t+2} = a_t`. Negative `k` flips the roles.
     for &k in &lags {
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "k is bounded by max_lag which is CLI-validated to <= n/4; fits in usize on every supported target"
+        )]
         let abs_k = k.unsigned_abs() as usize;
         #[allow(clippy::cast_precision_loss, reason = "n_eff bounded by n; << 2^52")]
         let n_eff_f = (n - abs_k) as f64;

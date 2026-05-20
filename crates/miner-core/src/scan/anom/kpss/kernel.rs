@@ -65,6 +65,10 @@ pub(super) struct KpssResult {
 /// Top-level KPSS entry. Behaves like
 /// `statsmodels.tsa.stattools.kpss(y, regression=..., nlags=...)`.
 #[inline]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "n is the bar-count sample size; an OHLCV time series with n > 2^53 ≈ 9e15 bars is physically impossible"
+)]
 pub(super) fn kpss_statistic(
     y: &[f64],
     regression: KpssRegression,

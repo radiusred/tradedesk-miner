@@ -110,6 +110,10 @@ impl Scan for AnovaKruskalScan {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "ANOVA + Kruskal-Wallis bundled Scan::run: bucket-key dispatch → group materialisation → F-stat → KW-stat → effect.extra construction is a single envelope-emission body; splitting into helpers would not improve clarity"
+    )]
     fn run(
         &self,
         ctx: &ScanCtx<'_>,

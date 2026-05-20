@@ -81,6 +81,10 @@ pub(super) struct ArchLmResult {
     clippy::similar_names,
     reason = "xt / xtx / xty / xtx_inv are canonical OLS normal-equations notation (X'X, X'y, (X'X)^-1)"
 )]
+#[allow(
+    clippy::too_many_lines,
+    reason = "closed-form Engle 1982 ARCH-LM derivation: input guards → mean-residual squaring → AR(L) regression → LM stat → F-stat in one body matches the cited derivation; splitting obscures the formula"
+)]
 pub(super) fn arch_lm_test(returns: &[f64], lag: usize) -> Result<ArchLmResult, String> {
     // Note: callers (the `ArchLmScan::run` body in `mod.rs`) are expected to
     // validate `lag >= 1` and `lag <= n/3` before calling here per T-04-06-01.
