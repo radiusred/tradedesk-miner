@@ -25,7 +25,7 @@ use chrono::{Datelike, Timelike, Utc};
 
 use crate::calendar::Calendar;
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
@@ -177,6 +177,22 @@ impl Scan for AnovaKruskalScan {
         );
         extra.insert("total_n".into(), f64_slice_to_raw_array(&total_n_arr));
 
+        // Plan 05-03 / D5-03: omega_squared via the closed-form formula
+        // omega² = (k-1)*(F - 1) / ((k-1)*(F - 1) + N). Degenerate
+        // within-groups (F is NaN) or k < 2 → 0.0 (no effect; wire-safe).
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "anova.k and anova.total_n are bar-count-bounded; fit f64 mantissa"
+        )]
+        let omega_squared = if anova.f_stat.is_finite() && anova.k >= 2 {
+            let k_minus_1 = (anova.k - 1) as f64;
+            let n_f = anova.total_n as f64;
+            let numer = k_minus_1 * (anova.f_stat - 1.0);
+            let denom = numer + n_f;
+            if denom > 0.0 { numer / denom } else { 0.0 }
+        } else {
+            0.0
+        };
         let effect = Effect {
             metric: EFFECT_METRIC.to_string(),
             value: anova.f_stat,
@@ -187,7 +203,10 @@ impl Scan for AnovaKruskalScan {
             )]
             n: Some(anova.total_n as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize {
+                kind: "omega_squared".to_string(),
+                value: omega_squared,
+            }),
             extra,
         };
 

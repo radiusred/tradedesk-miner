@@ -42,7 +42,7 @@ use chrono::Utc;
 use serde_json::Value as JsonValue;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
@@ -108,13 +108,13 @@ impl Scan for JarqueBeraScan {
         }
     }
 
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
     #[allow(
         clippy::too_many_lines,
         reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
     )]
-    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
-    fn supports_bootstrap(&self) -> bool { true }
-
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -199,6 +199,14 @@ impl Scan for JarqueBeraScan {
         extra.insert("p_value".into(), f64_slice_to_raw_array(&[result.p_value]));
         extra.insert("skew".into(), f64_slice_to_raw_array(&[result.skew]));
 
+        // Plan 05-03 / D5-03: jb_per_n = JB statistic / n (per-sample
+        // normalisation; the raw JB grows linearly with n under the alt).
+        // n == 0 → 0.0 (wire-safe; serde_json maps NaN to null).
+        let jb_per_n = if n > 0 {
+            result.statistic / f64::from(u32::try_from(n).unwrap_or(1))
+        } else {
+            0.0
+        };
         let effect = Effect {
             metric: EFFECT_METRIC.to_string(),
             value: result.statistic,
@@ -209,7 +217,10 @@ impl Scan for JarqueBeraScan {
             )]
             n: Some(n as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize {
+                kind: "jb_per_n".to_string(),
+                value: jb_per_n,
+            }),
             extra,
         };
 

@@ -22,7 +22,7 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
@@ -118,11 +118,15 @@ impl Scan for PearsonRollingScan {
     /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
     fn supports_bootstrap(&self) -> bool { true }
 
-    /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to CircularShift only.
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to `CircularShift` only.
     fn supports_null_method(&self, m: crate::scan::NullMethod) -> bool {
         matches!(m, crate::scan::NullMethod::CircularShift)
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
+    )]
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -159,11 +163,15 @@ impl Scan for SpearmanRollingScan {
     /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
     fn supports_bootstrap(&self) -> bool { true }
 
-    /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to CircularShift only.
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to `CircularShift` only.
     fn supports_null_method(&self, m: crate::scan::NullMethod) -> bool {
         matches!(m, crate::scan::NullMethod::CircularShift)
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
+    )]
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -297,6 +305,11 @@ fn run_corr_rolling(
     // 13. effect.value = last-window correlation (RESEARCH §1.3 canonical).
     let last_value = *values.last().expect("values non-empty by construction");
 
+    // Plan 05-03 / D5-03: r_last_window (Pearson) / rho_last_window (Spearman).
+    let effect_size_kind = match kind {
+        CorrKind::Pearson => "r_last_window",
+        CorrKind::Spearman => "rho_last_window",
+    };
     let effect = Effect {
         metric: effect_metric.to_string(),
         value: last_value,
@@ -307,7 +320,10 @@ fn run_corr_rolling(
         )]
         n: Some(values.len() as u64),
         ci95: None,
-        effect_size: None,
+        effect_size: Some(EffectSize {
+            kind: effect_size_kind.to_string(),
+            value: last_value,
+        }),
         extra,
     };
 

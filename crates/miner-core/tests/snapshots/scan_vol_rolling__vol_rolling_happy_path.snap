@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "vol_ratio_to_baseline",
+      "value": 1.250544786683046
+    },
     "extra": {
       "values": {
         "data": "wvue2ZKx0j9PytBDgg7TP0g5O5V8ktE/tU9nvbev0D8FczeChwbRP4qhvuql0dE/z6duhvMv0D9584zv277SPwTTTEfxQs8/mC6dpqgmzz8SjQJL4wTQPyQZbSfaZdA/hcHhMh1c0T/dW0ZRHIbRP6fffgvxrdM/STr57Jyw0T/rS1SpFHTUPySI/9eRk9M/LGFm9u4N1D/0srTHBO7UP3CdSzUnsdQ/vZ9yMdvJ1T+Ydx9I/F7VP3mVAUXDxtQ/Us+usXTb0j8yEOvHDTTTP9c/Btd2y9A/6KMlbfG7yz/abdDUPwbKP8ZIycibKcU/C6ajQ9UfxT+/ZHwC6ijEP8G1bsW9F8U/YSHH1PmrxT8VNejYR4bHP076DlyNXMg//BYJwtSOzj85swV81sTOP0UTCuw0Oc8/AWxI0hWF0D9uGZj+bTHQP/qQqC1kLs4/NoDz+nVbzT+TBtlKi7XOPyzl3V1Dns0/GEzE/Y2Kzj85nP3pfLvIPyAjOnNa/88/m49DUSWT0j9uCf5UNQ7SP8i46yvwMtI/SrOyatMv0j/d4NwXK9jRP3m/mGJ0vtQ/",

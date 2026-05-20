@@ -1,7 +1,8 @@
 #![allow(
     clippy::cast_possible_wrap,
     clippy::cast_precision_loss,
-    clippy::cast_possible_truncation
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines
 )]
 
 //! Plan 04-09 Task 1 integration test — SEAS-01 hour-of-day envelope snapshot.

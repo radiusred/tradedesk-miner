@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "lm_per_lag",
+      "value": 1.1036256380095888
+    },
     "extra": {
       "f_p_value": {
         "data": "FMn6JEe71z8=",

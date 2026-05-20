@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "tau_signed",
+      "value": 0.7828076884621965
+    },
     "extra": {
       "crit_values": {
         "data": "aJHtfD811j9vEoPAyqHdP5HtfD81XuI/2c73U+Ol5z8=",

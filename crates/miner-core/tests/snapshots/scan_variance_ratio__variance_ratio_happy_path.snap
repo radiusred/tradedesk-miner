@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "vr_minus_one",
+      "value": -0.20890929800226932
+    },
     "extra": {
       "k_values": {
         "data": "AAAAAAAAAEAAAAAAAAAQQAAAAAAAACBAAAAAAAAAMEA=",

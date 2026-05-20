@@ -1,6 +1,5 @@
 ---
 source: crates/miner-core/tests/scan_ljung_box.rs
-assertion_line: 190
 expression: masked
 ---
 {
@@ -24,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "acf_lag_max_abs",
+      "value": 0.2911540340285541
+    },
     "extra": {
       "acf": {
         "data": "AAAAAAAA8D80EpCHRKLSv/DhVhE1R7i/+vgtIG1jtr+BajVVU+eEP5ltPPyHIUY/xdG8nUKZpr8WV+ylVM+TPwumpJg0BLk/p1+mvGarvb/w91bTWkeuPw==",

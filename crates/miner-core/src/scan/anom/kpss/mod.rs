@@ -43,7 +43,7 @@ use chrono::Utc;
 use serde_json::Value as JsonValue;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, EffectSize, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
@@ -99,19 +99,19 @@ impl Scan for KpssScan {
         }
     }
 
-    #[allow(
-        clippy::too_many_lines,
-        reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
-    )]
     /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
     fn supports_bootstrap(&self) -> bool { true }
 
     /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to null methods
-    /// (PhaseScramble + CircularShift) per the per-scan matrix.
+    /// (`PhaseScramble` + `CircularShift`) per the per-scan matrix.
     fn supports_null_method(&self, m: crate::scan::NullMethod) -> bool {
         matches!(m, crate::scan::NullMethod::PhaseScramble | crate::scan::NullMethod::CircularShift)
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
+    )]
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -177,7 +177,7 @@ impl Scan for KpssScan {
             )]
             n: Some(n as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize { kind: "tau_signed".to_string(), value: result.statistic }),
             extra,
         };
 

@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "jb_per_n",
+      "value": 0.02744939756389792
+    },
     "extra": {
       "excess_kurtosis": {
         "data": "/201kZ0k4L8=",

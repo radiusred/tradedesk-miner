@@ -27,7 +27,7 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
@@ -111,6 +111,10 @@ impl Scan for EventWindowScan {
     /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
     fn supports_bootstrap(&self) -> bool { true }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
+    )]
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -209,6 +213,20 @@ impl Scan for EventWindowScan {
             f64_slice_to_raw_array(&post_bars_arr),
         );
 
+        // Plan 05-03 / D5-03: post_minus_pre_mean = mean(post_means) - mean(pre_means)
+        // across processed events. event_count == 0 → 0.0 (wire-safe).
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "event_count <= MAX_EVENT_TIMESTAMPS; fits f64 mantissa"
+        )]
+        let post_minus_pre_mean = if r.event_count == 0 {
+            0.0
+        } else {
+            let denom = r.event_count as f64;
+            let pre_mean = r.pre_means.iter().copied().sum::<f64>() / denom;
+            let post_mean = r.post_means.iter().copied().sum::<f64>() / denom;
+            post_mean - pre_mean
+        };
         let effect = Effect {
             metric: EFFECT_METRIC.to_string(),
             value,
@@ -219,7 +237,10 @@ impl Scan for EventWindowScan {
             )]
             n: Some(n as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize {
+                kind: "post_minus_pre_mean".to_string(),
+                value: post_minus_pre_mean,
+            }),
             extra,
         };
 

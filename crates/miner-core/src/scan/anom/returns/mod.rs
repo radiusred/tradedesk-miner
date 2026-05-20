@@ -26,7 +26,7 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
@@ -88,6 +88,10 @@ impl Scan for ReturnsProfileScan {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
+    )]
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -154,6 +158,10 @@ impl Scan for ReturnsProfileScan {
             f64_slice_to_raw_array(&[variant_id]),
         );
 
+        // Plan 05-03 / D5-03 (planner discretion): ANOM-01 is a primitive
+        // scan but it does emit a Result envelope. Per the plan, pin
+        // `log_returns_mean` as the canonical effect_size kind for
+        // any returns-profile flavour — value mirrors the series mean.
         let effect = Effect {
             metric,
             value: mean,
@@ -164,7 +172,10 @@ impl Scan for ReturnsProfileScan {
             )]
             n: Some(n as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize {
+                kind: "log_returns_mean".to_string(),
+                value: mean,
+            }),
             extra,
         };
 

@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "max_dd_pct",
+      "value": -0.6715557933898094
+    },
     "extra": {
       "dd_distribution_p50_p95_p99": {
         "data": "ROpHHA+L2z9E6kccD4vbP0TqRxwPi9s/",

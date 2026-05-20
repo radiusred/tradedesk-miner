@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "max_abs_t_stat",
+      "value": 0.544952274919969
+    },
     "extra": {
       "bucket_labels": {
         "data": "WyJhc2lhIiwibG9uZG9uIiwibnkiLCJvdmVybGFwIl0=",

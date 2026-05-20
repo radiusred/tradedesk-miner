@@ -40,7 +40,7 @@ use chrono::Utc;
 use serde_json::Value as JsonValue;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
@@ -93,19 +93,19 @@ impl Scan for ArchLmScan {
         }
     }
 
-    #[allow(
-        clippy::too_many_lines,
-        reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
-    )]
     /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
     fn supports_bootstrap(&self) -> bool { true }
 
     /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to null methods
-    /// (PhaseScramble + CircularShift) per the per-scan matrix.
+    /// (`PhaseScramble` + `CircularShift`) per the per-scan matrix.
     fn supports_null_method(&self, m: crate::scan::NullMethod) -> bool {
         matches!(m, crate::scan::NullMethod::PhaseScramble | crate::scan::NullMethod::CircularShift)
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
+    )]
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -169,6 +169,14 @@ impl Scan for ArchLmScan {
             f64_slice_to_raw_array(&[result.lm_pvalue]),
         );
 
+        // Plan 05-03 / D5-03: lm_per_lag = LM stat / number of lags. (Per-lag
+        // unit so larger lag-windows don't inflate the effect size mechanically.)
+        // result.lag == 0 → 0.0 (wire-safe; serde_json maps NaN to null).
+        let lm_per_lag = if result.lag > 0 {
+            result.lm / f64::from(u32::try_from(result.lag).unwrap_or(1))
+        } else {
+            0.0
+        };
         let effect = Effect {
             metric: EFFECT_METRIC.to_string(),
             value: result.lm,
@@ -179,7 +187,10 @@ impl Scan for ArchLmScan {
             )]
             n: Some(n as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize {
+                kind: "lm_per_lag".to_string(),
+                value: lm_per_lag,
+            }),
             extra,
         };
 

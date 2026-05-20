@@ -517,7 +517,7 @@ pub struct ScanRequest {
     pub bootstrap_method: Option<BootstrapMethod>,
     /// **Phase 5 (Plan 05-03 / HYG-03).** Bootstrap resample count `B`. When
     /// `bootstrap_method.is_some()` but `bootstrap_n` is `None` (or zero),
-    /// the engine defaults to 1000. Capped at 100_000 per
+    /// the engine defaults to 1000. Capped at `100_000` per
     /// `T-05-03-V5` mitigation.
     #[serde(default)]
     pub bootstrap_n: Option<u32>,
@@ -532,7 +532,7 @@ pub struct ScanRequest {
     pub null_method: Option<NullMethod>,
     /// **Phase 5 (Plan 05-03 / HYG-04).** Null-draw count `N_null`. When
     /// `null_method.is_some()` but `null_n` is `None` (or zero), the engine
-    /// defaults to 1000. Capped at 100_000 per `T-05-03-V5` mitigation.
+    /// defaults to 1000. Capped at `100_000` per `T-05-03-V5` mitigation.
     #[serde(default)]
     pub null_n: Option<u32>,
     /// **Test-only Pitfall 8 hook (Blocker 3).** Forwarded into `ScanCtx` by
@@ -838,9 +838,10 @@ mod tests {
     }
 
     /// Plan 05-03 Task 1 Test 4 — `anom_supports_matrix`: every ANOM scan
-    /// returns the supports_bootstrap / supports_null_method values from the
+    /// returns the `supports_bootstrap` / `supports_null_method` values from the
     /// D5-04 per-scan matrix.
     #[test]
+    #[allow(clippy::type_complexity)]
     fn anom_supports_matrix() {
         use crate::scan::anom::{
             AdfScan, ArchLmScan, DrawdownProfileScan, JarqueBeraScan, KpssScan, LjungBoxSqScan,
@@ -888,6 +889,7 @@ mod tests {
     /// Plan 05-03 Task 1 Test 4 — `cross_supports_matrix`: every CROSS scan
     /// returns the supports values from the D5-04 per-scan matrix.
     #[test]
+    #[allow(clippy::type_complexity)]
     fn cross_supports_matrix() {
         use crate::scan::cross::{
             EngleGrangerScan, LeadLagCcfScan, OlsRollingScan, PearsonRollingScan,
@@ -924,6 +926,7 @@ mod tests {
     /// Plan 05-03 Task 1 Test 4 — `seas_supports_matrix`: every SEAS scan
     /// returns the supports values from the D5-04 per-scan matrix.
     #[test]
+    #[allow(clippy::type_complexity)]
     fn seas_supports_matrix() {
         use crate::scan::seas::{
             AnovaKruskalScan, DayOfWeekScan, EomSomScan, EventWindowScan, HourOfDayScan,
@@ -982,7 +985,7 @@ mod tests {
     /// the `scan_trait_object_safe` compile-time gate proves dyn-safety.
     ///
     /// Plan 05-03 update: the original Plan 05-01 test used `LjungBoxScan`,
-    /// but Plan 05-03 opts LjungBox into both bootstrap + null methods per
+    /// but Plan 05-03 opts `LjungBox` into both bootstrap + null methods per
     /// the D5-04 matrix. The default-false assertion still applies to
     /// scans whose per-scan matrix row is (false, false, false) — namely
     /// `OutliersZAndMadScan`, `DrawdownProfileScan`, `AnovaKruskalScan`.
