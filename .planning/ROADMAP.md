@@ -112,7 +112,7 @@ Plans:
 - [x] 04-09-PLAN.md — SEAS batch A: seas.bucket.hour_of_day (SEAS-01), seas.bucket.day_of_week (SEAS-02), seas.bucket.session (SEAS-03 FX-major defaults per RESEARCH §1.8) + shared bucketing helper
 - [x] 04-10-PLAN.md — SEAS batch B: seas.bucket.eom_som (SEAS-04 trading-day-of-month via Calendar), seas.test.anova_kruskal (SEAS-05 F + KW), seas.event.pre_post_window (SEAS-06)
 - [x] 04-11-PLAN.md — Goldens (ANOM-02 + CROSS-05 + SEAS-01) + schema regen + byte-identical-rerun test + README Quickstart + Phase 4 sign-off memo + human checkpoint
-- [ ] 04-12-PLAN.md — **GAP-CLOSURE (CR-01):** wire `dispatch_pair` into `engine::run_one_with_registry` so Pair-arity (CROSS) scans actually run end-to-end via the CLI/engine facade; tighten `tests/arity_preflight.rs` + `tests/two_leg_facade.rs` so the missing-wire defect can't recur; rerun byte-identical-rerun + shuffled-future regressions through the facade (no manual `ScanCtx { bars_pair: Some(...) }` construction). Blocks Phase 4 sign-off.
+- [x] 04-12-PLAN.md — **GAP-CLOSURE (CR-01):** wire `dispatch_pair` into `engine::run_one_with_registry` so Pair-arity (CROSS) scans actually run end-to-end via the CLI/engine facade; tighten `tests/arity_preflight.rs` + `tests/two_leg_facade.rs` so the missing-wire defect can't recur; rerun byte-identical-rerun + shuffled-future regressions through the facade (no manual `ScanCtx { bars_pair: Some(...) }` construction). Blocks Phase 4 sign-off.
 **UI hint**: No
 
 ### Phase 5: Statistical Hygiene & Sweep Runner

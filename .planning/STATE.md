@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: verifying
 stopped_at: Plan 04-05 complete — ANOM-05/06/07 hand-derived stationarity scans shipped (ANOM family 9/11)
-last_updated: "2026-05-20T15:40:51.998Z"
+last_updated: "2026-05-20T17:31:48.214Z"
 last_activity: 2026-05-20
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 31
-  completed_plans: 31
+  total_plans: 32
+  completed_plans: 32
   percent: 100
 ---
 
@@ -61,6 +61,7 @@ Next: Plan 04-06 (ARCH-LM + Jarque-Bera) to complete ANOM family at 11/11, then 
 | Phase 04 P05 | ~45min | 3 tasks | 13 files (12 created, 1 modified) |
 | Phase 04 P06 | 16min | 2 tasks | 8 files |
 | Phase 04 P11 | ~45 min | 2 tasks | 14 files |
+| Phase 04 P04-12 | ~40min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,7 @@ Recent decisions affecting current work:
 - [Phase ?]: Plan 04-11: Stub-fixture fallback for Phase 4 goldens (Python 3.14 vs pinned 3.11 scipy/statsmodels); #[ignore]d cross-check tests behind provenance gate.
 - [Phase ?]: Plan 04-11: ADF reconciliation kept local for Engle-Granger v1; canonical anom::adf re-route deferred to Phase 5 / HYG-01 alongside bootstrap CIs.
 - [Phase ?]: Plan 04-11: cargo clippy -D warnings workspace cleanup deferred to Phase 7 hardening; only 3 in-scope LN_2 lints in drawdown/kernel.rs fixed.
+- [Phase ?]: Plan 04-12: CR-01 (Pair-arity engine dispatch) closed — engine::run_one_with_registry now branches on scan.arity() and routes Pair scans through dispatch_pair_arity_body (wraps the previously-orphaned engine::gap_policy::dispatch_pair). Coverage tightened: arity_preflight + byte_identical_rerun + 4 CROSS integration tests now drive the engine path (9 separate tests trip a future regression).
 
 ### Pending Todos
 
@@ -114,7 +116,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-20T15:40:30.169Z
+Last session: 2026-05-20T17:31:37.059Z
 Stopped at: Plan 04-05 complete — ANOM-05/06/07 hand-derived stationarity scans shipped (ANOM family 9/11)
 Resume file: None
 Next action: Execute Plan 04-06 (ARCH-LM/Jarque-Bera) to complete ANOM family at 11/11, then Plan 04-11 (Phase sign-off — goldens + engle_granger adf_step reconciliation + registry test tightening).
