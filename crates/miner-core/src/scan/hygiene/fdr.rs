@@ -10,16 +10,57 @@
 //! For the canonical 5-tuple `[0.01, 0.02, 0.03, 0.04, 0.05]` the BH q-values
 //! are all exactly 0.05 (every p × n/i hits 0.05 → step-up adjustment is
 //! a no-op). This kernel reproduces that result within `1e-12`.
-//!
-//! RED placeholder: body returns `unimplemented!()` so the Task 3 RED
-//! tests panic. Task 3 GREEN fills the body.
 
-/// Benjamini-Hochberg (1995) step-up FDR adjustment — Task 3 GREEN body.
+/// Benjamini-Hochberg (1995) step-up FDR adjustment.
+///
+/// Returns adjusted q-values in INPUT order (same index as `p_values`).
+/// Internally sorts a working buffer of `(orig_index, p_value)` pairs; the
+/// input slice is NOT mutated.
+///
+/// `alpha` is the family-wise FDR target; it is NOT used directly in the
+/// q-value computation (BH q-values depend only on `p_values`). The
+/// parameter is documented for clarity — callers may compare `q < alpha`
+/// downstream to reject hypotheses. A `debug_assert!` enforces
+/// `alpha in [0, 1]` under `cfg(debug_assertions)`.
+///
+/// ## Algorithm (Benjamini & Hochberg 1995)
+///
+/// Let `p_(i)` denote the `i`-th order statistic of `p_values` (1-indexed).
+/// The BH-adjusted q-value at rank `i` is the running minimum (from the top
+/// rank `n` down to rank 1) of `min(1, p_(k) * n / k)` for `k >= i`. This
+/// enforces the step-up monotonicity that makes `q` a non-decreasing
+/// function of `p`'s rank.
 #[must_use]
-#[allow(unused_variables)]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "n is the input vector length (bounded by the engine sweep cap << 2^52); the cast to f64 is exact for any realistic n"
+)]
 pub fn bh_fdr(p_values: &[f64], alpha: f64) -> Vec<f64> {
-    // RED: Task 3 GREEN fills this body.
-    unimplemented!("Plan 05-02 Task 3 GREEN fills this body")
+    let n = p_values.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    debug_assert!(
+        (0.0..=1.0).contains(&alpha),
+        "alpha out of [0, 1]: {alpha}"
+    );
+
+    // Sort an `(original_index, p_value)` buffer ascending by p.
+    let mut indexed: Vec<(usize, f64)> = p_values.iter().copied().enumerate().collect();
+    indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let n_f = n as f64;
+    // Reverse-scan running-min for step-up monotonicity.
+    let mut q = vec![0.0_f64; n];
+    let mut running_min = 1.0_f64;
+    for k in (0..n).rev() {
+        // 1-indexed rank for the k-th smallest p.
+        let i = k + 1;
+        let raw_q = (indexed[k].1 * n_f / (i as f64)).min(1.0);
+        running_min = running_min.min(raw_q);
+        q[indexed[k].0] = running_min;
+    }
+    q
 }
 
 // ---------------------------------------------------------------------------
