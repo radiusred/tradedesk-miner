@@ -64,9 +64,9 @@ Requirements for initial release. Each maps to a roadmap phase.
 - [ ] **SEAS-01**: User can run an hour-of-day return / volatility profile (UTC) bucketed with mean, std, count, t-stat-vs-0, bootstrap CIs
 - [ ] **SEAS-02**: User can run a day-of-week effect scan with the same bucket shape
 - [ ] **SEAS-03**: User can run trading-session bucketing (Asia / London / NY / overlap) with configurable session boundaries and FX-major defaults
-- [ ] **SEAS-04**: User can run an end-of-month / start-of-month effect scan bucketed by trading-day-of-month
-- [ ] **SEAS-05**: User can run a one-way ANOVA / Kruskal-Wallis significance test across any bucketing
-- [ ] **SEAS-06**: User can pass caller-supplied event timestamps (news-window placeholder) and receive aligned pre/post return + volatility window stats
+- [x] **SEAS-04**: User can run an end-of-month / start-of-month effect scan bucketed by trading-day-of-month
+- [x] **SEAS-05**: User can run a one-way ANOVA / Kruskal-Wallis significance test across any bucketing
+- [x] **SEAS-06**: User can pass caller-supplied event timestamps (news-window placeholder) and receive aligned pre/post return + volatility window stats
 
 ### Statistical Hygiene (HYG)
 
@@ -177,9 +177,9 @@ Every v1 requirement maps to exactly one phase.
 | SEAS-01 | Phase 4 | Pending |
 | SEAS-02 | Phase 4 | Pending |
 | SEAS-03 | Phase 4 | Pending |
-| SEAS-04 | Phase 4 | Pending |
-| SEAS-05 | Phase 4 | Pending |
-| SEAS-06 | Phase 4 | Pending |
+| SEAS-04 | Phase 4 | Complete (Plan 04-10) |
+| SEAS-05 | Phase 4 | Complete (Plan 04-10) |
+| SEAS-06 | Phase 4 | Complete (Plan 04-10) |
 | HYG-01 | Phase 5 | Pending |
 | HYG-02 | Phase 5 | Pending |
 | HYG-03 | Phase 5 | Pending |
