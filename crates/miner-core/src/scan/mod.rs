@@ -47,6 +47,7 @@ use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec};
 
 pub mod anom;
 pub mod cross;
+pub mod hygiene;
 pub mod ljung_box;
 pub mod primitives;
 pub mod registry;
