@@ -9,7 +9,7 @@
 //!
 //! Scope per the continuation directive:
 //!
-//! - LjungBox (`stats.autocorr.ljung_box@1`) — single-arity, supports
+//! - `LjungBox` (`stats.autocorr.ljung_box@1`) — single-arity, supports
 //!   bootstrap + both null methods per D5-04. Used as the canonical
 //!   hygiene-touched scan for all four tests.
 //! - Welford (`stats.summary.welford@1`) — single-arity, supports bootstrap
@@ -59,9 +59,9 @@ fn make_cfg(cache: &SyntheticCache) -> MinerConfig {
     }
 }
 
-/// Construct a single-instrument LjungBox request with explicit lags=5,
+/// Construct a single-instrument `LjungBox` request with explicit lags=5,
 /// hygiene flags configurable via callback. The window is one calendar day
-/// at 2024-01-02 so the SyntheticCache fixture lines up.
+/// at 2024-01-02 so the `SyntheticCache` fixture lines up.
 fn make_ljungbox_request(
     bootstrap: Option<BootstrapMethod>,
     bootstrap_n: Option<u32>,
@@ -336,7 +336,7 @@ fn repro_envelope_populated_with_bootstrap_and_null() {
 /// Plan 05-03 continuation Test 4 — `repro_envelope_none_without_hygiene`.
 ///
 /// Without bootstrap or null requested, `repro = None` (the contract Plan
-/// 05-01 / D5-05 already pinned in the LjungBox kernel; this test gates
+/// 05-01 / D5-05 already pinned in the `LjungBox` kernel; this test gates
 /// the engine doesn't accidentally populate it).
 #[test]
 fn repro_envelope_none_without_hygiene() {
@@ -476,8 +476,8 @@ fn preflight_rejects_bootstrap_on_unsupported_scan() {
     registry.register(Box::new(OutliersZAndMadScan));
     let mut sink = BufferSink::new();
     let cancel = Arc::new(AtomicBool::new(false));
-    let res = run_one_with_registry(&req, &cfg, &reader, &mut sink, cancel, &registry);
-    match res {
+    let outcome = run_one_with_registry(&req, &cfg, &reader, &mut sink, cancel, &registry);
+    match outcome {
         Err(miner_core::error::MinerError::Preflight(w)) => {
             assert_eq!(w.code, "hygiene_not_supported");
         }
