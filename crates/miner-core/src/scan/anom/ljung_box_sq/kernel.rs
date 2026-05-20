@@ -27,7 +27,7 @@
 /// an empty `Vec`. Pure / allocation-only function — no IO.
 #[inline]
 #[must_use]
-pub(super) fn square_returns(returns: &[f64]) -> Vec<f64> {
+pub(crate) fn square_returns(returns: &[f64]) -> Vec<f64> {
     returns.iter().map(|r| r * r).collect()
 }
 

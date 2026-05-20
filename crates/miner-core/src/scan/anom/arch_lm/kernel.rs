@@ -45,7 +45,7 @@ use statrs::distribution::{ChiSquared, ContinuousCDF, FisherSnedecor};
 /// Output of [`arch_lm_test`] — LM stat + LM p-value + F-stat + F p-value +
 /// the lag at which the regression was fit.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct ArchLmResult {
+pub(crate) struct ArchLmResult {
     /// LM statistic = `(n - L) · R²` from the squared-residuals AR(L) regression.
     pub lm: f64,
     /// LM p-value = `1 - ChiSquared(L).cdf(lm)`.
@@ -82,7 +82,7 @@ pub(super) struct ArchLmResult {
     clippy::too_many_lines,
     reason = "closed-form Engle 1982 ARCH-LM derivation: input guards → mean-residual squaring → AR(L) regression → LM stat → F-stat in one body matches the cited derivation; splitting obscures the formula"
 )]
-pub(super) fn arch_lm_test(returns: &[f64], lag: usize) -> Result<ArchLmResult, String> {
+pub(crate) fn arch_lm_test(returns: &[f64], lag: usize) -> Result<ArchLmResult, String> {
     // Note: callers (the `ArchLmScan::run` body in `mod.rs`) are expected to
     // validate `lag >= 1` and `lag <= n/3` before calling here per T-04-06-01.
     // The kernel itself also surfaces lag = 0 / lag too large as `Err` so the

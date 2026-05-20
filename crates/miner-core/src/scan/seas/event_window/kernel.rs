@@ -32,7 +32,7 @@
 /// `event_count` (events whose pre/post windows fit inside the bar range);
 /// `event_count` itself is exposed for convenience.
 #[derive(Debug, Clone)]
-pub(super) struct EventWindowResult {
+pub(crate) struct EventWindowResult {
     pub pre_means: Vec<f64>,
     pub post_means: Vec<f64>,
     pub pre_stds: Vec<f64>,
@@ -58,7 +58,7 @@ pub(super) struct EventWindowResult {
     clippy::cast_precision_loss,
     reason = "n is bar count; fits f64 mantissa for realistic OHLCV slices"
 )]
-pub(super) fn event_window_stats(
+pub(crate) fn event_window_stats(
     returns: &[f64],
     timestamps_ms: &[i64],
     event_timestamps_ms: &[i64],

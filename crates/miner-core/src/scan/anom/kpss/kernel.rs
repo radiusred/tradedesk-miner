@@ -38,7 +38,7 @@
 use nalgebra::{Matrix2, Vector2};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum KpssRegression {
+pub(crate) enum KpssRegression {
     /// `c` — constant only (test stationarity around a constant mean).
     C,
     /// `ct` — constant + linear trend (test stationarity around a trend).
@@ -46,7 +46,7 @@ pub(super) enum KpssRegression {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum NlagsParam {
+pub(crate) enum NlagsParam {
     /// Auto-selected via `int(4 * (n/100)^(1/4))` (statsmodels default).
     Auto,
     /// User-supplied fixed truncation.
@@ -54,7 +54,7 @@ pub(super) enum NlagsParam {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct KpssResult {
+pub(crate) struct KpssResult {
     pub statistic: f64,
     pub p_value: f64,
     pub lag_truncation: usize,
@@ -69,7 +69,7 @@ pub(super) struct KpssResult {
     clippy::cast_precision_loss,
     reason = "n is the bar-count sample size; an OHLCV time series with n > 2^53 ≈ 9e15 bars is physically impossible"
 )]
-pub(super) fn kpss_statistic(
+pub(crate) fn kpss_statistic(
     y: &[f64],
     regression: KpssRegression,
     nlags: NlagsParam,

@@ -54,7 +54,7 @@ impl OlsWindowResults {
 /// caller (`ols_rolling::run`) detects and converts to `ScanError::Kernel`.
 #[inline]
 #[must_use]
-pub(super) fn rolling_ols(y: &[f64], x: &[f64], window: usize) -> OlsWindowResults {
+pub(crate) fn rolling_ols(y: &[f64], x: &[f64], window: usize) -> OlsWindowResults {
     debug_assert_eq!(y.len(), x.len(), "rolling_ols: y.len() must equal x.len()");
     debug_assert!(
         window >= 3,

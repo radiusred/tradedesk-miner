@@ -68,7 +68,7 @@ pub const FX_MAJOR_DEFAULTS: &[SessionDef] = &[
 /// `[start, end)` rule for `start == end == 0`.
 #[inline]
 #[must_use]
-pub(super) fn hour_in_session(hour: u32, start: u32, end: u32) -> bool {
+pub(crate) fn hour_in_session(hour: u32, start: u32, end: u32) -> bool {
     if start <= end {
         // Half-open [start, end). Equal -> empty set.
         hour >= start && hour < end

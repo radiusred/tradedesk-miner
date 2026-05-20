@@ -28,7 +28,7 @@
     clippy::cast_precision_loss,
     reason = "window is bounded above by values.len() (a bar count); fits trivially in f64's 52-bit mantissa"
 )]
-pub(super) fn rolling_std(values: &[f64], window: usize) -> Vec<f64> {
+pub(crate) fn rolling_std(values: &[f64], window: usize) -> Vec<f64> {
     debug_assert!(
         window >= 2,
         "rolling_std: window must be >= 2; got {window}"
@@ -64,7 +64,7 @@ pub(super) fn rolling_std(values: &[f64], window: usize) -> Vec<f64> {
 /// # Panics
 /// Panics via `debug_assert` when `window < 2`.
 #[inline]
-pub(super) fn vol_of_vol(rolling_vols: &[f64], window: usize) -> Vec<f64> {
+pub(crate) fn vol_of_vol(rolling_vols: &[f64], window: usize) -> Vec<f64> {
     debug_assert!(window >= 2, "vol_of_vol: window must be >= 2; got {window}");
     if rolling_vols.len() < window {
         return Vec::new();

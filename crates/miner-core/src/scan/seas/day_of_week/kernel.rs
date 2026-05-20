@@ -16,7 +16,7 @@ use chrono::{DateTime, Datelike, Utc};
 /// row.
 #[inline]
 #[must_use]
-pub(super) fn weekday_keys(ts: &[DateTime<Utc>]) -> Vec<usize> {
+pub(crate) fn weekday_keys(ts: &[DateTime<Utc>]) -> Vec<usize> {
     ts.iter()
         .map(|dt| dt.weekday().num_days_from_monday() as usize)
         .collect()
