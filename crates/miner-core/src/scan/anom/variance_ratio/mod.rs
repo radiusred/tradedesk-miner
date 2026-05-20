@@ -9,7 +9,7 @@
 //! `arch.unitroot.VarianceRatio(returns, lags=k, robust=True)` for each k in
 //! the default grid `[2, 4, 8, 16]`. Lo-MacKinlay variance ratio is NOT in
 //! statsmodels core — the `arch` Python package is the canonical reference.
-//! Original paper: Lo, A. W. & MacKinlay, A. C. (1988), "Stock Market
+//! Original paper: Lo, A. W. & `MacKinlay`, A. C. (1988), "Stock Market
 //! Prices Do Not Follow Random Walks: Evidence from a Simple Specification
 //! Test", Review of Financial Studies 1(1), 41-66.
 //!
@@ -27,7 +27,7 @@
 //!
 //! ## Determinism
 //!
-//! The k-grid loop is SEQUENTIAL (not par_iter) — same Pitfall 4 discipline
+//! The k-grid loop is SEQUENTIAL (not `par_iter`) — same Pitfall 4 discipline
 //! as the ADF AIC lag selection.
 //!
 //! ## Registration
@@ -327,7 +327,7 @@ mod tests {
     }
 
     /// Random-walk close series — close[i] = close[i-1] * exp(eps) where eps
-    /// is IID zero-mean uniform noise. log_returns of this series are
+    /// is IID zero-mean uniform noise. `log_returns` of this series are
     /// essentially the eps sequence (IID white noise), giving VR(k) ≈ 1.0
     /// under the random-walk null hypothesis.
     #[allow(clippy::cast_possible_truncation)]

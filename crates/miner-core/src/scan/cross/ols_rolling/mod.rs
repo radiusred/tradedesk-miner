@@ -536,7 +536,7 @@ mod tests {
     }
 
     /// Hand-derived: leg b = 2 * leg a (in close space) — log returns are
-    /// equal so β = 1 (NOT 0.5; we're regressing returns_a ~ returns_b).
+    /// equal so β = 1 (NOT 0.5; we're regressing `returns_a` ~ `returns_b`).
     /// This pins the convention.
     #[test]
     fn ols_rolling_known_beta_2x_close_scaling() {

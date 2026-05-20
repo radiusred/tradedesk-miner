@@ -19,7 +19,7 @@
 //! `spearman_rolling_shuffled_future_invariant`, and
 //! `ols_rolling_shuffled_future_invariant` (CROSS-02 + CROSS-03 — deferred
 //! from Plan 04-07 Wave 3 to avoid same-wave file-write conflict with Plan
-//! 04-03's vol_rolling extension).
+//! 04-03's `vol_rolling` extension).
 
 #![allow(dead_code, unused_imports, unexpected_cfgs)]
 
@@ -155,7 +155,7 @@ fn run_and_extract_q_stats(closes_slice: &[f64]) -> Vec<f64> {
 
 /// Run `VolRollingScan` against `closes_slice` and return the
 /// `effect.extra["values"]` rolling-vol vector as `Vec<f64>`. Mirrors
-/// `run_and_extract_q_stats` for the LjungBox proptest above.
+/// `run_and_extract_q_stats` for the `LjungBox` proptest above.
 fn run_and_extract_vol_values(closes_slice: &[f64], window: usize) -> Vec<f64> {
     let bars = bar_frame_from_closes(closes_slice);
     let resolved_params = serde_json::json!({"window": window});

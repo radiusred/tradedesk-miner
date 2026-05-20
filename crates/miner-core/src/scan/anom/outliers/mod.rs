@@ -558,7 +558,7 @@ mod tests {
 
     /// Strong outlier in [1, 2, 3, 4, 100] — last index outlier under z AND
     /// modified-z (the kernel test in `kernel.rs` proves modified-z; here
-    /// we verify the scan body wires both criteria into outlier_indices).
+    /// we verify the scan body wires both criteria into `outlier_indices`).
     #[test]
     fn outliers_z_score_basic() {
         let bars = bar_frame_from_closes(vec![1.0_f64, 2.0, 3.0, 4.0, 100.0]);

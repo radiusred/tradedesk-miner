@@ -479,7 +479,7 @@ mod tests {
         assert!(validate_arity(&scan, &instruments).is_ok());
     }
 
-    /// Behavior Test 2: Single + len 2 -> Err with WrongInstrumentArity +
+    /// Behavior Test 2: Single + len 2 -> Err with `WrongInstrumentArity` +
     /// `expected_arity == 1`, `supplied_arity == 2`.
     #[test]
     fn validate_arity_rejects_two_instruments_for_single() {
@@ -509,7 +509,7 @@ mod tests {
         assert!(validate_arity(&scan, &instruments).is_ok());
     }
 
-    /// Behavior Test 4: Pair + len 1 -> Err with WrongInstrumentArity.
+    /// Behavior Test 4: Pair + len 1 -> Err with `WrongInstrumentArity`.
     #[test]
     fn validate_arity_rejects_one_instrument_for_pair() {
         let scan = StubPair;

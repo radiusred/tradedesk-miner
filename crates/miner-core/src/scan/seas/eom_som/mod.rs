@@ -450,7 +450,7 @@ mod tests {
         assert_eq!(schema["additionalProperties"], false);
     }
 
-    /// Default cutoff_n=3 -> 6 buckets (2 * 3).
+    /// Default `cutoff_n=3` -> 6 buckets (2 * 3).
     #[test]
     fn eom_som_default_cutoff_3_produces_6_buckets() {
         // 6 months of daily bars (~180 days) gives every month enough trading
@@ -483,7 +483,7 @@ mod tests {
         );
     }
 
-    /// cutoff_n=5 -> 10 buckets.
+    /// `cutoff_n=5` -> 10 buckets.
     #[test]
     fn eom_som_cutoff_5_produces_10_buckets() {
         let bars = lcg_daily_bar_frame(
@@ -542,7 +542,7 @@ mod tests {
 
     /// Build a bar frame anchored at Jan 1 2024; verify that Jan 29 / 30 / 31
     /// land in EOM-3 / EOM-2 / EOM-1 and Jan 2 / 3 / 4 in SOM-1 / SOM-2 /
-    /// SOM-3 (cutoff_n=3 default). We assert via counts: build a single-
+    /// SOM-3 (`cutoff_n=3` default). We assert via counts: build a single-
     /// month bar frame (Jan 2024) and check the bucket counts.
     #[test]
     fn eom_som_bucket_assignment_jan_2024() {

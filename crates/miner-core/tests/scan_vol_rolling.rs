@@ -3,7 +3,7 @@
 //!
 //! Pattern analog: `crates/miner-core/tests/scan_returns_profile.rs` (sibling
 //! ANOM-01 integration test). Pins envelope shape via `insta` snapshot;
-//! emits EXACTLY ONE Finding::Result with vector arrays in `effect.extra`
+//! emits EXACTLY ONE `Finding::Result` with vector arrays in `effect.extra`
 //! (Pattern D / Pitfall 1 — never N envelopes per window). Golden cross-check
 //! against `pandas.Series.rolling(W).std(ddof=1)` lands in Plan 04-11.
 

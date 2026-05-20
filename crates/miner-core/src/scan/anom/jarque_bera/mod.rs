@@ -513,7 +513,7 @@ mod tests {
         }
     }
 
-    /// T-04-06-02 — constant series -> std == 0 -> ScanError::Kernel.
+    /// T-04-06-02 — constant series -> std == 0 -> `ScanError::Kernel`.
     #[test]
     fn jarque_bera_constant_input_emits_scan_error() {
         let bars = bar_frame_from_closes(vec![1.5_f64; 20]);

@@ -9,7 +9,7 @@
 //! ## Reference
 //!
 //! `statsmodels.tsa.stattools.adfuller(x, maxlag=None, regression='c',
-//! autolag='AIC')` — the canonical reference. The local engle_granger
+//! autolag='AIC')` — the canonical reference. The local `engle_granger`
 //! `adf_step` (Plan 04-08) is a simpler lag-0 stub; Plan 04-11 will
 //! reconcile it against this canonical kernel.
 //!
@@ -24,23 +24,23 @@
 //! where the trend terms `β·t` and `δ·t²` are included per the `regression`
 //! parameter (`nc` = no constant; `c` = constant only; `ct` = constant + trend;
 //! `ctt` = constant + trend + trend²). The ADF test statistic is `τ = ρ̂ / SE(ρ̂)`.
-//! Under H_0 (unit root, ρ=0), τ follows the non-standard MacKinnon
+//! Under `H_0` (unit root, ρ=0), τ follows the non-standard `MacKinnon`
 //! distribution; rejection occurs when τ is sufficiently NEGATIVE.
 //!
 //! ## AIC lag selection (Pitfall 4 — sequential summation)
 //!
 //! For `autolag='AIC'`, the kernel sweeps `k ∈ 0..=max_lag` SEQUENTIALLY
-//! (NOT rayon par_iter) — determinism wins. Each candidate fits the
+//! (NOT rayon `par_iter`) — determinism wins. Each candidate fits the
 //! regression and records the AIC; the minimiser is selected.
 //!
-//! ## MacKinnon p-value approximation
+//! ## `MacKinnon` p-value approximation
 //!
-//! This kernel uses the standard MacKinnon (1996) asymptotic critical
+//! This kernel uses the standard `MacKinnon` (1996) asymptotic critical
 //! values for the τ statistic, and linearly interpolates a p-value between
 //! the tabulated 1% / 5% / 10% points. For τ outside the table, an
 //! asymptotic-normal tail is used via `statrs::distribution::Normal`.
 //! **DOCUMENTED SIMPLIFICATION:** this is sufficient for accept/reject
-//! semantics at standard α; the full MacKinnon response surface (β₀ + β₁/N +
+//! semantics at standard α; the full `MacKinnon` response surface (β₀ + β₁/N +
 //! β₂/N² + ...) lands as Plan 04-11 reconciliation if golden parity
 //! requires it. Accuracy ≈ 1e-3 on the asymptotic tail; sufficient for
 //! agent decision-making.
@@ -85,7 +85,7 @@ pub(super) struct AdfResult {
     pub p_value: f64,
     /// AIC-selected lag (or the user-fixed lag when `autolag = None`).
     pub lag_selected: usize,
-    /// MacKinnon asymptotic critical values [1%, 5%, 10%] for the chosen
+    /// `MacKinnon` asymptotic critical values [1%, 5%, 10%] for the chosen
     /// regression variant.
     pub crit_values: [f64; 3],
     /// Number of observations used in the final regression (n - 1 - lag).
@@ -101,7 +101,7 @@ pub(super) struct AdfResult {
 /// `autolag = None`).
 ///
 /// Returns `Err(String)` for invalid configurations (empty / too-short series,
-/// max_lag too large).
+/// `max_lag` too large).
 #[inline]
 pub(super) fn adfuller(
     y: &[f64],
@@ -245,11 +245,11 @@ pub(super) struct AdfFit {
 /// Σ_{i=1..k} γ_i·Δy_{t-i} + ε_t` at a fixed lag `k`.
 ///
 /// Uses nalgebra's heap-allocated `DMatrix` because the design matrix
-/// dimensions are runtime-dependent on the lag selection (k ∈ 0..=max_lag).
+/// dimensions are runtime-dependent on the lag selection (k ∈ `0..=max_lag`).
 /// The plan refers to "small fixed OLS" via `SMatrix` — but `SMatrix`
 /// requires compile-time-fixed COLS, which is incompatible with a
 /// runtime-variable lag count. We use `DMatrix` instead and document the
-/// deviation. The heap allocation is bounded (at most max_lag+4 columns ≈
+/// deviation. The heap allocation is bounded (at most `max_lag+4` columns ≈
 /// dozens) and runs once per regression — not a hot-loop concern.
 #[inline]
 #[allow(
@@ -379,10 +379,10 @@ pub(super) fn fit_adf_regression(
     })
 }
 
-/// MacKinnon (1996) asymptotic critical values [1%, 5%, 10%] for the ADF τ
+/// `MacKinnon` (1996) asymptotic critical values [1%, 5%, 10%] for the ADF τ
 /// statistic, per regression variant.
 ///
-/// Reference: MacKinnon, J.G. (1996), "Numerical Distribution Functions for
+/// Reference: `MacKinnon`, J.G. (1996), "Numerical Distribution Functions for
 /// Unit Root and Cointegration Tests", Journal of Applied Econometrics 11,
 /// 601-618 — Table 1 asymptotic values (n → ∞).
 #[inline]
@@ -398,9 +398,9 @@ pub(super) fn mackinnon_crit_values(regression: RegressionVariant) -> [f64; 3] {
 /// MacKinnon-approximated p-value for an ADF τ statistic.
 ///
 /// Linear interpolation between the tabulated 1%/5%/10% critical values for
-/// the τ in [crit_1pct, crit_10pct]; outside the table the asymptotic-normal
+/// the τ in [`crit_1pct`, `crit_10pct`]; outside the table the asymptotic-normal
 /// tail is used (via `statrs::distribution::Normal`). Documented
-/// simplification — Plan 04-11 may reconcile against the full MacKinnon
+/// simplification — Plan 04-11 may reconcile against the full `MacKinnon`
 /// response surface if golden parity demands.
 #[inline]
 pub(super) fn mackinnon_p_value(tau: f64, regression: RegressionVariant) -> f64 {
@@ -514,7 +514,7 @@ mod tests {
 
     /// For a deterministic mean-reverting AR(1) `y_t = 0.5 * y_{t-1} + ε` with
     /// known ε, the ADF regression `Δy_t = α + ρ·y_{t-1} + ε` should yield
-    /// ρ̂ ≈ -0.5 (since Δy_t = (ρ-0)·y_{t-1} = (φ-1)·y_{t-1} where φ=0.5,
+    /// ρ̂ ≈ -0.5 (since `Δy_t` = (ρ-0)·y_{t-1} = (φ-1)·y_{t-1} where φ=0.5,
     /// so ρ = φ - 1 = -0.5). This is a SANITY check; the lag-0 regression
     /// is the simplest ADF case.
     #[test]

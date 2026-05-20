@@ -27,7 +27,7 @@ use miner_core::scan::{Scan, ScanCtx, ScanRequest};
 use common::BufferSink;
 
 /// Random-walk close series: close[i] = close[i-1] * exp(eps).
-/// log_returns are essentially the eps sequence (IID), so VR(k) ≈ 1.0
+/// `log_returns` are essentially the eps sequence (IID), so VR(k) ≈ 1.0
 /// under the random-walk null hypothesis.
 #[allow(clippy::cast_possible_truncation)]
 fn random_walk_closes(n: usize, seed: u64) -> Vec<f64> {

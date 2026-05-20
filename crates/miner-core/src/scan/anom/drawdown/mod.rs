@@ -438,7 +438,7 @@ mod tests {
         assert_eq!(schema["additionalProperties"], false);
     }
 
-    /// Monotonic uptrend in closes: no drawdown episodes; max_drawdown==0.
+    /// Monotonic uptrend in closes: no drawdown episodes; `max_drawdown==0`.
     #[test]
     fn drawdown_known_input_monotonic_increasing() {
         let bars = bar_frame_from_closes(vec![1.0_f64, 2.0, 3.0, 4.0, 5.0]);
@@ -461,20 +461,20 @@ mod tests {
     }
 
     /// V-shape: closes [10, 5, 10]. log returns: [ln(0.5), ln(2)] =
-    /// [-0.6931..., +0.6931...]. equity = [-0.6931..., 0]. max_dd is the
-    /// initial trough at t=0 — but the kernel initializes running_peak
-    /// from equity_curve[0] so the dip at t=0 is never detected (running
+    /// [-0.6931..., +0.6931...]. equity = [-0.6931..., 0]. `max_dd` is the
+    /// initial trough at t=0 — but the kernel initializes `running_peak`
+    /// from `equity_curve`[0] so the dip at t=0 is never detected (running
     /// peak starts at the trough). To exercise the kernel's V-shape
     /// detection we use closes that go UP then DOWN then UP — i.e. a
     /// 4-bar pattern.
     ///
-    /// closes [10, 20, 10, 20]: log_returns = [ln 2, -ln 2, ln 2]
+    /// closes [10, 20, 10, 20]: `log_returns` = [ln 2, -ln 2, ln 2]
     /// = [+0.6931..., -0.6931..., +0.6931...]. Equity:
     /// [0.6931..., 0.0, 0.6931...]. Running peak: 0.6931 at t=0;
-    /// at t=1 equity=0.0 < peak -> in_drawdown, trough_value=0.0, trough_idx=1.
+    /// at t=1 equity=0.0 < peak -> `in_drawdown`, `trough_value=0.0`, `trough_idx=1`.
     /// At t=2 equity=0.6931 >= peak -> close episode: peak=0, trough=1,
-    /// duration = ts[1]-ts[0] = 900_000ms, recovery = ts[2]-ts[1] = 900_000ms.
-    /// max_dd = 0.0 - 0.6931... = -0.6931...
+    /// duration = ts[1]-ts[0] = `900_000ms`, recovery = ts[2]-ts[1] = `900_000ms`.
+    /// `max_dd` = 0.0 - 0.6931... = -0.6931...
     #[test]
     fn drawdown_known_input_v_shape() {
         let bars = bar_frame_from_closes(vec![10.0_f64, 20.0, 10.0, 20.0]);

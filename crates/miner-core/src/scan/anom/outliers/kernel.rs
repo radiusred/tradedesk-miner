@@ -231,7 +231,7 @@ mod tests {
     // modified_z_scores — Iglewicz-Hoaglin hand-derivation
     // -----------------------------------------------------------------------
 
-    /// Hand-derived: median=0, MAD=1 -> modified_z = 0.6745 * x / 1.
+    /// Hand-derived: median=0, MAD=1 -> `modified_z` = 0.6745 * x / 1.
     /// x=4 -> M = 0.6745 * 4 = 2.698 < 3.5 (NOT outlier).
     /// x=10 -> M = 0.6745 * 10 = 6.745 > 3.5 (IS outlier).
     #[test]

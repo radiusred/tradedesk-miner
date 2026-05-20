@@ -294,8 +294,8 @@ mod tests {
         );
     }
 
-    /// Lag grid is the symmetric integer sequence [-max_lag..=max_lag] in
-    /// ascending order with length 2 * max_lag + 1.
+    /// Lag grid is the symmetric integer sequence [-`max_lag..=max_lag`] in
+    /// ascending order with length 2 * `max_lag` + 1.
     #[test]
     fn lead_lag_grid_symmetric_and_ascending() {
         let a = [1.0_f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
@@ -322,8 +322,8 @@ mod tests {
     }
 
     /// Negatively-correlated series argmax via absolute value: a = -b
-    /// exactly gives lag-0 correlation = -1, |corr| = 1, argmax_lag = 0,
-    /// argmax_value = -1.
+    /// exactly gives lag-0 correlation = -1, |corr| = 1, `argmax_lag` = 0,
+    /// `argmax_value` = -1.
     #[test]
     fn lead_lag_negative_correlation_absolute_argmax() {
         let a = [1.0_f64, 2.0, 3.0, 4.0, 5.0];
@@ -334,7 +334,7 @@ mod tests {
         assert!(approx_eq(res.argmax_value, -1.0, TOL));
     }
 
-    /// Reverse-shifted: `a_t = b_{t-3}` (b leads a by 3 => argmax_lag = -3).
+    /// Reverse-shifted: `a_t = b_{t-3}` (b leads a by 3 => `argmax_lag` = -3).
     /// Uses an asymmetric chirp signal (see `lead_lag_shifted_series_argmax_matches`)
     /// so the CCF has a UNIQUE absolute maximum at the true shift.
     #[test]

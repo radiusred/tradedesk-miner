@@ -50,7 +50,7 @@ const EFFECT_METRIC: &str = "lead_lag_argmax_lag";
 
 /// Default `max_lag` — single value chosen over RESEARCH §1.9 timeframe-
 /// conditional recommendation (1m→50, 15m→20, 1h→10, 1d→7) for simplicity.
-/// The param_schema description enumerates the recommended overrides.
+/// The `param_schema` description enumerates the recommended overrides.
 const DEFAULT_MAX_LAG: usize = 20;
 
 const FINDING_SHAPE: ScanFindingShape = ScanFindingShape {
@@ -284,7 +284,7 @@ impl Scan for LeadLagCcfScan {
 /// Resolve `max_lag` param — optional integer, default 20.
 /// Constraints: `1 <= max_lag` and `max_lag < returns_n / 2` (a stricter
 /// `2 * max_lag + 1 <= returns_n` would only require `< returns_n/2 + 0.5`,
-/// but the per-lag N_eff = `returns_n - max_lag` needs >= 2 entries to be
+/// but the per-lag `N_eff` = `returns_n - max_lag` needs >= 2 entries to be
 /// statistically meaningful, so the `< returns_n/2` cap is the conservative
 /// pick).
 fn resolve_max_lag(req: &ScanRequest, returns_n: usize) -> Result<usize, ScanError> {
@@ -466,7 +466,7 @@ mod tests {
         assert_eq!(schema["additionalProperties"], false);
     }
 
-    /// Pin: the param_schema description must enumerate the timeframe-
+    /// Pin: the `param_schema` description must enumerate the timeframe-
     /// conditional override recommendations (RESEARCH §1.9) so callers
     /// see them in `miner scans` output without having to read SUMMARY.md.
     #[test]
@@ -558,7 +558,7 @@ mod tests {
         assert_eq!(r.data_slice.sources.len(), 2);
     }
 
-    /// Lag-0 element of ccf_values equals the full-sample Pearson correlation
+    /// Lag-0 element of `ccf_values` equals the full-sample Pearson correlation
     /// of the two log-return series within 1e-10.
     #[test]
     fn lead_lag_zero_lag_returns_pearson_correlation() {
@@ -596,8 +596,8 @@ mod tests {
         );
     }
 
-    /// Known-shifted-series argmax: when returns_b is returns_a shifted by k
-    /// bars (a leads b by k), argmax_lag should be k (within ±1).
+    /// Known-shifted-series argmax: when `returns_b` is `returns_a` shifted by k
+    /// bars (a leads b by k), `argmax_lag` should be k (within ±1).
     ///
     /// Uses chirp closes (non-stationary frequency) so the log-return CCF
     /// has a UNIQUE absolute maximum at the true shift. A pure sine would
@@ -653,7 +653,7 @@ mod tests {
     }
 
     /// Lags vector is the ascending symmetric integer grid
-    /// [-max_lag, ..., max_lag] of length 2*max_lag + 1.
+    /// [-`max_lag`, ..., `max_lag`] of length 2*`max_lag` + 1.
     #[test]
     fn lead_lag_lag_grid_symmetric() {
         let (a, b) = two_leg_fixture(60, 17, 29);
@@ -710,8 +710,8 @@ mod tests {
         }
     }
 
-    /// Default max_lag is 20 when the param is absent; verify the scan
-    /// emits a result with 41 ccf_values (=2*20+1) when given enough data.
+    /// Default `max_lag` is 20 when the param is absent; verify the scan
+    /// emits a result with 41 `ccf_values` (=2*20+1) when given enough data.
     #[test]
     fn lead_lag_default_max_lag_is_20() {
         // returns_n = 99; max_lag = 20; 20 < 99/2 = 49 -> accepted.

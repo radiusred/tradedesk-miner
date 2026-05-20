@@ -10,7 +10,7 @@
 //! `arch.unitroot.VarianceRatio(returns, lags=k, robust=True)` — the canonical
 //! reference (Lo-MacKinlay variance ratio is NOT in statsmodels core; the
 //! `arch` Python package is the standard implementation). The kernel is
-//! hand-derived from Lo, A. W. & MacKinlay, A. C. (1988), "Stock Market
+//! hand-derived from Lo, A. W. & `MacKinlay`, A. C. (1988), "Stock Market
 //! Prices Do Not Follow Random Walks: Evidence from a Simple Specification
 //! Test", Review of Financial Studies 1(1), 41-66.
 //!
@@ -289,9 +289,9 @@ mod tests {
 
     /// Hand-derived small-input test: for the 6-element series [1, -1, 1, -1, 1, -1]
     /// (perfect anti-correlation), VR(2) should be very small.
-    /// μ = 0; (r_t)² = 1 ∀t; sum = 6; σ̂_1² = 6/(6-1) = 1.2.
-    /// k=2 windows: r_1+r_2=0, r_2+r_3=0, r_3+r_4=0, r_4+r_5=0, r_5+r_6=0 -> sum_xk_sq = 0.
-    /// So σ̂_2² = 0 and VR(2) = 0.
+    /// μ = 0; (`r_t)²` = 1 ∀t; sum = 6; `σ̂_1²` = 6/(6-1) = 1.2.
+    /// k=2 windows: `r_1+r_2=0`, `r_2+r_3=0`, `r_3+r_4=0`, `r_4+r_5=0`, `r_5+r_6=0` -> `sum_xk_sq` = 0.
+    /// So `σ̂_2²` = 0 and VR(2) = 0.
     #[test]
     fn variance_ratio_perfect_mean_reversion_vr_zero() {
         let r = vec![1.0_f64, -1.0, 1.0, -1.0, 1.0, -1.0];
@@ -318,7 +318,7 @@ mod tests {
     }
 
     /// For a hand-built series of length 20 with known VR(2) — use [1, 1, 1, ..., 1, -19]
-    /// (one big outlier at the end). The mean μ = 0; σ̂_1² = (19*1² + 19²) / 19 = (19+361)/19
+    /// (one big outlier at the end). The mean μ = 0; `σ̂_1²` = (19*1² + 19²) / 19 = (19+361)/19
     /// = 380/19 = 20. k=2 windows: 19 pairs, one of them includes the -19. Manually
     /// trace; this is more for sanity than golden parity. Skip.
     /// Instead, test the robust-vs-asymptotic variance produces a finite z and p.

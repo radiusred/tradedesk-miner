@@ -1,6 +1,6 @@
-//! Plan 04-10 Task 2 integration test — SEAS-05 anova_kruskal envelope snapshot.
+//! Plan 04-10 Task 2 integration test — SEAS-05 `anova_kruskal` envelope snapshot.
 //!
-//! Builds a deterministic 7-day × 24h × 4 bars/h = 672-bar BarFrame at the
+//! Builds a deterministic 7-day × 24h × 4 bars/h = 672-bar `BarFrame` at the
 //! 15m timeframe, runs `AnovaKruskalScan::run` with
 //! `buckets_via=hour_of_day`, parses the resulting envelope, masks volatile
 //! fields, and pins the shape via an insta snapshot.
@@ -98,7 +98,7 @@ fn scan_seas_anova_kruskal_happy_path() {
     insta::assert_json_snapshot!("scan_seas_anova_kruskal_happy_path", masked);
 }
 
-/// Build a 15m-timeframe BarFrame of `n` bars starting at 2024-01-01 00:00
+/// Build a 15m-timeframe `BarFrame` of `n` bars starting at 2024-01-01 00:00
 /// UTC with deterministic LCG-seeded closes.
 #[allow(clippy::cast_possible_truncation)]
 fn build_synthetic_15m_bars(n: usize, seed: u64) -> BarFrame {

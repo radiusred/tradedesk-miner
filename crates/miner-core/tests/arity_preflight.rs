@@ -1,5 +1,5 @@
 //! Phase 4 integration tests — D4-02 arity preflight + Plan 04-12 (CR-01)
-//! post-preflight Finding::Result assertion.
+//! post-preflight `Finding::Result` assertion.
 //!
 //! Two tests:
 //!
@@ -9,7 +9,7 @@
 //!    `RunStart`. Stdout stays empty (D-06).
 //! 2. `correct_arity_pair_scan_passes_arity_preflight` — Plan 04-12 (CR-01
 //!    sibling regression gate) tightens this from "any non-arity outcome
-//!    is fine" to "a Finding::Result envelope MUST be produced". Without
+//!    is fine" to "a `Finding::Result` envelope MUST be produced". Without
 //!    the Plan 04-12 fix the engine would emit `Finding::ScanError` with
 //!    `"expected Pair arity (ctx.bars_pair is None)"` — this test now trips
 //!    on that regression by demanding a real Result post-preflight.
@@ -214,7 +214,7 @@ fn wrong_arity_single_leg_against_pair_scan_rejects_at_preflight() {
 ///
 /// Plan 04-12 tightens the assertion to require a `Finding::Result`
 /// envelope — proof the dispatch actually reached the kernel via
-/// `dispatch_pair_arity_body`. A SyntheticCache populates both legs so the
+/// `dispatch_pair_arity_body`. A `SyntheticCache` populates both legs so the
 /// engine can load bars and run the scan body end-to-end. The `StubPair`
 /// body additionally asserts `ctx.bars_pair.is_some()` as a negative pin.
 #[test]

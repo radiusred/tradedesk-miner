@@ -3,7 +3,7 @@
 //!
 //! Pattern analog: [`crate::scan::anom::adf::AdfScan`] — Pattern A from
 //! `04-PATTERNS.md`. Both scans share the "user supplies a lag, kernel fits
-//! a runtime-variable-column OLS regression via nalgebra DMatrix" shape.
+//! a runtime-variable-column OLS regression via nalgebra `DMatrix`" shape.
 //!
 //! ## Reference
 //!
@@ -19,12 +19,12 @@
 //!   `effect.p_value = chi-squared(df=lag) tail`.
 //! - `effect.extra = {f_p_value, f_statistic, lag, p_value}` (alphabetical
 //!   `BTreeMap` order).
-//! - `raw.series = {returns, timestamps_ms}` (log_returns input; timestamps
+//! - `raw.series = {returns, timestamps_ms}` (`log_returns` input; timestamps
 //!   from bars[1..]).
 //!
 //! ## Input series
 //!
-//! ARCH-LM operates on log_returns (not levels). The kernel internally mean-
+//! ARCH-LM operates on `log_returns` (not levels). The kernel internally mean-
 //! adjusts the returns to construct the squared residuals series for the
 //! AR(L) regression.
 //!

@@ -529,7 +529,7 @@ mod tests {
     }
 
     /// Plan 04-01 Task 2 — Behavior Test 3:
-    /// `scan_request_instruments_len_one_serialises`. ScanRequest with
+    /// `scan_request_instruments_len_one_serialises`. `ScanRequest` with
     /// `instruments = vec![InstrumentSpec { symbol: "EURUSD", side: Side::Bid }]`
     /// serialises to JSON where `instruments` is a JSON array of length 1
     /// (D4-01).
@@ -657,11 +657,11 @@ mod tests {
     }
 
     /// Plan 04-02 Task 2 — Behavior Test 7:
-    /// `scan_ctx_bars_up_to_partitions_at_cutoff`. Given a BarFrame with
+    /// `scan_ctx_bars_up_to_partitions_at_cutoff`. Given a `BarFrame` with
     /// `ts_open_utc = [t0, t1, t2, t3]`, `ctx.bars_up_to(t1)` returns a
     /// `BarFrameView` whose `ts_open_utc.len() == 2` (only `[t0, t1]`).
     /// `ctx.bars_up_to(t0 - 1m)` returns len 0; `ctx.bars_up_to(t3 + 1d)`
-    /// returns len 4 (no entries past t3 — partition_point's "<=" predicate
+    /// returns len 4 (no entries past t3 — `partition_point`'s "<=" predicate
     /// gives an inclusive upper bound).
     #[test]
     fn scan_ctx_bars_up_to_partitions_at_cutoff() {

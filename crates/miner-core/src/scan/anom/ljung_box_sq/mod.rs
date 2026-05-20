@@ -348,7 +348,7 @@ mod tests {
         Blake3Hex::from_hex_bytes(&bytes)
     }
 
-    /// Same LCG-seeded fixture builder used by the Phase 3 LjungBox tests.
+    /// Same LCG-seeded fixture builder used by the Phase 3 `LjungBox` tests.
     #[allow(clippy::cast_possible_truncation)]
     fn lcg_bar_frame_seeded(n: usize, seed: u64) -> BarFrame {
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();

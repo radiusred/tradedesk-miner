@@ -1,6 +1,6 @@
 //! Plan 04-09 Task 3 integration test — SEAS-03 trading-session envelope snapshot.
 //!
-//! Builds a deterministic 7-day BarFrame at 15m timeframe (672 bars), runs
+//! Builds a deterministic 7-day `BarFrame` at 15m timeframe (672 bars), runs
 //! `SessionScan::run` with the FX-major default sessions per RESEARCH §1.8,
 //! parses the resulting envelope, masks volatile fields, and pins the shape
 //! via an insta snapshot.

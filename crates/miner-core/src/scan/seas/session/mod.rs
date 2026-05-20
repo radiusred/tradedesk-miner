@@ -765,7 +765,7 @@ mod tests {
     #[test]
     fn session_rejects_oversized_sessions_array() {
         let mut huge = Vec::new();
-        for i in 0..(MAX_SESSIONS + 1) {
+        for i in 0..=MAX_SESSIONS {
             huge.push(serde_json::json!({
                 "name": format!("s{i}"),
                 "start_utc_hour": 0,

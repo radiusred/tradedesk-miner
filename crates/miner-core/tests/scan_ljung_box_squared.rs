@@ -3,7 +3,7 @@
 //!
 //! Pattern analog: `crates/miner-core/tests/scan_vol_rolling.rs` (sibling
 //! ANOM-family integration test). Pins envelope shape via `insta` snapshot;
-//! emits EXACTLY ONE Finding::Result with `series_kind == "squared_returns"`
+//! emits EXACTLY ONE `Finding::Result` with `series_kind == "squared_returns"`
 //! in `effect.extra`. Golden cross-check against statsmodels
 //! `acorr_ljungbox(returns**2)` lands in Plan 04-11.
 

@@ -305,7 +305,7 @@ mod tests {
     fn iqr_known_input_odd_length() {
         let values = [1.0_f64, 2.0, 3.0, 4.0, 5.0];
         let q = iqr(&values);
-        assert!(approx_eq(q, 2.0, TOL), "iqr={}", q);
+        assert!(approx_eq(q, 2.0, TOL), "iqr={q}");
     }
 
     /// IQR for [1, 2, 3, 4]: scipy reference linear interpolation gives
@@ -315,7 +315,7 @@ mod tests {
     fn iqr_known_input_even_length() {
         let values = [1.0_f64, 2.0, 3.0, 4.0];
         let q = iqr(&values);
-        assert!(approx_eq(q, 1.5, TOL), "iqr={}", q);
+        assert!(approx_eq(q, 1.5, TOL), "iqr={q}");
     }
 
     #[test]

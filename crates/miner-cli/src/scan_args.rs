@@ -306,7 +306,7 @@ mod tests {
         }
     }
 
-    /// ScanArgs_defaults: --gap-policy defaults to continuous_only,
+    /// `ScanArgs_defaults`: --gap-policy defaults to `continuous_only`,
     /// --dry-run false, --params empty (D3-19). Plan 04-02 removed
     /// `--side`; side travels inside `--instrument SYMBOL:side`.
     #[test]

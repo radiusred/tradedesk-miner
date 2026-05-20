@@ -220,8 +220,8 @@ mod tests {
     // inner_join — Behavior Tests 5, 6
     // -----------------------------------------------------------------------
 
-    /// Behavior Test 5 — two BarFrames with zero overlapping `ts_open_utc`
-    /// return an AlignedPair with len 0.
+    /// Behavior Test 5 — two `BarFrames` with zero overlapping `ts_open_utc`
+    /// return an `AlignedPair` with len 0.
     #[test]
     fn inner_join_disjoint_returns_empty() {
         let a = build_bars("A", &[t(0), t(15), t(30)], &[1.0, 1.1, 1.2]);
@@ -303,9 +303,9 @@ mod tests {
         }
     }
 
-    /// Behavior Test 7 — two GapManifests with non-overlapping spans
+    /// Behavior Test 7 — two `GapManifests` with non-overlapping spans
     /// intersect to a NON-empty manifest containing BOTH (the union of
-    /// timestamps missing in EITHER leg). Re-read: "intersect_gaps" here
+    /// timestamps missing in EITHER leg). Re-read: "`intersect_gaps`" here
     /// means "intersection of running-windows" = "union of gap intervals"
     /// in the joint two-leg manifest.
     #[test]
@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(joint.gaps[1].end_utc, t(40));
     }
 
-    /// Behavior Test 7b — two GapManifests with empty gap-lists intersect to
+    /// Behavior Test 7b — two `GapManifests` with empty gap-lists intersect to
     /// an empty manifest.
     #[test]
     fn intersect_gaps_both_empty_is_empty() {

@@ -351,7 +351,7 @@ mod tests {
         assert!(r.iqrs[0].is_nan(), "iqr must be NaN for sparse bucket");
     }
 
-    /// Zero-variance bucket: mean is exact but std == 0 -> t_stat is NaN by
+    /// Zero-variance bucket: mean is exact but std == 0 -> `t_stat` is NaN by
     /// convention (the bucket signal is undefined when no variance exists).
     #[test]
     fn bucket_stats_zero_variance_bucket_yields_nan_t_stat() {
@@ -405,7 +405,7 @@ mod tests {
         assert_eq!(r.iqrs.len(), 7);
     }
 
-    /// linear_quantile basic — symmetric series, Q1 / Q3 hand-derived.
+    /// `linear_quantile` basic — symmetric series, Q1 / Q3 hand-derived.
     #[test]
     fn linear_quantile_basic() {
         let v = [1.0_f64, 2.0, 3.0, 4.0, 5.0];
@@ -416,7 +416,7 @@ mod tests {
         assert!(approx_eq(linear_quantile(&v, 1.0), 5.0, TOL));
     }
 
-    /// linear_quantile linear-interp branch — fractional index.
+    /// `linear_quantile` linear-interp branch — fractional index.
     #[test]
     fn linear_quantile_linear_interpolation() {
         // 4-element series: Q1 index = (4-1)*0.25 = 0.75 -> interp 0.25*v[0] + 0.75*v[1]

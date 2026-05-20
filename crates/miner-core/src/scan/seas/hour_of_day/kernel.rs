@@ -40,7 +40,7 @@ mod tests {
     fn hour_keys_15m_within_hour() {
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let ts: Vec<DateTime<Utc>> = (0..5)
-            .map(|i| start + Duration::minutes(15 * i as i64))
+            .map(|i| start + Duration::minutes(15 * i64::from(i)))
             .collect();
         let keys = hour_keys(&ts);
         assert_eq!(keys, vec![0, 0, 0, 0, 1]);
@@ -66,7 +66,7 @@ mod tests {
     fn hour_keys_length_invariant() {
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let ts: Vec<DateTime<Utc>> = (0..96)
-            .map(|i| start + Duration::minutes(15 * i as i64))
+            .map(|i| start + Duration::minutes(15 * i64::from(i)))
             .collect();
         let keys = hour_keys(&ts);
         assert_eq!(keys.len(), ts.len());

@@ -149,7 +149,7 @@ mod tests {
         closes
     }
 
-    /// Old ljung_box body — held here ONLY so the byte-identical move can be
+    /// Old `ljung_box` body — held here ONLY so the byte-identical move can be
     /// asserted at the kernel level. This is the literal Phase 3 body. If a
     /// future refactor changes the primitive, this test catches it.
     fn old_ljung_box_log_returns(close: &[f64]) -> Vec<f64> {

@@ -53,8 +53,8 @@ fn build_bars(symbol: &str, ts: &[chrono::DateTime<Utc>], closes: &[f64]) -> Bar
 
 /// Plan 04-08 Task 1 integration test — `scan_lead_lag_happy_path` for the
 /// lead-lag CCF scan. The scan emits exactly one `Finding::Result` envelope
-/// with Pair-arity shape (data_slice.sources.len() == 2 + leg-labelled
-/// raw.series keys + ccf_values / lags vectors of length 2*max_lag+1 in
+/// with Pair-arity shape (`data_slice.sources.len()` == 2 + leg-labelled
+/// raw.series keys + `ccf_values` / lags vectors of length 2*`max_lag+1` in
 /// effect.extra).
 #[test]
 fn scan_lead_lag_happy_path() {

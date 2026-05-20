@@ -43,7 +43,7 @@ const SCAN_VERSION: u32 = 1;
 const EFFECT_METRIC: &str = "event_post_window_mean";
 const DEFAULT_PRE_WINDOW_BARS: i64 = 5;
 const DEFAULT_POST_WINDOW_BARS: i64 = 5;
-/// T-04-10-01 mitigation — DOS via large event_timestamps array. 10^5 events
+/// T-04-10-01 mitigation — DOS via large `event_timestamps` array. 10^5 events
 /// is well beyond any realistic use case; bounded above to keep the
 /// O(events * log(bars)) work tractable.
 const MAX_EVENT_TIMESTAMPS: usize = 100_000;
@@ -500,8 +500,8 @@ mod tests {
 
     /// Event at an exact bar timestamp produces pre/post means computed from
     /// the right slices. Build a 20-bar series; place event at bar index 5
-    /// (timestamps_ms[5] is the timestamp of bar 6 in 0-indexed terms, since
-    /// log_returns skips the first bar).
+    /// (`timestamps_ms`[5] is the timestamp of bar 6 in 0-indexed terms, since
+    /// `log_returns` skips the first bar).
     #[test]
     fn event_window_event_at_exact_bar() {
         // Construct deterministic bars where returns are predictable.
@@ -670,7 +670,7 @@ mod tests {
     fn event_window_rejects_oversized_event_list() {
         let bars = lcg_bar_frame(64, 10, Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap());
         let mut huge: Vec<i64> = Vec::with_capacity(MAX_EVENT_TIMESTAMPS + 1);
-        for i in 0..(MAX_EVENT_TIMESTAMPS + 1) {
+        for i in 0..=MAX_EVENT_TIMESTAMPS {
             huge.push(1_000 + i as i64);
         }
         let mut sink = VecSink::new();

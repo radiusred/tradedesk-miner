@@ -4,10 +4,10 @@
 //! Drives `PearsonRollingScan` / `SpearmanRollingScan` directly via
 //! `Scan::run` against a deterministic two-leg seeded fixture (no engine
 //! Pair-branch wiring required; that's deferred to Plan 04-11 with the
-//! full RunStart -> Result -> RunEnd shape pin).
+//! full `RunStart` -> Result -> `RunEnd` shape pin).
 //!
 //! Pattern J analog: `scan_ljung_box.rs` — same 8-step walk but with two
-//! BarFrames + ScanCtx.bars_pair populated.
+//! `BarFrames` + `ScanCtx.bars_pair` populated.
 
 mod common;
 
@@ -72,7 +72,7 @@ fn two_leg_fixture(n: usize, seed_a: u64, seed_b: u64) -> (BarFrame, BarFrame) {
 
 /// Plan 04-07 Task 1 integration test — `scan_corr_rolling_happy_path` for
 /// Pearson. The scan emits exactly one `Finding::Result` envelope with
-/// arity-Pair shape (data_slice.sources.len() == 2 + leg-labelled raw.series
+/// arity-Pair shape (`data_slice.sources.len()` == 2 + leg-labelled raw.series
 /// keys + per-window correlation values in effect.extra).
 #[test]
 fn scan_corr_rolling_pearson_happy_path() {
@@ -233,7 +233,7 @@ fn scan_corr_rolling_spearman_happy_path() {
 
 /// CR-01 engine-facade variant of `scan_corr_rolling_pearson_happy_path`.
 /// Drives `PearsonRollingScan` through `engine::run_one_with_registry`
-/// against a SyntheticCache populated with both legs.
+/// against a `SyntheticCache` populated with both legs.
 #[test]
 fn scan_corr_rolling_pearson_happy_path_via_engine_facade() {
     use chrono::NaiveDate;

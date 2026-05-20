@@ -529,7 +529,7 @@ mod tests {
         );
     }
 
-    /// MacKinnon p-value interpolation sanity checks at the three pivot
+    /// `MacKinnon` p-value interpolation sanity checks at the three pivot
     /// points: critical values should produce p = 0.01 / 0.05 / 0.10.
     #[test]
     fn mackinnon_p_constant_pivots() {
@@ -538,7 +538,7 @@ mod tests {
         assert!(approx_eq(mackinnon_p_constant(-2.57), 0.10, 1e-12));
     }
 
-    /// MacKinnon p-value extrapolation: very negative τ -> very small p,
+    /// `MacKinnon` p-value extrapolation: very negative τ -> very small p,
     /// approaching 0 monotonically.
     #[test]
     fn mackinnon_p_constant_extreme_negative_small() {
@@ -547,7 +547,7 @@ mod tests {
         assert!(p >= 0.0);
     }
 
-    /// MacKinnon p-value monotonicity: more-negative τ -> smaller p.
+    /// `MacKinnon` p-value monotonicity: more-negative τ -> smaller p.
     #[test]
     fn mackinnon_p_constant_monotone() {
         let p1 = mackinnon_p_constant(-4.0);

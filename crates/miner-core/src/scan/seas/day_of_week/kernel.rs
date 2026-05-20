@@ -51,7 +51,7 @@ mod tests {
     fn weekday_keys_length_invariant() {
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let ts: Vec<DateTime<Utc>> = (0..96)
-            .map(|i| start + Duration::minutes(15 * i as i64))
+            .map(|i| start + Duration::minutes(15 * i64::from(i)))
             .collect();
         let keys = weekday_keys(&ts);
         assert_eq!(keys.len(), ts.len());

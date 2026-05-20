@@ -252,8 +252,8 @@ mod tests {
     }
 
     /// Hand-derived: window=4 over a = [1, 2, 3, 4], b = [4, 3, 2, 1].
-    /// mean_a = 2.5, mean_b = 2.5; deviations da = [-1.5, -0.5, 0.5, 1.5],
-    /// db = [1.5, 0.5, -0.5, -1.5]; cov = -5; var_a = var_b = 5; r = -1.
+    /// `mean_a` = 2.5, `mean_b` = 2.5; deviations da = [-1.5, -0.5, 0.5, 1.5],
+    /// db = [1.5, 0.5, -0.5, -1.5]; cov = -5; `var_a` = `var_b` = 5; r = -1.
     #[test]
     fn rolling_pearson_hand_derived_window4() {
         let a = [1.0, 2.0, 3.0, 4.0];

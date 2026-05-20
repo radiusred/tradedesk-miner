@@ -175,7 +175,7 @@ mod tests {
     }
 
     /// Plan 04-01 Task 3 — Test 2: `preflight_code_as_str_wrong_instrument_arity`.
-    /// Sibling test pinning the as_str() return for the new D4-02 variant
+    /// Sibling test pinning the `as_str()` return for the new D4-02 variant
     /// independently of the cases-array driver above.
     #[test]
     fn preflight_code_as_str_wrong_instrument_arity() {

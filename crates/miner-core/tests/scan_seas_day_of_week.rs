@@ -1,6 +1,6 @@
 //! Plan 04-09 Task 2 integration test — SEAS-02 day-of-week envelope snapshot.
 //!
-//! Builds a deterministic 28-day BarFrame at 15m timeframe (2688 bars =
+//! Builds a deterministic 28-day `BarFrame` at 15m timeframe (2688 bars =
 //! 4 weeks × 7 days × 24h × 4 bars/h), runs `DayOfWeekScan::run`, parses the
 //! resulting envelope, masks volatile fields, and pins the shape via an insta
 //! snapshot.

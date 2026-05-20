@@ -286,8 +286,8 @@ fn resolve_min_obs_per_group(req: &ScanRequest) -> Result<usize, ScanError> {
 
 /// Group returns by the chosen bucketing scheme. Each scheme produces a
 /// vector of value-groups whose length equals the bucketing arity (24 for
-/// hour_of_day, 7 for day_of_week, 4 for session FX-major defaults, 6 for
-/// eom_som default cutoff_n=3). Empty groups are preserved here; the caller
+/// `hour_of_day`, 7 for `day_of_week`, 4 for session FX-major defaults, 6 for
+/// `eom_som` default `cutoff_n=3`). Empty groups are preserved here; the caller
 /// applies the `min_obs_per_group` filter.
 fn derive_groups(
     via: BucketsVia,
@@ -595,8 +595,8 @@ mod tests {
     }
 
     /// If `buckets_via` produces fewer than 2 non-empty groups after the
-    /// min_obs filter, the test is degenerate → ScanError::Kernel. Build a
-    /// 3-bar series all on hour 0 with min_obs=1 → all returns in bucket 0;
+    /// `min_obs` filter, the test is degenerate → `ScanError::Kernel`. Build a
+    /// 3-bar series all on hour 0 with `min_obs=1` → all returns in bucket 0;
     /// only 1 non-empty group.
     #[test]
     fn anova_kw_single_group_emits_scan_error() {

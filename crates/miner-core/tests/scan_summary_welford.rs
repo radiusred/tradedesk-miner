@@ -142,7 +142,7 @@ fn scan_summary_welford_happy_path() {
 /// builds a `BarFrame` from the SAME LCG-seeded close array
 /// (`lcg_closes(64, 42)`) the Rust scan consumes, runs
 /// `SummaryWelfordScan::run`, and asserts the emitted `effect.*` fields
-/// (mean / std / skew / excess_kurtosis / iqr / min / max / n) match
+/// (mean / std / skew / `excess_kurtosis` / iqr / min / max / n) match
 /// the golden's `expected.*` block within RESEARCH §Section 2 tolerance
 /// 1e-10 (per REFERENCE-VERSIONS.md row 1 — "1e-10 — chi2.cdf / norm.cdf
 /// paths"; ANOM-02 is pure Welford so it should match even tighter,

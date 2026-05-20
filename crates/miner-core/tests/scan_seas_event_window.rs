@@ -1,6 +1,6 @@
-//! Plan 04-10 Task 3 integration test — SEAS-06 event_window envelope snapshot.
+//! Plan 04-10 Task 3 integration test — SEAS-06 `event_window` envelope snapshot.
 //!
-//! Builds a deterministic 7-day × 24h × 4 bars/h = 672-bar BarFrame at 15m
+//! Builds a deterministic 7-day × 24h × 4 bars/h = 672-bar `BarFrame` at 15m
 //! timeframe, supplies a synthetic 3-event timestamp list inside the bar
 //! range, runs `EventWindowScan::run`, parses the resulting envelope, masks
 //! volatile fields, and pins the shape via an insta snapshot.
@@ -108,7 +108,7 @@ fn scan_seas_event_window_happy_path() {
     insta::assert_json_snapshot!("scan_seas_event_window_happy_path", masked);
 }
 
-/// Build a 15m-timeframe BarFrame of `n` bars starting at 2024-01-01 00:00
+/// Build a 15m-timeframe `BarFrame` of `n` bars starting at 2024-01-01 00:00
 /// UTC with deterministic LCG-seeded closes.
 #[allow(clippy::cast_possible_truncation)]
 fn build_synthetic_15m_bars(n: usize, seed: u64) -> BarFrame {

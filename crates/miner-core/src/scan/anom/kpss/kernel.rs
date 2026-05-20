@@ -13,13 +13,13 @@
 //! statsmodels default uses the Schwert/Hobijn-Franses-Ooms auto-lag formula
 //! `int(4 * (n/100)^(1/4))`. The kernel reproduces the standard KPSS
 //! formulation per Kwiatkowski, Phillips, Schmidt, Shin (1992) — opposite
-//! null to ADF (KPSS H_0 = stationary, H_1 = unit root).
+//! null to ADF (KPSS `H_0` = stationary, `H_1` = unit root).
 //!
 //! ## Algorithm
 //!
 //! 1. **Detrend.** Under `regression='c'`, subtract the mean. Under
 //!    `regression='ct'`, regress `y` on `(1, t)` (linear trend) and use
-//!    residuals (`nalgebra` SMatrix<2,2> OLS — see [`detrend_with_trend`]).
+//!    residuals (`nalgebra` `SMatrix`<2,2> OLS — see [`detrend_with_trend`]).
 //! 2. **Partial sums.** `S_t = Σ_{i<=t} ε̂_i` where `ε̂` are detrended residuals.
 //! 3. **Long-run variance.** Bartlett-kernel estimate
 //!    `σ̂² = γ_0 + 2·Σ_{j=1..l} (1 - j/(l+1)) · γ_j` where `γ_j` is the
@@ -132,7 +132,7 @@ pub(super) fn kpss_statistic(
 
 /// Detrend a series by regressing `y` on `(1, t)` and returning residuals.
 /// Uses nalgebra `Matrix2`/`Vector2` (compile-time fixed 2×2) OLS — heap-free
-/// per worker thread (matches Plan 04-05 task description "nalgebra SMatrix
+/// per worker thread (matches Plan 04-05 task description "nalgebra `SMatrix`
 /// detrend").
 ///
 /// The normal equations are
@@ -313,7 +313,7 @@ mod tests {
     // detrend_with_trend
     // -----------------------------------------------------------------------
 
-    /// For y_t = 1 + 2·t (perfect linear trend, no noise), residuals should
+    /// For `y_t` = 1 + 2·t (perfect linear trend, no noise), residuals should
     /// all be (approximately) zero.
     #[test]
     fn detrend_with_trend_perfect_linear() {

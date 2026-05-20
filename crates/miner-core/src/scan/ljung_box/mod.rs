@@ -76,7 +76,7 @@ impl Scan for LjungBoxScan {
         SCAN_VERSION
     }
 
-    /// Phase 4 (Plan 04-01 / D4-02): LjungBox is a single-leg ANOM scan
+    /// Phase 4 (Plan 04-01 / D4-02): `LjungBox` is a single-leg ANOM scan
     /// — arity is always [`ScanArity::Single`].
     fn arity(&self) -> ScanArity {
         ScanArity::Single

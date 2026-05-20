@@ -458,9 +458,9 @@ mod tests {
         assert!(enum_arr.iter().any(|v| v == "ct"));
     }
 
-    /// D4-09 sign-convention pin: for close_a = 2 * close_b exactly,
-    /// regressing close_a ~ close_b yields β = 2.0 within 1e-10.
-    /// Matches statsmodels.tsa.stattools.coint(y0=close_a, y1=close_b).
+    /// D4-09 sign-convention pin: for `close_a` = 2 * `close_b` exactly,
+    /// regressing `close_a` ~ `close_b` yields β = 2.0 within 1e-10.
+    /// Matches `statsmodels.tsa.stattools.coint(y0=close_a`, `y1=close_b`).
     #[test]
     fn engle_granger_hedge_ratio_sign_convention() {
         let n = 40;
@@ -539,7 +539,7 @@ mod tests {
         assert_eq!(r.data_slice.sources.len(), 2);
     }
 
-    /// For close_a = 2 * close_b exactly, residual_std should be near zero
+    /// For `close_a` = 2 * `close_b` exactly, `residual_std` should be near zero
     /// (perfect linear fit).
     #[test]
     fn engle_granger_residual_std_matches_hand_derived() {

@@ -131,7 +131,7 @@ mod tests {
 
     /// Hand-derived — January 2024 is a 22-trading-day month (Jan 1 is a New
     /// Year's Day holiday so the first trading day is Jan 2; the last
-    /// trading day is Jan 31, a Wednesday). With cutoff_n=3 the last 3
+    /// trading day is Jan 31, a Wednesday). With `cutoff_n=3` the last 3
     /// trading days are Jan 29 / 30 / 31 (Mon/Tue/Wed) and the first 3 are
     /// Jan 2 / 3 / 4 (Tue/Wed/Thu). Jan 15 is exactly middle-of-month and
     /// should fall in NO bucket.
@@ -183,7 +183,7 @@ mod tests {
         assert_eq!(trading_day_of_month_bucket(ts, cutoff, &cal), Some(5));
     }
 
-    /// Jan 15 2024 is mid-month — falls in NO bucket with cutoff_n=3.
+    /// Jan 15 2024 is mid-month — falls in NO bucket with `cutoff_n=3`.
     #[test]
     fn jan_2024_middle_of_month_is_none() {
         let cal = Calendar::fx_major();
@@ -212,11 +212,11 @@ mod tests {
         assert_eq!(trading_day_of_month_bucket(ts, 3, &cal), None);
     }
 
-    /// With cutoff_n=5 the EOM/SOM windows widen — for Jan 2024 the first 5
+    /// With `cutoff_n=5` the EOM/SOM windows widen — for Jan 2024 the first 5
     /// trading days are Jan 2, 3, 4, 5, 8 (skipping the weekend) and the
-    /// last 5 are Jan 25, 26, 29, 30, 31. With cutoff_n=5 a 22-trading-day
-    /// month puts Jan 8 at idx cutoff_n + 4 = 9 (SOM-5) and Jan 25 at
-    /// idx cutoff_n - 1 - 4 = 0 (EOM-5).
+    /// last 5 are Jan 25, 26, 29, 30, 31. With `cutoff_n=5` a 22-trading-day
+    /// month puts Jan 8 at idx `cutoff_n` + 4 = 9 (SOM-5) and Jan 25 at
+    /// idx `cutoff_n` - 1 - 4 = 0 (EOM-5).
     #[test]
     fn jan_2024_cutoff_5_widens_windows() {
         let cal = Calendar::fx_major();
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(trading_day_of_month_bucket(ts, 5, &cal), None);
     }
 
-    /// Cutoff_n = 1 collapses the scheme to "first vs last trading day of
+    /// `Cutoff_n` = 1 collapses the scheme to "first vs last trading day of
     /// month". Two buckets total (EOM-1 -> idx 0; SOM-1 -> idx 1).
     #[test]
     fn cutoff_1_two_buckets() {

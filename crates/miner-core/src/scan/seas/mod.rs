@@ -17,7 +17,7 @@
 //! through SEAS-04 + SEAS-06 share this single helper; each scan provides its
 //! own bucket-key derivation (UTC hour for `hour_of_day`, weekday for
 //! `day_of_week`, session-window membership for `session`, etc.). SEAS-05
-//! (anova_kw) is the only meta-scan — it reuses other SEAS scans' bucket-key
+//! (`anova_kw`) is the only meta-scan — it reuses other SEAS scans' bucket-key
 //! kernels via `params.buckets_via`.
 
 use super::Registry;
@@ -59,8 +59,8 @@ pub fn register_seas_scans(r: &mut Registry) {
 mod tests {
     use super::*;
 
-    /// Plan 04-10 ships the final 3 SEAS scans (eom_som, anova_kw,
-    /// event_window) on top of Plan 04-09's 3 (day_of_week, hour_of_day,
+    /// Plan 04-10 ships the final 3 SEAS scans (`eom_som`, `anova_kw`,
+    /// `event_window`) on top of Plan 04-09's 3 (`day_of_week`, `hour_of_day`,
     /// session) — total 6 registrations.
     #[test]
     fn register_seas_scans_registers_six_after_plan_04_10() {

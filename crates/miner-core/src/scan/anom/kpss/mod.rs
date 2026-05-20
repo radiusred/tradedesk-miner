@@ -20,14 +20,14 @@
 //!   non-negative).
 //! - `effect.extra = {crit_values, lag_truncation, p_value, regression}`
 //!   (alphabetical `BTreeMap` order). `regression` is encoded as UTF-8 bytes
-//!   packed into a Dtype::F64 RawArray (same trick as ANOM-05 ADF).
+//!   packed into a `Dtype::F64` `RawArray` (same trick as ANOM-05 ADF).
 //! - `raw.series = {closes, timestamps_ms}`.
 //!
 //! ## KPSS opposite null vs ADF
 //!
-//! - ADF: H_0 = unit root (non-stationary), H_1 = stationary. Rejection
+//! - ADF: `H_0` = unit root (non-stationary), `H_1` = stationary. Rejection
 //!   when τ is very negative.
-//! - KPSS: H_0 = stationary, H_1 = unit root (non-stationary). Rejection
+//! - KPSS: `H_0` = stationary, `H_1` = unit root (non-stationary). Rejection
 //!   when stat exceeds the critical value. The two tests are complementary;
 //!   the Quant agent typically runs both.
 //!
@@ -296,8 +296,8 @@ fn index_to_f64(i: usize) -> f64 {
     i as f64
 }
 
-/// Pack a UTF-8 label into a RawArray's data field as f64-sized bytes —
-/// same v1 wire-form trick used by ANOM-04 squared series_kind +
+/// Pack a UTF-8 label into a `RawArray`'s data field as f64-sized bytes —
+/// same v1 wire-form trick used by ANOM-04 squared `series_kind` +
 /// ANOM-05 ADF regression label.
 fn string_label_to_raw_array(label: &str) -> RawArray {
     use crate::findings::{Base64Bytes, Dtype};

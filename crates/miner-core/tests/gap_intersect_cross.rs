@@ -7,7 +7,7 @@
 //! the standard [`dispatch`] decision. Pinned cases:
 //!
 //! 1. Strict + intersected non-empty manifests -> `Aborted(joint_manifest)`.
-//! 2. ContinuousOnly + intersected manifests -> `SubRanges(partitioned)`
+//! 2. `ContinuousOnly` + intersected manifests -> `SubRanges(partitioned)`
 //!    over the joint manifest.
 //! 3. Both manifests empty -> `SubRanges([full_range])` (the zero-gap fast
 //!    path on the joint manifest).
@@ -75,8 +75,8 @@ fn dispatch_pair_strict_with_overlapping_gaps_aborts() {
     }
 }
 
-/// D4-04 — ContinuousOnly + two manifests with overlapping gaps ->
-/// SubRanges partitioned around the joint manifest.
+/// D4-04 — `ContinuousOnly` + two manifests with overlapping gaps ->
+/// `SubRanges` partitioned around the joint manifest.
 #[test]
 fn dispatch_pair_continuous_only_partitions_around_joint_manifest() {
     // Leg A: gap [10:00, 11:00); Leg B: gap [10:30, 11:30) -> joint [10:00, 11:30).
@@ -100,7 +100,7 @@ fn dispatch_pair_continuous_only_partitions_around_joint_manifest() {
     }
 }
 
-/// D4-04 — Both legs gap-free + ContinuousOnly -> SubRanges([full_range]).
+/// D4-04 — Both legs gap-free + `ContinuousOnly` -> `SubRanges`([`full_range`]).
 /// Zero-gap fast path on the joint manifest.
 #[test]
 fn dispatch_pair_both_empty_continuous_only_is_full_range() {
@@ -119,7 +119,7 @@ fn dispatch_pair_both_empty_continuous_only_is_full_range() {
     }
 }
 
-/// D4-04 — Strict + both empty manifests -> SubRanges([full_range]) (strict
+/// D4-04 — Strict + both empty manifests -> `SubRanges`([`full_range`]) (strict
 /// zero-gap fast path on the joint manifest).
 #[test]
 fn dispatch_pair_strict_both_empty_passes_through() {

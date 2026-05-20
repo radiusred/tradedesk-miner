@@ -1,6 +1,6 @@
-//! Plan 04-10 Task 1 integration test — SEAS-04 eom_som envelope snapshot.
+//! Plan 04-10 Task 1 integration test — SEAS-04 `eom_som` envelope snapshot.
 //!
-//! Builds a deterministic 6-month × 1-day = ~180-bar BarFrame at the daily
+//! Builds a deterministic 6-month × 1-day = ~180-bar `BarFrame` at the daily
 //! timeframe (covers Jan..Jun 2024 so all 6 monthly EOM/SOM buckets see ample
 //! observations), runs `EomSomScan::run`, parses the resulting envelope,
 //! masks volatile fields (`run_id`, `produced_at_utc`), and pins the shape
@@ -109,7 +109,7 @@ fn scan_seas_eom_som_happy_path() {
     insta::assert_json_snapshot!("scan_seas_eom_som_happy_path", masked);
 }
 
-/// Build a daily-timeframe BarFrame of `n` bars starting at 2024-01-01 00:00
+/// Build a daily-timeframe `BarFrame` of `n` bars starting at 2024-01-01 00:00
 /// UTC with deterministic LCG-seeded closes.
 #[allow(clippy::cast_possible_truncation)]
 fn build_synthetic_daily_bars(n: usize, seed: u64) -> BarFrame {

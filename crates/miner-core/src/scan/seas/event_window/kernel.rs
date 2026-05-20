@@ -79,7 +79,7 @@ pub(super) fn event_window_stats(
     let mut pre_stds = Vec::new();
     let mut post_stds = Vec::new();
 
-    for &event_ts in event_timestamps_ms.iter() {
+    for &event_ts in event_timestamps_ms {
         // Resolve the bar index for the event. Use binary search: the bar
         // whose timestamp is >= event timestamp is the first post-event bar.
         // `partition_point(|&t| t < event_ts)` returns the count of bars
@@ -147,13 +147,13 @@ mod tests {
     }
 
     /// Hand-derived: 20-bar series, event timestamp lands at bar index 5
-    /// (timestamps_ms[5] == event_ts). pre_bars=3 -> returns[2..5];
-    /// post_bars=3 -> returns[5..8]. Verify the means manually.
+    /// (`timestamps_ms`[5] == `event_ts`). `pre_bars=3` -> returns[2..5];
+    /// `post_bars=3` -> returns[5..8]. Verify the means manually.
     #[test]
     fn one_event_at_index_5_hand_derived() {
         // returns[0..20] = [0.0, 0.1, 0.2, ..., 1.9].
-        let returns: Vec<f64> = (0..20).map(|i| i as f64 * 0.1).collect();
-        let timestamps_ms: Vec<i64> = (0..20).map(|i| 1_000 + 100 * i as i64).collect();
+        let returns: Vec<f64> = (0..20).map(|i| f64::from(i) * 0.1).collect();
+        let timestamps_ms: Vec<i64> = (0..20).map(|i| 1_000 + 100 * i64::from(i)).collect();
         // Event at exactly timestamps_ms[5].
         let event_ts = vec![timestamps_ms[5]];
         let r = event_window_stats(&returns, &timestamps_ms, &event_ts, 3, 3);
@@ -173,32 +173,32 @@ mod tests {
         assert!(approx_eq(r.post_stds[0], 0.1, TOL), "post_std={}", r.post_stds[0]);
     }
 
-    /// Event outside the bar range -> skipped, event_count == 0.
+    /// Event outside the bar range -> skipped, `event_count` == 0.
     #[test]
     fn event_after_last_bar_skipped() {
-        let returns: Vec<f64> = (0..20).map(|i| i as f64 * 0.1).collect();
-        let timestamps_ms: Vec<i64> = (0..20).map(|i| 1_000 + 100 * i as i64).collect();
+        let returns: Vec<f64> = (0..20).map(|i| f64::from(i) * 0.1).collect();
+        let timestamps_ms: Vec<i64> = (0..20).map(|i| 1_000 + 100 * i64::from(i)).collect();
         // Event way after the last bar -> idx = n; post window overflows; skip.
         let event_ts = vec![timestamps_ms[19] + 10_000];
         let r = event_window_stats(&returns, &timestamps_ms, &event_ts, 3, 3);
         assert_eq!(r.event_count, 0);
     }
 
-    /// Event at index 1 with pre_bars=3 -> idx < pre_bars; skipped.
+    /// Event at index 1 with `pre_bars=3` -> idx < `pre_bars`; skipped.
     #[test]
     fn event_near_start_skipped_pre_underflow() {
-        let returns: Vec<f64> = (0..20).map(|i| i as f64 * 0.1).collect();
-        let timestamps_ms: Vec<i64> = (0..20).map(|i| 1_000 + 100 * i as i64).collect();
+        let returns: Vec<f64> = (0..20).map(|i| f64::from(i) * 0.1).collect();
+        let timestamps_ms: Vec<i64> = (0..20).map(|i| 1_000 + 100 * i64::from(i)).collect();
         let event_ts = vec![timestamps_ms[1]];
         let r = event_window_stats(&returns, &timestamps_ms, &event_ts, 3, 3);
         assert_eq!(r.event_count, 0);
     }
 
-    /// Event at index 18 with post_bars=3 -> idx + post > n; skipped.
+    /// Event at index 18 with `post_bars=3` -> idx + post > n; skipped.
     #[test]
     fn event_near_end_skipped_post_overflow() {
-        let returns: Vec<f64> = (0..20).map(|i| i as f64 * 0.1).collect();
-        let timestamps_ms: Vec<i64> = (0..20).map(|i| 1_000 + 100 * i as i64).collect();
+        let returns: Vec<f64> = (0..20).map(|i| f64::from(i) * 0.1).collect();
+        let timestamps_ms: Vec<i64> = (0..20).map(|i| 1_000 + 100 * i64::from(i)).collect();
         // idx 18 with post=3 -> needs indices 18, 19, 20; 20 is OOB.
         let event_ts = vec![timestamps_ms[18]];
         let r = event_window_stats(&returns, &timestamps_ms, &event_ts, 3, 3);
@@ -208,8 +208,8 @@ mod tests {
     /// Three events; all three aggregate.
     #[test]
     fn three_events_aggregated() {
-        let returns: Vec<f64> = (0..30).map(|i| i as f64 * 0.01).collect();
-        let timestamps_ms: Vec<i64> = (0..30).map(|i| 1_000 + 100 * i as i64).collect();
+        let returns: Vec<f64> = (0..30).map(|i| f64::from(i) * 0.01).collect();
+        let timestamps_ms: Vec<i64> = (0..30).map(|i| 1_000 + 100 * i64::from(i)).collect();
         let event_ts = vec![timestamps_ms[5], timestamps_ms[15], timestamps_ms[25]];
         let r = event_window_stats(&returns, &timestamps_ms, &event_ts, 3, 3);
         assert_eq!(r.event_count, 3);
@@ -220,12 +220,12 @@ mod tests {
     }
 
     /// Event timestamp BETWEEN bar timestamps — resolves to the next bar.
-    /// For event_ts = 1550 (between bar 5 @1500 and bar 6 @1600), idx = 6.
+    /// For `event_ts` = 1550 (between bar 5 @1500 and bar 6 @1600), idx = 6.
     /// With pre=3 post=3, pre = returns[3..6], post = returns[6..9].
     #[test]
     fn event_between_bars_resolves_to_next_bar() {
-        let returns: Vec<f64> = (0..15).map(|i| i as f64 * 0.1).collect();
-        let timestamps_ms: Vec<i64> = (0..15).map(|i| 1_000 + 100 * i as i64).collect();
+        let returns: Vec<f64> = (0..15).map(|i| f64::from(i) * 0.1).collect();
+        let timestamps_ms: Vec<i64> = (0..15).map(|i| 1_000 + 100 * i64::from(i)).collect();
         // Between timestamps_ms[5] (1500) and timestamps_ms[6] (1600).
         let event_ts = vec![1_550_i64];
         let r = event_window_stats(&returns, &timestamps_ms, &event_ts, 3, 3);
@@ -244,8 +244,8 @@ mod tests {
     /// "no events met the boundary check"; the kernel allows it).
     #[test]
     fn empty_event_list_returns_empty_vectors() {
-        let returns: Vec<f64> = (0..20).map(|i| i as f64 * 0.1).collect();
-        let timestamps_ms: Vec<i64> = (0..20).map(|i| 1_000 + 100 * i as i64).collect();
+        let returns: Vec<f64> = (0..20).map(|i| f64::from(i) * 0.1).collect();
+        let timestamps_ms: Vec<i64> = (0..20).map(|i| 1_000 + 100 * i64::from(i)).collect();
         let r = event_window_stats(&returns, &timestamps_ms, &[], 3, 3);
         assert_eq!(r.event_count, 0);
         assert!(r.pre_means.is_empty());

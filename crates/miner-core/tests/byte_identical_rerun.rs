@@ -1,17 +1,17 @@
 //! Phase 4 Plan 04-11 Task 2 — byte-identical-rerun integration test.
 //!
 //! Pins ROADMAP Phase 4 Success Criterion #4: "consistent Finding envelope
-//! shape across all 22 scans, single discriminant by scan_id, scan-specific
+//! shape across all 22 scans, single discriminant by `scan_id`, scan-specific
 //! extras in documented effect.extra object". By exercising ONE representative
 //! scan from each family (ANOM / CROSS / SEAS) via the canonical
 //! `Scan::run` boundary and proving the masked JSONL is bit-equal across
 //! two runs, the test simultaneously pins:
 //!
-//! - D3-23 (byte-identical re-run modulo run_id + clock fields) — once for
+//! - D3-23 (byte-identical re-run modulo `run_id` + clock fields) — once for
 //!   each family
 //! - The envelope-shape invariant (every emitted envelope deserialises into
 //!   the same five-variant `Finding` enum tagged by `scan_id_at_version`)
-//! - The deterministic ordering of `effect.extra` keys (BTreeMap, alphabetic
+//! - The deterministic ordering of `effect.extra` keys (`BTreeMap`, alphabetic
 //!   on every run)
 //!
 //! ## Scans exercised
@@ -96,7 +96,7 @@ fn build_bars(symbol: &str, n: usize, closes: &[f64]) -> BarFrame {
     }
 }
 
-/// Run a single-arity scan twice into separate BufferSinks; return both
+/// Run a single-arity scan twice into separate `BufferSinks`; return both
 /// JSONL byte buffers AND the matching masked envelope Vecs.
 fn run_single_arity_twice<S: Scan>(
     scan: S,
@@ -207,7 +207,7 @@ fn build_single_request(scan_id: &str) -> ScanRequest {
 /// Pair-arity request builder for the kernel-direct path. See
 /// `run_pair_arity_twice` — both are retained as future-use kernel-direct
 /// helpers. The engine-path equivalent is `run_pair_arity_via_engine_twice`
-/// (Plan 04-12) which builds the request inline against a SyntheticCache.
+/// (Plan 04-12) which builds the request inline against a `SyntheticCache`.
 #[allow(dead_code, reason = "paired with run_pair_arity_twice; retained for future kernel-direct pins")]
 fn build_pair_request() -> ScanRequest {
     let resolved_params = serde_json::json!({"regression": "c"});
@@ -245,7 +245,7 @@ fn build_pair_request() -> ScanRequest {
     }
 }
 
-/// ANOM-02 byte-identical-rerun pin. The ResultFinding has zero
+/// ANOM-02 byte-identical-rerun pin. The `ResultFinding` has zero
 /// inherently volatile structural fields beyond `run_id` + `produced_at_utc`,
 /// so masking those two should yield byte-identical envelopes.
 #[test]
@@ -276,9 +276,9 @@ fn byte_identical_rerun_anom_summary_welford() {
 }
 
 /// Drive a Pair-arity scan through `engine::run_one_with_registry` twice
-/// against a fresh SyntheticCache populated with the same per-leg seeds.
-/// Returns both runs' raw JSONL bytes and the masked envelope Vecs (RunStart
-/// + Result + RunEnd, parsed through `common::parse_and_mask_jsonl`).
+/// against a fresh `SyntheticCache` populated with the same per-leg seeds.
+/// Returns both runs' raw JSONL bytes and the masked envelope Vecs (`RunStart`
+/// + Result + `RunEnd`, parsed through `common::parse_and_mask_jsonl`).
 ///
 /// Plan 04-12 refactor: previously the helper hand-built `ScanCtx { bars_pair:
 /// Some((a, b)), .. }` directly, bypassing the engine. That kernel-level pin
@@ -356,11 +356,11 @@ fn run_pair_arity_via_engine_twice(
 /// directly — kernel-correct but facade-broken (this is exactly what
 /// CR-01 was). The new version drives the scan through
 /// `engine::run_one_with_registry` against a `SyntheticCache` so the
-/// byte-identity invariant covers the full RunStart / Result / RunEnd
+/// byte-identity invariant covers the full `RunStart` / Result / `RunEnd`
 /// envelope chain (D3-23) AND CR-01 itself: if the engine ever regresses
 /// to hard-coded single-leg dispatch, the `Finding::ScanError "expected
 /// Pair arity"` envelope it would emit cannot byte-match a different
-/// RunStart's masked output, and this test fires.
+/// `RunStart`'s masked output, and this test fires.
 #[test]
 fn byte_identical_rerun_cross_engle_granger() {
     let day = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();

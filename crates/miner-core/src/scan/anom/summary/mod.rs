@@ -469,7 +469,7 @@ mod tests {
     /// Hand-derived excess kurtosis within 1e-12.
     #[test]
     fn summary_welford_excess_kurtosis_matches_hand_derived() {
-        let values: Vec<f64> = (1..=8).map(|i| i as f64).collect();
+        let values: Vec<f64> = (1..=8).map(|i| f64::from(i)).collect();
         let s = kernel::welford_pass(&values);
         let expected = -1.2_f64;
         assert!(
@@ -485,7 +485,7 @@ mod tests {
     fn summary_welford_iqr_matches_hand_derived() {
         // [1,2,3,4,5]: P75 = 4.0, P25 = 2.0, IQR = 2.0.
         let q = kernel::iqr(&[1.0_f64, 2.0, 3.0, 4.0, 5.0]);
-        assert!((q - 2.0).abs() < 1e-12, "iqr={}", q);
+        assert!((q - 2.0).abs() < 1e-12, "iqr={q}");
     }
 
     #[test]

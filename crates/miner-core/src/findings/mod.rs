@@ -720,7 +720,7 @@ mod tests {
     /// Plan 04-01 Task 2 — Behavior Test 4: `data_slice_sources_vec_round_trip`.
     /// `DataSlice.sources: Vec<Source>` round-trips through JSON with the
     /// inserted Vec length preserved. Single-leg findings carry a length-1
-    /// Vec; the round-trip preserves Source.{source_id, symbol, side,
+    /// Vec; the round-trip preserves `Source.{source_id`, symbol, side,
     /// timeframe} verbatim. Pins the D4-03 wire contract.
     #[test]
     fn data_slice_sources_vec_round_trip() {

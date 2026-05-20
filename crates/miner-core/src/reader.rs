@@ -97,7 +97,7 @@ impl Side {
 ///
 /// Derives include `Hash` so the type can serve as a `BTreeMap` /
 /// `HashMap` key in future per-instrument caches (parallel to the
-/// existing `(String, Side, NaiveDate)` MockReader key in Plan 02-02).
+/// existing `(String, Side, NaiveDate)` `MockReader` key in Plan 02-02).
 /// `JsonSchema` is derived so the type can appear in any future schemars
 /// regen surface (the type is currently engine-internal — only present in
 /// `ScanRequest.instruments`, which is itself NOT `JsonSchema`-derived — but

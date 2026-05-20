@@ -422,8 +422,8 @@ mod tests {
     }
 
     /// Plan 04-09 Task 1 behavior — bucket-assignment uses `ts_open_utc.hour()`
-    /// of the bar that produced the return. With a hand-built BarFrame of 5
-    /// bars at 00:00, 00:15, 00:30, 00:45, 01:00, log_returns produces 4
+    /// of the bar that produced the return. With a hand-built `BarFrame` of 5
+    /// bars at 00:00, 00:15, 00:30, 00:45, 01:00, `log_returns` produces 4
     /// returns aligned with bars 1..=4: hours [0, 0, 0, 1]. After running the
     /// scan, counts[0] = 3, counts[1] = 1.
     #[test]
@@ -544,7 +544,7 @@ mod tests {
     }
 
     /// Test the zero-mean t-stat behaviour — a hand-built series whose returns
-    /// in a single hour have mean exactly 0.0 produces t_stat == 0 for that
+    /// in a single hour have mean exactly 0.0 produces `t_stat` == 0 for that
     /// bucket.
     #[test]
     fn hour_of_day_t_stat_zero_mean_bucket() {

@@ -285,15 +285,15 @@ mod tests {
 
     /// Hand-derived V-shape: closes [10, 5, 10] -> log returns
     /// [ln(0.5), ln(2)] = [-0.6931..., +0.6931...]. Equity curve:
-    /// [-0.6931..., 0.0]. running_peak starts at -0.6931... at t=0, then
+    /// [-0.6931..., 0.0]. `running_peak` starts at -0.6931... at t=0, then
     /// at t=1 equity = 0.0 >= peak, so the peak updates AND the previous
     /// drawdown closes — except the drawdown opened at t=0 implicitly
-    /// (equity dropped below the running_peak at t=0). Since we initialize
-    /// running_peak = equity_curve[0] at t=0, the very first bar can never
+    /// (equity dropped below the `running_peak` at t=0). Since we initialize
+    /// `running_peak` = `equity_curve`[0] at t=0, the very first bar can never
     /// be underwater. So the V-shape requires AT LEAST 3 points in equity
     /// space: [E0, E1, E2] with E0 > E1, E2 >= E0.
     ///
-    /// Simplest unambiguous V test: equity_curve = [0.0, -0.693147, 0.0]
+    /// Simplest unambiguous V test: `equity_curve` = [0.0, -0.693147, 0.0]
     /// (we construct it directly, bypassing log-returns).
     #[test]
     fn drawdown_profile_v_shape() {
@@ -338,7 +338,7 @@ mod tests {
     /// - At t=5 (9) we go underwater again from new peak (10 at t=4).
     /// - At t=6 (11) we exceed running peak — close episode 2: peak=4,
     ///   trough=5, dur = ts[5]-ts[4], recovery = ts[6]-ts[5].
-    /// max_dd = 5 - 10 = -5.0.
+    /// `max_dd` = 5 - 10 = -5.0.
     #[test]
     fn drawdown_profile_compound_v() {
         let equity = vec![10.0_f64, 8.0, 5.0, 7.0, 10.0, 9.0, 11.0];
@@ -361,7 +361,7 @@ mod tests {
     }
 
     /// Equity that ends underwater never closes the episode — no peaks
-    /// recorded, but max_dd is still tracked.
+    /// recorded, but `max_dd` is still tracked.
     #[test]
     fn drawdown_profile_ends_underwater_no_recovery() {
         let equity = vec![5.0_f64, 3.0, 1.0];
@@ -378,7 +378,7 @@ mod tests {
         }
     }
 
-    /// max_dd <= 0.0 invariant (drawdown is always negative or zero).
+    /// `max_dd` <= 0.0 invariant (drawdown is always negative or zero).
     #[test]
     fn drawdown_profile_max_dd_is_non_positive() {
         // Arbitrary non-monotone equity.

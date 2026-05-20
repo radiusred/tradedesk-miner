@@ -66,7 +66,7 @@ pub(super) struct ArchLmResult {
 /// degenerate regression).
 ///
 /// # Panics
-/// Does not panic; structural debug_asserts trigger only on inputs the caller
+/// Does not panic; structural `debug_asserts` trigger only on inputs the caller
 /// is expected to have validated (lag in `[1, n/3]`).
 #[inline]
 #[allow(
@@ -262,7 +262,7 @@ mod tests {
     }
 
     /// For constant-magnitude returns (alternating sign, equal absolute value),
-    /// the squared residuals are constant, so R² = 0, LM = 0, p_value = 1.
+    /// the squared residuals are constant, so R² = 0, LM = 0, `p_value` = 1.
     #[test]
     fn arch_lm_test_constant_squared_residuals_lm_is_zero() {
         // alternating ±0.01 around zero: squared residuals all 0.0001 (constant).
@@ -316,7 +316,7 @@ mod tests {
     /// Hand-derivable relationship: LM = (n - lag) * R². For an input where
     /// R² is exactly computable (constant squared residuals -> R² = 0), LM = 0.
     /// For the ARCH-driven series above, LM > 0; this test pins
-    /// LM ≡ nobs * R² by independent computation of R² from ss_res/ss_tot.
+    /// LM ≡ nobs * R² by independent computation of R² from `ss_res/ss_tot`.
     #[test]
     fn arch_lm_test_lm_equals_nobs_times_r_squared() {
         let n = 50;
@@ -339,8 +339,7 @@ mod tests {
         // R² must be in [0, 1].
         assert!(
             (0.0..=1.0).contains(&r_squared),
-            "R² = {} should be in [0, 1]",
-            r_squared
+            "R² = {r_squared} should be in [0, 1]"
         );
         // Recompute LM from R² and assert byte-identical (within rounding).
         let lm_recomputed = nobs_f * r_squared;
@@ -427,7 +426,7 @@ mod tests {
         assert_eq!(result.lag, 5);
     }
 
-    /// Hand-derived check: LM/nobs = R² therefore (1 - LM/nobs) = SS_res/SS_tot.
+    /// Hand-derived check: LM/nobs = R² therefore (1 - LM/nobs) = `SS_res/SS_tot`.
     /// Verify F-stat = R²/(1-R²) * (n - 2L - 1) / L using independent recompute.
     #[test]
     fn arch_lm_test_f_stat_formula() {

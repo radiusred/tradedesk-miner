@@ -3,7 +3,7 @@
 //!
 //! Pattern analog: `crates/miner-core/tests/scan_outliers.rs` (sibling
 //! ANOM-family integration test). Pins envelope shape via `insta` snapshot.
-//! Hand-derived ADF test statistic tolerance: 1e-10; MacKinnon p approx 1e-8
+//! Hand-derived ADF test statistic tolerance: 1e-10; `MacKinnon` p approx 1e-8
 //! per RESEARCH §Section 2.
 
 #![allow(clippy::cast_precision_loss, clippy::too_many_lines)]

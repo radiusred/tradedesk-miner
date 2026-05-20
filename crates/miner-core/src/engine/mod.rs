@@ -634,9 +634,9 @@ pub fn run_one_with_registry<R: Reader>(
 /// `bars_pair: Some((leg_a, leg_b))`.
 ///
 /// The function carries the SAME 5-arm error-handling shape as the Single
-/// path: reader error (per leg), cache error (per leg), ScanError::Kernel,
-/// ScanError::Io, ScanError::Miner. Cancel-poll cadence is preserved
-/// (cancel-before-subrange at sub-range loop top). The single GapAborted
+/// path: reader error (per leg), cache error (per leg), `ScanError::Kernel`,
+/// `ScanError::Io`, `ScanError::Miner`. Cancel-poll cadence is preserved
+/// (cancel-before-subrange at sub-range loop top). The single `GapAborted`
 /// envelope on `GapDispatch::Aborted` carries the JOINT manifest (the UNION
 /// of leg-A and leg-B gaps, per `dispatch_pair`'s contract);
 /// `data_slice.sources` carries BOTH legs (D4-03) in the same order as

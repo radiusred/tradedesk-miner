@@ -13,7 +13,7 @@
 //! the structural hole that scaffold had left open.
 //!
 //! Plan 04-12 closes the hole. This file is now the engine-level
-//! regression gate for CR-01: it constructs a Pair-arity ScanRequest,
+//! regression gate for CR-01: it constructs a Pair-arity `ScanRequest`,
 //! invokes `engine::run_one_with_registry` against a `SyntheticCache` +
 //! `DukascopyReader` with BOTH legs populated, and asserts a
 //! `Finding::Result` envelope (NOT `Finding::ScanError` with the
@@ -25,7 +25,7 @@
 //!
 //! The two original tests (`inner_join_aligns_two_leg_close_vectors` +
 //! `data_slice_sources_vec_is_reachable_for_two_leg_envelopes`) document
-//! that the Pair primitive surface (inner_join + the Source struct) is
+//! that the Pair primitive surface (`inner_join` + the Source struct) is
 //! reachable from integration tests. They predate Plan 04-12 and remain
 //! valid as primitive-shape pins; the new test sits alongside them as
 //! the engine-path regression gate.
@@ -52,9 +52,9 @@ use miner_reader_dukascopy::DukascopyReader;
 
 use common::{BufferSink, synthetic_cache::SyntheticCache};
 
-/// Build a synthetic BarFrame with the given timestamps and closes. Used by
+/// Build a synthetic `BarFrame` with the given timestamps and closes. Used by
 /// the Pattern-A primitive-shape tests below (NOT the engine-path test —
-/// that one drives the production aggregator via DukascopyReader + BarCache).
+/// that one drives the production aggregator via `DukascopyReader` + `BarCache`).
 fn build_bars(symbol: &str, ts: &[chrono::DateTime<Utc>], closes: &[f64]) -> BarFrame {
     assert_eq!(ts.len(), closes.len(), "test fixture mismatch");
     BarFrame {
@@ -89,7 +89,7 @@ fn build_bars(symbol: &str, ts: &[chrono::DateTime<Utc>], closes: &[f64]) -> Bar
 ///
 /// Without the Plan 04-12 fix to `engine::run_one_with_registry`, this test
 /// trips on assertion #4 (or #1, depending on whether the engine still
-/// returns `Ok(HadScanErrors)` for the embedded ScanError).
+/// returns `Ok(HadScanErrors)` for the embedded `ScanError`).
 #[test]
 fn two_leg_facade_pair_arity_dispatch_emits_result_envelope() {
     // Day with bars for BOTH legs. `with_deterministic_day` writes 1440

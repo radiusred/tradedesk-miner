@@ -449,7 +449,7 @@ mod tests {
         Blake3Hex::from_hex_bytes(&bytes)
     }
 
-    /// Build a synthetic BarFrame from a slice of (ts, close) pairs.
+    /// Build a synthetic `BarFrame` from a slice of (ts, close) pairs.
     fn build_bars(symbol: &str, ts: &[DateTime<Utc>], closes: &[f64]) -> BarFrame {
         assert_eq!(ts.len(), closes.len());
         BarFrame {

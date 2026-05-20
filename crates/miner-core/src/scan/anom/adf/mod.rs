@@ -10,7 +10,7 @@
 //! `statsmodels.tsa.stattools.adfuller(x, maxlag=None, regression='c',
 //! autolag='AIC')`. The kernel is hand-derived (no Rust crate ships ADF) —
 //! see `04-RESEARCH.md` §1.4 + the kernel module-doc for the algorithm and
-//! the MacKinnon p-value simplification.
+//! the `MacKinnon` p-value simplification.
 //!
 //! ## D4-02 surface
 //!
@@ -25,7 +25,7 @@
 //!   MacKinnon-approximated p-value`.
 //! - `effect.extra = {crit_values, lag_selected, nobs, p_value, regression}`
 //!   (alphabetical `BTreeMap` order). The `regression` key encodes the variant
-//!   name as a UTF-8 bytes RawArray (same Dtype::F64 wire-form trick used by
+//!   name as a UTF-8 bytes `RawArray` (same `Dtype::F64` wire-form trick used by
 //!   ANOM-04 squared variant).
 //! - `raw.series = {closes, timestamps_ms}`.
 //!
@@ -288,30 +288,27 @@ fn resolve_autolag(req: &ScanRequest) -> Result<AutoLagVariant, ScanError> {
 )]
 fn resolve_max_lag(req: &ScanRequest, n: usize) -> Result<usize, ScanError> {
     let raw = req.resolved_params.get("max_lag");
-    let max_lag = match raw {
-        Some(v) => {
-            let i = v.as_i64().ok_or_else(|| {
-                ScanError::Kernel(format!(
-                    "stats.stationarity.adf: max_lag must be an integer; got {v}"
-                ))
-            })?;
-            if i < 0 {
-                return Err(ScanError::Kernel(format!(
-                    "stats.stationarity.adf: max_lag must be >= 0; got {i}"
-                )));
-            }
-            usize::try_from(i).map_err(|_| {
-                ScanError::Kernel(format!(
-                    "stats.stationarity.adf: max_lag={i} out of usize range"
-                ))
-            })?
+    let max_lag = if let Some(v) = raw {
+        let i = v.as_i64().ok_or_else(|| {
+            ScanError::Kernel(format!(
+                "stats.stationarity.adf: max_lag must be an integer; got {v}"
+            ))
+        })?;
+        if i < 0 {
+            return Err(ScanError::Kernel(format!(
+                "stats.stationarity.adf: max_lag must be >= 0; got {i}"
+            )));
         }
-        None => {
-            // statsmodels default: int(12 * (n/100)^0.25).
-            let nf = n as f64;
-            let v = 12.0 * (nf / 100.0).powf(0.25);
-            v.floor().max(0.0) as usize
-        }
+        usize::try_from(i).map_err(|_| {
+            ScanError::Kernel(format!(
+                "stats.stationarity.adf: max_lag={i} out of usize range"
+            ))
+        })?
+    } else {
+        // statsmodels default: int(12 * (n/100)^0.25).
+        let nf = n as f64;
+        let v = 12.0 * (nf / 100.0).powf(0.25);
+        v.floor().max(0.0) as usize
     };
     if max_lag >= n {
         return Err(ScanError::Kernel(format!(
@@ -339,7 +336,7 @@ fn index_to_f64(i: usize) -> f64 {
     i as f64
 }
 
-/// Pack a UTF-8 label into a RawArray's data field as f64-sized bytes — same
+/// Pack a UTF-8 label into a `RawArray`'s data field as f64-sized bytes — same
 /// trick used by ANOM-04 squared `series_kind`. The catalogue's v1 wire-form
 /// supports only `Dtype::F64`; consumers decode via
 /// `std::str::from_utf8(&extra["regression"].data.0)`.
@@ -510,7 +507,7 @@ mod tests {
     }
 
     /// Pitfall 4 pin — AIC lag selection must be deterministic across repeated
-    /// invocations on the same input (sequential summation, NOT par_iter).
+    /// invocations on the same input (sequential summation, NOT `par_iter`).
     #[test]
     fn adf_aic_lag_selection_deterministic_seq_summation() {
         let bars = lcg_bar_frame_seeded(120, 42);

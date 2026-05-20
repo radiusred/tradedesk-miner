@@ -57,7 +57,7 @@ pub(super) struct JbResult {
 /// scan body can convert to `ScanError::Kernel`).
 ///
 /// # Panics
-/// Does not panic on valid inputs; `welford_pass` debug_asserts `n >= 2`.
+/// Does not panic on valid inputs; `welford_pass` `debug_asserts` `n >= 2`.
 #[inline]
 #[allow(
     clippy::cast_precision_loss,
@@ -116,7 +116,7 @@ mod tests {
 
     /// Hand-derivable closed form: for the symmetric uniform-shaped input
     /// `[1, 2, 3, 4, 5, 6, 7, 8]`, skew == 0 exactly (symmetric) and
-    /// excess_kurtosis matches scipy's `-1.2`. JB = (8/6) * (0² + 1.2²/4)
+    /// `excess_kurtosis` matches scipy's `-1.2`. JB = (8/6) * (0² + 1.2²/4)
     /// = (8/6) * 0.36 = 0.48.
     #[test]
     fn jarque_bera_symmetric_uniform_known_input() {
@@ -144,7 +144,7 @@ mod tests {
         );
     }
 
-    /// Hand-derived JB formula: for known skew=1.0 and excess_kurtosis=3.0,
+    /// Hand-derived JB formula: for known skew=1.0 and `excess_kurtosis=3.0`,
     /// JB = (n/6) * (1² + 3²/4) = (n/6) * 3.25. For n=100, JB = 100/6 * 3.25 =
     /// 54.166̄.
     ///
@@ -168,7 +168,7 @@ mod tests {
         );
     }
 
-    /// p_value matches `1 - ChiSquared(2).cdf(JB)` byte-identically (no
+    /// `p_value` matches `1 - ChiSquared(2).cdf(JB)` byte-identically (no
     /// floating-point drift in the kernel's chi² lookup).
     #[test]
     fn jarque_bera_p_value_matches_statrs() {

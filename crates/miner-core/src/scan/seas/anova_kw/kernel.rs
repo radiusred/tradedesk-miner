@@ -177,7 +177,7 @@ pub(super) fn kruskal_wallis(groups: &[Vec<f64>]) -> KruskalResult {
     let total_n: usize = groups.iter().map(|g| g.len()).sum();
     let mut pooled: Vec<(f64, usize)> = Vec::with_capacity(total_n);
     for (gi, g) in groups.iter().enumerate() {
-        for &v in g.iter() {
+        for &v in *g {
             pooled.push((v, gi));
         }
     }
@@ -260,11 +260,11 @@ mod tests {
 
     /// Hand-derived F-stat: 3 groups [1,2,3], [4,5,6], [7,8,9].
     /// Means: 2, 5, 8. Grand mean: 5. N=9, k=3.
-    /// SS_between = 3*(2-5)^2 + 3*(5-5)^2 + 3*(8-5)^2 = 27 + 0 + 27 = 54.
-    /// SS_within = sum of (x - μ_i)^2:
+    /// `SS_between` = 3*(2-5)^2 + 3*(5-5)^2 + 3*(8-5)^2 = 27 + 0 + 27 = 54.
+    /// `SS_within` = sum of (x - `μ_i)^2`:
     ///   group 1: (1-2)^2 + (2-2)^2 + (3-2)^2 = 2
     ///   group 2: 2; group 3: 2. total = 6.
-    /// MS_between = 54 / 2 = 27. MS_within = 6 / 6 = 1. F = 27.
+    /// `MS_between` = 54 / 2 = 27. `MS_within` = 6 / 6 = 1. F = 27.
     #[test]
     fn anova_three_groups_hand_derived() {
         let groups = vec![
@@ -282,7 +282,7 @@ mod tests {
         assert!(r.p_value >= 0.0);
     }
 
-    /// FisherSnedecor p-value sanity: F = 1.0 on df (2, 6) yields a p-value
+    /// `FisherSnedecor` p-value sanity: F = 1.0 on df (2, 6) yields a p-value
     /// > 0.4 (the F=1 cutoff is roughly the mode of the distribution).
     #[test]
     fn anova_p_value_via_fisher_snedecor() {
@@ -304,13 +304,13 @@ mod tests {
     }
 
     /// Kruskal-Wallis on the same 3-group hand input. With no ties:
-    /// pooled = [1..9] -> ranks 1..9. R_1 = 1+2+3 = 6; R_2 = 4+5+6 = 15;
-    /// R_3 = 7+8+9 = 24. n_i = 3 each. N=9.
+    /// pooled = [1..9] -> ranks 1..9. `R_1` = 1+2+3 = 6; `R_2` = 4+5+6 = 15;
+    /// `R_3` = 7+8+9 = 24. `n_i` = 3 each. N=9.
     /// H = (12 / (9*10)) * (6^2/3 + 15^2/3 + 24^2/3) - 3*10
     ///   = (12/90) * (12 + 75 + 192) - 30
     ///   = (12/90) * 279 - 30
     ///   = 37.2 - 30 = 7.2.
-    /// No ties -> c = 1; H_corrected = 7.2.
+    /// No ties -> c = 1; `H_corrected` = 7.2.
     #[test]
     fn kruskal_wallis_three_groups_hand_derived() {
         let groups = vec![

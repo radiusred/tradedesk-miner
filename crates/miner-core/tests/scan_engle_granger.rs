@@ -9,7 +9,7 @@
 //! block carries `{close_a, close_b, timestamps_ms}` (NOT `returns_a/b`).
 //! Per D4-09 (RESEARCH.md §1.7): `y = leg_a = req.instruments[0]`,
 //! `x = leg_b = req.instruments[1]`. Matches statsmodels.tsa.stattools.coint(y0, y1)
-//! where y0 = leg_a and y1 = leg_b — so the reported β is β_y0_on_y1.
+//! where y0 = `leg_a` and y1 = `leg_b` — so the reported β is `β_y0_on_y1`.
 
 mod common;
 
@@ -49,9 +49,9 @@ fn build_bars(symbol: &str, ts: &[chrono::DateTime<Utc>], closes: &[f64]) -> Bar
 ///
 /// Synthetic cointegrated pair: `close_a = close_b + ε` where ε is a
 /// mean-reverting AR(1) residual with φ = 0.3. The scan emits exactly
-/// one `Finding::Result` envelope with Pair-arity shape (data_slice.sources.len()
-/// == 2 + leg-labelled raw.series keys carrying CLOSES + adf_p_value
-/// surfaced through effect.p_value + the documented five effect.extra keys).
+/// one `Finding::Result` envelope with Pair-arity shape (`data_slice.sources.len()`
+/// == 2 + leg-labelled raw.series keys carrying CLOSES + `adf_p_value`
+/// surfaced through `effect.p_value` + the documented five effect.extra keys).
 #[test]
 fn scan_engle_granger_happy_path() {
     let n = 200;
@@ -300,12 +300,12 @@ fn scan_engle_granger_happy_path_via_engine_facade() {
 /// Phase 4 Plan 04-11 Task 1 golden cross-check — CROSS-05.
 ///
 /// Loads `crates/miner-core/tests/goldens/cross.cointegration.engle_granger.jsonl`,
-/// builds two BarFrames with the EXACT same LCG recipe the integration
+/// builds two `BarFrames` with the EXACT same LCG recipe the integration
 /// test's happy-path uses, runs `EngleGrangerScan::run`, and asserts
 /// per-RESEARCH §Section 2 tolerances:
-/// - 1e-10 on β (hedge_ratio_beta), α (hedge_ratio_alpha), residuals
-/// - 1e-8  on adf_stat + adf_p_value (MacKinnon table approximation)
-/// - 1e-10 on residual_std (sample std, pure arithmetic)
+/// - 1e-10 on β (`hedge_ratio_beta`), α (`hedge_ratio_alpha`), residuals
+/// - 1e-8  on `adf_stat` + `adf_p_value` (`MacKinnon` table approximation)
+/// - 1e-10 on `residual_std` (sample std, pure arithmetic)
 ///
 /// Pattern J Step 1 — provenance gate. The test refuses to run unless
 /// `provenance.statsmodels_version == "0.14.6"`. The stub golden checked

@@ -1,6 +1,6 @@
 //! Plan 04-09 Task 1 integration test — SEAS-01 hour-of-day envelope snapshot.
 //!
-//! Builds a deterministic 7-day × 24h × 4 bars/h BarFrame at 15m timeframe
+//! Builds a deterministic 7-day × 24h × 4 bars/h `BarFrame` at 15m timeframe
 //! (672 bars total), runs `HourOfDayScan::run`, parses the resulting envelope,
 //! masks volatile fields (`run_id`, `produced_at_utc`), and pins the shape via
 //! an insta snapshot. The 24-bucket extra-array lengths and the
@@ -105,7 +105,7 @@ fn scan_seas_hour_of_day_happy_path() {
 /// Phase 4 Plan 04-11 Task 1 golden cross-check — SEAS-01.
 ///
 /// Loads `crates/miner-core/tests/goldens/seas.bucket.hour_of_day.jsonl`,
-/// builds a 672-bar 15m BarFrame with the SAME LCG-seeded close array
+/// builds a 672-bar 15m `BarFrame` with the SAME LCG-seeded close array
 /// (`build_synthetic_15m_bars(672, 0xDEAD_BEEF)`) that
 /// `scan_seas_hour_of_day_happy_path` uses, runs `HourOfDayScan::run`,
 /// and asserts the 24 per-bucket arrays (`buckets`, `means`, `stds`,
@@ -247,7 +247,7 @@ fn decode_vec_h(
     out
 }
 
-/// Build a 15m-timeframe BarFrame of `n` bars starting at 2024-01-01 00:00 UTC
+/// Build a 15m-timeframe `BarFrame` of `n` bars starting at 2024-01-01 00:00 UTC
 /// with deterministic LCG-seeded closes (Phase 3's `lcg_closes` convention).
 #[allow(clippy::cast_possible_truncation)]
 fn build_synthetic_15m_bars(n: usize, seed: u64) -> BarFrame {
