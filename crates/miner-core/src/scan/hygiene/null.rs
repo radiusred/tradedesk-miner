@@ -17,17 +17,34 @@
 //! `Scan::supports_null_method(NullMethod::PhaseScramble)` will return
 //! `false` until Phase 7; user requests for phase-scramble are rejected
 //! with `PreflightCode::HygieneNotSupported`.
-//!
-//! RED placeholder: bodies return `unimplemented!()` so the Task 2 RED
-//! tests panic. Task 2 GREEN fills the body.
 
 use rand::Rng;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
 
-/// Circular-shift empirical null p-value — Task 2 GREEN body.
+/// Circular-shift surrogate-data null distribution p-value.
+///
+/// Builds `n_resamples` surrogate series by rotating `values` by a uniform
+/// offset in `[1, n)` (offset 0 rejected — it is the identity transform).
+/// For each surrogate, computes `stat(&shifted)` and tallies the count of
+/// surrogates whose absolute statistic equals or exceeds the absolute
+/// observed statistic. Returns the two-sided empirical p-value
+/// `more_extreme / n_resamples`.
+///
+/// `seed` propagates from `derive_job_seed` (HYG-05). The kernel uses
+/// `Xoshiro256PlusPlus::seed_from_u64(seed)` — byte-identical re-runs are
+/// guaranteed for fixed `(values, observed_stat, n_resamples, seed)`.
+///
+/// ## Edge cases
+///
+/// - `values.len() < 2` → `NaN` (no non-trivial rotation available; a
+///   1-element series has only the identity offset).
+/// - `n_resamples == 0` → `NaN`.
 #[must_use]
-#[allow(unused_variables)]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "n_resamples and more_extreme are u32 counts; the f64 conversion is exact for inputs < 2^53 (n_resamples << 2^31)"
+)]
 pub fn circular_shift_null_p<F>(
     values: &[f64],
     observed_stat: f64,
@@ -38,8 +55,25 @@ pub fn circular_shift_null_p<F>(
 where
     F: Fn(&[f64]) -> f64,
 {
-    // RED: Task 2 GREEN fills this body.
-    unimplemented!("Plan 05-02 Task 2 GREEN fills this body")
+    let n = values.len();
+    if n < 2 || n_resamples == 0 {
+        return f64::NAN;
+    }
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
+    let mut surrogate: Vec<f64> = vec![0.0; n];
+    let mut more_extreme: u32 = 0;
+    let obs_abs = observed_stat.abs();
+    for _ in 0..n_resamples {
+        let offset = rng.gen_range(1..n); // 1..n excludes the identity (offset 0)
+        for (i, slot) in surrogate.iter_mut().enumerate().take(n) {
+            *slot = values[(i + offset) % n];
+        }
+        let surr_stat = stat(&surrogate);
+        if surr_stat.abs() >= obs_abs {
+            more_extreme += 1;
+        }
+    }
+    f64::from(more_extreme) / f64::from(n_resamples)
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +109,7 @@ mod tests {
     }
 
     /// Test 6 (Plan 05-02): under the null the average p-value approaches
-    /// 0.5 (loose ±0.2 bound for n_resamples=200 over 50 seeded trials).
+    /// 0.5 (loose ±0.2 bound for `n_resamples=200` over 50 seeded trials).
     #[test]
     fn circular_shift_null_p_uniform_under_null() {
         let trials = 50_u32;

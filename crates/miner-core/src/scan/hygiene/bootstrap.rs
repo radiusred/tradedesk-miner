@@ -8,16 +8,53 @@
 //! `SeedableRng::seed_from_u64`; `SmallRng` / `StdRng` are explicitly NOT
 //! used (RESEARCH §1.5 — non-portable across rand versions).
 //!
-//! RED placeholder: bodies return `unimplemented!()` so the Task 2 RED
-//! tests panic. Task 2 GREEN fills the bodies.
+//! ## Cancel-poll discipline
+//!
+//! The kernels in this module do NOT poll for cancellation. Cancel polling
+//! happens between successive kernel calls in the engine (RESEARCH Pitfall 7
+//! — cadence N=64); Plan 05-03 implements the engine-side polling around the
+//! kernel call site. Adding `&AtomicBool` to the kernel signature would
+//! either tax every resample iteration (10^5+ atomic loads per kernel call)
+//! or require the caller to construct a no-op flag for pure-math test use
+//! cases. Neither is justifiable for a kernel that always finishes in
+//! milliseconds; the engine's outer loop is the right cancel-poll surface.
+//!
+//! ## Memory-amplification discipline (RESEARCH Pitfall 2)
+//!
+//! Inner-loop scratch buffers (`buf` in `stationary_bootstrap_ci`,
+//! `block_bootstrap_ci`) are allocated ONCE before the resample loop and
+//! `buf.clear()`-ed per resample. The naïve `Vec::with_capacity(n)` per
+//! resample pattern would allocate `n_resamples * n` floats over the run.
 
 use rand::Rng;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
 
-/// Politis-Romano (1994) stationary-bootstrap CI — Task 2 GREEN body.
+/// Politis-Romano (1994) stationary bootstrap CI for a scalar statistic of
+/// an autocorrelated series.
+///
+/// The stationary bootstrap resamples blocks of geometric length (mean
+/// `mean_block_len`). For each of `n_resamples` resamples, the kernel
+/// computes `stat(&buf)` and accumulates the value; the returned CI is the
+/// `[alpha/2, 1 - alpha/2]` quantile pair (`alpha = 1 - ci_level`).
+///
+/// `seed` propagates from `derive_job_seed` (HYG-05). The kernel uses
+/// `Xoshiro256PlusPlus::seed_from_u64(seed)` — byte-identical re-runs are
+/// guaranteed for fixed `(values, n_resamples, mean_block_len, seed, ci_level)`.
+///
+/// ## Edge cases
+///
+/// - `values.len() < 2` → `[NaN, NaN]`.
+/// - `n_resamples == 0` → `[NaN, NaN]`.
+/// - `mean_block_len <= 1.0` → behaves as IID bootstrap (every step starts
+///   a new block).
 #[must_use]
-#[allow(unused_variables)]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "n_resamples is a u32 user input; the floor/ceil cast to usize is bounded by n_resamples and cannot overflow on practical inputs (n_resamples << 2^31)"
+)]
 pub fn stationary_bootstrap_ci<F>(
     values: &[f64],
     stat: F,
@@ -29,13 +66,63 @@ pub fn stationary_bootstrap_ci<F>(
 where
     F: Fn(&[f64]) -> f64,
 {
-    // RED: Task 2 GREEN fills this body.
-    unimplemented!("Plan 05-02 Task 2 GREEN fills this body")
+    let n = values.len();
+    if n < 2 || n_resamples == 0 {
+        return [f64::NAN, f64::NAN];
+    }
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
+    let p_continue = if mean_block_len > 1.0 {
+        1.0 / mean_block_len
+    } else {
+        1.0
+    };
+
+    let n_resamples_usize = n_resamples as usize;
+    let mut boot_stats: Vec<f64> = Vec::with_capacity(n_resamples_usize);
+    let mut buf: Vec<f64> = Vec::with_capacity(n);
+
+    for _resample in 0..n_resamples {
+        buf.clear();
+        let mut idx = rng.gen_range(0..n);
+        while buf.len() < n {
+            buf.push(values[idx]);
+            if rng.r#gen::<f64>() < p_continue {
+                idx = rng.gen_range(0..n);
+            } else {
+                idx = (idx + 1) % n;
+            }
+        }
+        boot_stats.push(stat(&buf));
+    }
+
+    boot_stats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let alpha_half = (1.0 - ci_level) / 2.0;
+    let n_resamples_f = f64::from(n_resamples);
+    let lo_idx = (n_resamples_f * alpha_half).floor() as usize;
+    let hi_raw = (n_resamples_f * (1.0 - alpha_half)).ceil() as usize;
+    let hi_idx = hi_raw.saturating_sub(1).min(boot_stats.len() - 1);
+    [boot_stats[lo_idx], boot_stats[hi_idx]]
 }
 
-/// Fixed-block bootstrap CI — Task 2 GREEN body.
+/// Fixed-block bootstrap CI — block size `block_len` is a hard count.
+///
+/// Each resample is built by drawing a uniform start index per `block_len`
+/// steps; consecutive bars within a block are read with wrap-around modulo
+/// `n`. Same `Xoshiro256PlusPlus` RNG and same `to_bits()` determinism
+/// contract as [`stationary_bootstrap_ci`].
+///
+/// ## Edge cases
+///
+/// - `values.len() < 2` → `[NaN, NaN]`.
+/// - `n_resamples == 0` → `[NaN, NaN]`.
+/// - `block_len == 0` → `[NaN, NaN]` (block-size zero is undefined).
 #[must_use]
-#[allow(unused_variables)]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "n_resamples is a u32 user input; the floor/ceil cast to usize is bounded by n_resamples and cannot overflow on practical inputs (n_resamples << 2^31)"
+)]
 pub fn block_bootstrap_ci<F>(
     values: &[f64],
     stat: F,
@@ -47,17 +134,127 @@ pub fn block_bootstrap_ci<F>(
 where
     F: Fn(&[f64]) -> f64,
 {
-    // RED: Task 2 GREEN fills this body.
-    unimplemented!("Plan 05-02 Task 2 GREEN fills this body")
+    let n = values.len();
+    if n < 2 || n_resamples == 0 || block_len == 0 {
+        return [f64::NAN, f64::NAN];
+    }
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
+    let n_resamples_usize = n_resamples as usize;
+    let mut boot_stats: Vec<f64> = Vec::with_capacity(n_resamples_usize);
+    let mut buf: Vec<f64> = Vec::with_capacity(n);
+
+    for _resample in 0..n_resamples {
+        buf.clear();
+        let mut idx = rng.gen_range(0..n);
+        let mut steps_in_block: usize = 0;
+        while buf.len() < n {
+            if steps_in_block >= block_len {
+                idx = rng.gen_range(0..n);
+                steps_in_block = 0;
+            }
+            buf.push(values[idx]);
+            idx = (idx + 1) % n;
+            steps_in_block += 1;
+        }
+        boot_stats.push(stat(&buf));
+    }
+
+    boot_stats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let alpha_half = (1.0 - ci_level) / 2.0;
+    let n_resamples_f = f64::from(n_resamples);
+    let lo_idx = (n_resamples_f * alpha_half).floor() as usize;
+    let hi_raw = (n_resamples_f * (1.0 - alpha_half)).ceil() as usize;
+    let hi_idx = hi_raw.saturating_sub(1).min(boot_stats.len() - 1);
+    [boot_stats[lo_idx], boot_stats[hi_idx]]
 }
 
-/// Politis-White / Patton-Politis-White automatic block-length selector —
-/// Task 2 GREEN body.
+/// Politis-White (2004) + Patton-Politis-White (2009) automatic
+/// block-length selector for the stationary bootstrap.
+///
+/// Returns the floating-point `b_star` recommendation; callers floor via
+/// `max(3.0, b_star.ceil())` for the `block_bootstrap_ci` `block_len`
+/// argument or use the raw `b_star` as `mean_block_len` for
+/// `stationary_bootstrap_ci`.
+///
+/// ## Algorithm (Politis & White 2004 §3, Patton-Politis-White 2009 erratum)
+///
+/// 1. Compute biased autocovariances `r_k` for `k = 0..=K_n` where
+///    `K_n = ceil(min(5 * log10(n), n / 2))`.
+/// 2. Find `m`: largest `k` such that `|r_k / r_0| > c * sqrt(log10(n) / n)`
+///    with `c = 2.0` (the Politis-White 2004 default).
+/// 3. `g_hat = sum_{k = 1..=2m} lambda(k / (2m)) * r_k` where
+///    `lambda(t) = 1 - |t|` is the Bartlett kernel (Patton-Politis-White
+///    2009 correction).
+/// 4. `D_hat = (4/3) * g_hat^2`.
+/// 5. `b_star = (2 * g_hat^2 / D_hat) ^ (1/3) * n ^ (1/3)`.
+///
+/// ## Edge cases
+///
+/// - `values.len() < 4` → `NaN`.
+/// - Constant series (`r_0 == 0`) → `NaN`. Callers fall back to
+///   `ceil(n^(1/3))` per the documented contract.
 #[must_use]
-#[allow(unused_variables)]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "n is the input series length (bar count); fits trivially in f64; the floor/ceil cast to usize is bounded by n itself"
+)]
 pub fn block_length_pwppw(values: &[f64]) -> f64 {
-    // RED: Task 2 GREEN fills this body.
-    unimplemented!("Plan 05-02 Task 2 GREEN fills this body")
+    let n = values.len();
+    if n < 4 {
+        return f64::NAN;
+    }
+    let n_f = n as f64;
+    let k_n = ((5.0 * n_f.log10()).min(n_f / 2.0)).ceil() as usize;
+    if k_n < 1 {
+        return f64::NAN;
+    }
+
+    let mean = values.iter().copied().sum::<f64>() / n_f;
+    let cent: Vec<f64> = values.iter().map(|v| v - mean).collect();
+    let r0: f64 = cent.iter().map(|v| v * v).sum::<f64>() / n_f;
+    if r0 == 0.0 {
+        return f64::NAN;
+    }
+
+    let mut r = Vec::with_capacity(k_n + 1);
+    r.push(r0);
+    for k in 1..=k_n {
+        let s: f64 = (0..n.saturating_sub(k)).map(|i| cent[i] * cent[i + k]).sum();
+        r.push(s / n_f);
+    }
+
+    let threshold = 2.0 * (n_f.log10() / n_f).sqrt();
+    let mut m: usize = 0;
+    // Clippy `needless_range_loop` is suppressed: the loop body uses `k`
+    // as both an index AND a target value to set into `m`; switching to
+    // `enumerate().skip(1)` would obscure the intent. The pattern matches
+    // the LjungBox kernel `ljung_box_q_and_p` discipline at
+    // `scan/ljung_box/kernel.rs:115-126`.
+    #[allow(clippy::needless_range_loop)]
+    for k in 1..=k_n {
+        if (r[k] / r0).abs() > threshold {
+            m = k;
+        }
+    }
+    if m == 0 {
+        m = 1;
+    }
+
+    let two_m = 2 * m;
+    let two_m_f = two_m as f64;
+    let mut g_hat = 0.0_f64;
+    for k in 1..=two_m {
+        let r_k = if k < r.len() { r[k] } else { 0.0 };
+        let lambda = 1.0 - (k as f64 / two_m_f).abs();
+        g_hat += lambda * r_k;
+    }
+    let d_hat = 4.0 / 3.0 * g_hat * g_hat;
+    if d_hat == 0.0 {
+        return f64::NAN;
+    }
+    (2.0 * g_hat * g_hat / d_hat).powf(1.0 / 3.0) * n_f.powf(1.0 / 3.0)
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +399,7 @@ mod tests {
         assert!(b_star.is_finite());
         assert!(b_star > 0.0);
         let b_ceil = b_star.ceil() as usize;
-        assert!(b_ceil >= 1 && b_ceil <= 50);
+        assert!((1..=50).contains(&b_ceil));
     }
 
     /// `block_length_pwppw` constant input → NaN.
