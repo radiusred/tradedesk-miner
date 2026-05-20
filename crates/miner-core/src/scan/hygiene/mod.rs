@@ -36,7 +36,7 @@
 //!   `SeedableRng::seed_from_u64` — NEVER `SmallRng` / `StdRng` (those are
 //!   explicitly non-portable per the upstream Rand Book; HYG-05's
 //!   bit-for-bit reproducibility contract would break).
-//! - `debug_assert!` for kernel invariants (matches LjungBox kernel
+//! - `debug_assert!` for kernel invariants (matches `LjungBox` kernel
 //!   `ljung_box_q_and_p` discipline at `scan/ljung_box/kernel.rs:101-105`).
 //!
 //! ## Consumer surface

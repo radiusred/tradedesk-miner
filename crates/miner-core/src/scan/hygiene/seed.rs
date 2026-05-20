@@ -1,7 +1,7 @@
 //! Per-job seed derivation — `derive_job_seed` (Plan 05-02 / D5-05 / HYG-05).
 //!
 //! Pattern analog: `crate::engine::param_hash::param_hash` (same crate-internal
-//! `blake3::Hasher` discipline + Blake3Hex convention from Phase 2 D2-05).
+//! `blake3::Hasher` discipline + `Blake3Hex` convention from Phase 2 D2-05).
 //! Where `param_hash` produces a 64-char hex `Blake3Hex`, `derive_job_seed`
 //! collapses the 32-byte blake3 hash to a `u64` via little-endian read of the
 //! first 8 bytes — the right shape for `Xoshiro256PlusPlus::seed_from_u64`.
@@ -17,7 +17,7 @@
 //!    `format!("{}:{}", spec.symbol, spec.side.as_str()).as_bytes()`.
 //! 4. `timeframe.as_str().as_bytes()` — `"15m"` / `"1h"` / `"1d"`.
 //! 5. `format!("{}/{}", window.start.to_rfc3339(), window.end.to_rfc3339()).as_bytes()`.
-//! 6. `param_hash.as_bytes()` — the existing Phase 2 Blake3Hex hex string.
+//! 6. `param_hash.as_bytes()` — the existing Phase 2 `Blake3Hex` hex string.
 //!
 //! These rules MUST match the byte-identical-rerun invariant: any change to
 //! the canonical-bytes formatting requires a `Cargo.toml` major-version bump
@@ -35,11 +35,28 @@
 
 use crate::aggregator::Timeframe;
 use crate::reader::{ClosedRangeUtc, InstrumentSpec};
+use blake3::Hasher;
 
 /// Derive a per-job 64-bit seed from the master seed + the job's canonical
-/// identity tuple (HYG-05 / D5-05). Task 1 GREEN fills this body.
+/// identity tuple (HYG-05 / D5-05).
+///
+/// Determinism: same inputs ⇒ same `u64`. Sensitivity: changing ANY input
+/// (including `master_seed`, scan id, instruments, timeframe, window, or
+/// `param_hash`) changes the output `u64` with overwhelming probability
+/// (blake3's collision-resistance budget applies; the first-8-bytes
+/// projection retains a 64-bit collision budget).
+///
+/// Plan 05-03 (engine integration) calls this once per job to seed the
+/// `Xoshiro256PlusPlus` rngs used by `stationary_bootstrap_ci` and
+/// `circular_shift_null_p`. The same seed is echoed into the wire
+/// `ReproEnvelope.job_seed` (HYG-05) so a byte-identical re-run can be
+/// reconstructed from the streamed JSONL alone.
+///
+/// # Panics
+/// Panics via `expect("blake3 32-byte output")` only if `blake3::Hash`'s
+/// public contract ever returns less than 8 bytes — impossible by the
+/// crate's published API.
 #[must_use]
-#[allow(unused_variables)]
 pub fn derive_job_seed(
     master_seed: u64,
     scan_id_at_version: &str,
@@ -48,8 +65,23 @@ pub fn derive_job_seed(
     window: &ClosedRangeUtc,
     param_hash: &str,
 ) -> u64 {
-    // RED: Task 1 GREEN fills this body.
-    unimplemented!("Plan 05-02 Task 1 GREEN fills this body")
+    let mut hasher = Hasher::new();
+    hasher.update(&master_seed.to_le_bytes());
+    hasher.update(scan_id_at_version.as_bytes());
+    for spec in instruments {
+        hasher.update(format!("{}:{}", spec.symbol, spec.side.as_str()).as_bytes());
+    }
+    hasher.update(timeframe.as_str().as_bytes());
+    hasher.update(format!("{}/{}", window.start.to_rfc3339(), window.end.to_rfc3339()).as_bytes());
+    hasher.update(param_hash.as_bytes());
+    let bytes = hasher.finalize();
+    let head: [u8; 8] = bytes
+        .as_bytes()
+        .get(..8)
+        .expect("blake3 32-byte output")
+        .try_into()
+        .expect("blake3 32-byte output");
+    u64::from_le_bytes(head)
 }
 
 // ---------------------------------------------------------------------------

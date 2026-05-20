@@ -2,7 +2,7 @@
 //! placeholder).
 //!
 //! Task 3 fills the body. This stub exists so `hygiene/mod.rs` compiles
-//! while Task 1's effect_size + seed kernels go through RED → GREEN. The
+//! while Task 1's `effect_size` + `seed` kernels go through RED → GREEN. The
 //! public signature is pinned to the contract from `05-02-PLAN.md
 //! <interfaces>`.
 

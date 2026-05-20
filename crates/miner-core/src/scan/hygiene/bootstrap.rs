@@ -1,7 +1,7 @@
 //! Bootstrap kernels — stub for Plan 05-02 Task 2 (Task 1 RED placeholder).
 //!
 //! Task 2 fills the bodies. This stub exists so `hygiene/mod.rs` compiles
-//! while Task 1's effect_size + seed kernels go through RED → GREEN. The
+//! while Task 1's `effect_size` + `seed` kernels go through RED → GREEN. The
 //! public signatures are pinned to the contract from `05-02-PLAN.md
 //! <interfaces>`.
 

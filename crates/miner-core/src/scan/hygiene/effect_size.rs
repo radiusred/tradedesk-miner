@@ -10,11 +10,11 @@
 //!
 //! ## Canonical `kind` strings (D5-03)
 //!
-//! The Effect.effect_size.kind discriminant string for each kernel is:
-//! - `cohens_d`   → "cohens_d"
-//! - `hedges_g`   → "hedges_g"
-//! - `cliffs_delta` → "cliffs_delta"
-//! - `vr_minus_one` → "vr_minus_one"
+//! The `Effect.effect_size.kind` discriminant string for each kernel is:
+//! - `cohens_d`     → `"cohens_d"`
+//! - `hedges_g`     → `"hedges_g"`
+//! - `cliffs_delta` → `"cliffs_delta"`
+//! - `vr_minus_one` → `"vr_minus_one"`
 //!
 //! Plan 05-03 (engine integration) populates `Effect.effect_size` with
 //! the matching `kind` string + the value returned by the relevant kernel
@@ -32,7 +32,7 @@
 //! The four kernels intentionally NEVER panic on degenerate input — they
 //! return `f64::NAN` so the engine's effect-size population rule can use
 //! `f64::is_nan` to decide whether to emit the field. This mirrors the
-//! LjungBox kernel's `denom == 0.0 ⇒ acf[k] = 0.0` constant-series rule
+//! `LjungBox` kernel's `denom == 0.0 ⇒ acf[k] = 0.0` constant-series rule
 //! (kernel.rs lines 58-62) — pure-function kernels never panic on inputs the
 //! caller might legitimately provide.
 
@@ -53,10 +53,32 @@
 /// - `(n_a + n_b) < 3` → `NaN` (pooled `df = n_a + n_b - 2` must be >= 1).
 /// - `s_pooled <= 0.0` (constant inputs) → `NaN`.
 #[inline]
-#[allow(unused_variables)]
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::similar_names,
+    clippy::many_single_char_names,
+    reason = "n_a / n_b are bar counts and fit trivially in f64's 52-bit mantissa for any realistic OHLCV-derived series (Phase 1 cap << 2^52); the n_a_f / n_b_f / mean_a / mean_b / var_a / var_b conventions are the canonical effect-size pseudocode names (Cohen 1988; statsmodels)"
+)]
 pub fn cohens_d(a: &[f64], b: &[f64]) -> f64 {
-    // RED: Task 1 GREEN fills this body.
-    unimplemented!("Plan 05-02 Task 1 GREEN fills this body")
+    let n_a = a.len();
+    let n_b = b.len();
+    if n_a < 2 || n_b < 2 || (n_a + n_b) < 3 {
+        return f64::NAN;
+    }
+    let n_a_f = n_a as f64;
+    let n_b_f = n_b as f64;
+    let mean_a = a.iter().copied().sum::<f64>() / n_a_f;
+    let mean_b = b.iter().copied().sum::<f64>() / n_b_f;
+    // Bessel-corrected sample variance: sum((x - mean)^2) / (n - 1).
+    let var_a = a.iter().map(|v| (v - mean_a).powi(2)).sum::<f64>() / (n_a_f - 1.0);
+    let var_b = b.iter().map(|v| (v - mean_b).powi(2)).sum::<f64>() / (n_b_f - 1.0);
+    let s_pooled_sq =
+        ((n_a_f - 1.0) * var_a + (n_b_f - 1.0) * var_b) / (n_a_f + n_b_f - 2.0);
+    if s_pooled_sq <= 0.0 {
+        return f64::NAN;
+    }
+    (mean_b - mean_a) / s_pooled_sq.sqrt()
 }
 
 /// Hedges' g — small-sample-bias-corrected Cohen's d (Hedges 1981).
@@ -69,10 +91,23 @@ pub fn cohens_d(a: &[f64], b: &[f64]) -> f64 {
 ///
 /// Returns NaN whenever `cohens_d` returns NaN (degenerate inputs propagate).
 #[inline]
-#[allow(unused_variables)]
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names,
+    reason = "n_a / n_b are bar counts and fit trivially in f64's 52-bit mantissa for any realistic OHLCV-derived series (Phase 1 cap << 2^52); a / b / d / g / j / n are the canonical effect-size pseudocode names (Hedges & Olkin 1985)"
+)]
 pub fn hedges_g(a: &[f64], b: &[f64]) -> f64 {
-    // RED: Task 1 GREEN fills this body.
-    unimplemented!("Plan 05-02 Task 1 GREEN fills this body")
+    let d = cohens_d(a, b);
+    if d.is_nan() {
+        return f64::NAN;
+    }
+    let n = (a.len() + b.len()) as f64;
+    // Hedges' correction: J(n) = 1 - 3 / (4n - 9). For n_a + n_b == 3 we'd
+    // have 4n - 9 == 3; the denominator stays positive for any n >= 3, which
+    // is the same precondition cohens_d already enforces.
+    let j = 1.0 - 3.0 / (4.0 * n - 9.0);
+    d * j
 }
 
 /// Cliff's delta — non-parametric effect size (Cliff 1993).
@@ -81,7 +116,7 @@ pub fn hedges_g(a: &[f64], b: &[f64]) -> f64 {
 /// The value is in `[-1, 1]` by construction; `delta = 0` ⇔ stochastic
 /// equality.
 ///
-/// Implementation: naïve O(n_a * n_b) double loop. For Phase-5 use the
+/// Implementation: naïve O(`n_a` * `n_b`) double loop. For Phase-5 use the
 /// inputs are per-job sample slices (typically `n < 10_000`), so the
 /// quadratic worst-case is `10^8` comparisons — acceptable per the threat
 /// model T-05-02-D1. Phase 7 may replace with the merge-sort-based O(n
@@ -91,15 +126,36 @@ pub fn hedges_g(a: &[f64], b: &[f64]) -> f64 {
 ///
 /// - `n_a == 0 || n_b == 0` → `NaN`.
 #[inline]
-#[allow(unused_variables)]
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "n_a * n_b is the comparison count; for realistic OHLCV-derived slices the product fits trivially in f64's 52-bit mantissa"
+)]
 pub fn cliffs_delta(a: &[f64], b: &[f64]) -> f64 {
-    // RED: Task 1 GREEN fills this body.
-    unimplemented!("Plan 05-02 Task 1 GREEN fills this body")
+    let n_a = a.len();
+    let n_b = b.len();
+    if n_a == 0 || n_b == 0 {
+        return f64::NAN;
+    }
+    let mut greater: i64 = 0;
+    let mut less: i64 = 0;
+    for ai in a {
+        for bj in b {
+            if bj > ai {
+                greater += 1;
+            } else if bj < ai {
+                less += 1;
+            }
+            // Ties contribute 0 to the numerator (Cliff 1993 §2.1).
+        }
+    }
+    let total = (n_a * n_b) as f64;
+    (greater - less) as f64 / total
 }
 
 /// Trivial "variance ratio minus one" effect-size wrapper.
 ///
-/// Lo & MacKinlay (1988) define the variance-ratio test statistic `VR(k) =
+/// Lo & `MacKinlay` (1988) define the variance-ratio test statistic `VR(k) =
 /// Var(r_k) / (k * Var(r_1))`. Under the random-walk null `VR(k) == 1`;
 /// deviations from `1` measure departure from the null. This wrapper
 /// produces the effect-size scalar `VR - 1` so the magnitude is centred at
@@ -111,10 +167,8 @@ pub fn cliffs_delta(a: &[f64], b: &[f64]) -> f64 {
 /// `NaN` input propagates to `NaN` output.
 #[inline]
 #[must_use]
-#[allow(unused_variables)]
 pub fn vr_minus_one(vr_at_max_k: f64) -> f64 {
-    // RED: Task 1 GREEN fills this body.
-    unimplemented!("Plan 05-02 Task 1 GREEN fills this body")
+    vr_at_max_k - 1.0
 }
 
 // ---------------------------------------------------------------------------
