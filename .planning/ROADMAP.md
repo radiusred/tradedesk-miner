@@ -111,7 +111,7 @@ Plans:
 - [x] 04-08-PLAN.md — CROSS batch B: cross.lead_lag.ccf (CROSS-04 symmetric ±max_lag), cross.cointegration.engle_granger (CROSS-05 two-step + OU half-life, reuses ANOM-05 ADF)
 - [x] 04-09-PLAN.md — SEAS batch A: seas.bucket.hour_of_day (SEAS-01), seas.bucket.day_of_week (SEAS-02), seas.bucket.session (SEAS-03 FX-major defaults per RESEARCH §1.8) + shared bucketing helper
 - [x] 04-10-PLAN.md — SEAS batch B: seas.bucket.eom_som (SEAS-04 trading-day-of-month via Calendar), seas.test.anova_kruskal (SEAS-05 F + KW), seas.event.pre_post_window (SEAS-06)
-- [ ] 04-11-PLAN.md — Goldens (ANOM-02 + CROSS-05 + SEAS-01) + schema regen + byte-identical-rerun test + README Quickstart + Phase 4 sign-off memo + human checkpoint
+- [x] 04-11-PLAN.md — Goldens (ANOM-02 + CROSS-05 + SEAS-01) + schema regen + byte-identical-rerun test + README Quickstart + Phase 4 sign-off memo + human checkpoint
 **UI hint**: No
 
 ### Phase 5: Statistical Hygiene & Sweep Runner
