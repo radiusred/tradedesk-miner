@@ -46,7 +46,7 @@ use statrs::distribution::ContinuousCDF;
     clippy::cast_precision_loss,
     reason = "n is the returns sample size — bar counts fit trivially in f64's 52-bit mantissa for any realistic OHLCV series (Phase 1 cap << 2^52)"
 )]
-pub(super) fn biased_acf(x: &[f64], max_lag: usize) -> Vec<f64> {
+pub(crate) fn biased_acf(x: &[f64], max_lag: usize) -> Vec<f64> {
     let n = x.len();
     let n_f = n as f64;
     let mean = x.iter().copied().sum::<f64>() / n_f;
@@ -93,7 +93,7 @@ pub(super) fn biased_acf(x: &[f64], max_lag: usize) -> Vec<f64> {
     clippy::similar_names,
     reason = "`acf` (autocorrelation function) and `acc` (cumulative accumulator) are short, well-known statistics-domain names; renaming either would be noise"
 )]
-pub(super) fn ljung_box_q_and_p(
+pub(crate) fn ljung_box_q_and_p(
     returns_n: usize,
     acf: &[f64],
     max_lag: usize,

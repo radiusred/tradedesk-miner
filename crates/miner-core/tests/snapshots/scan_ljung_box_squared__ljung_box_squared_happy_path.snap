@@ -1,0 +1,96 @@
+---
+source: crates/miner-core/tests/scan_ljung_box_squared.rs
+expression: masked
+---
+{
+  "code_revision": "test-rev-abc1234",
+  "data_slice": {
+    "gap_manifest": null,
+    "gap_manifest_ref": null,
+    "range": {
+      "end_utc": "2024-01-04T00:00:00Z",
+      "start_utc": "2024-01-01T00:00:00Z"
+    },
+    "sources": [
+      {
+        "side": "bid",
+        "source_id": "dukascopy",
+        "symbol": "EURUSD",
+        "timeframe": "15m"
+      }
+    ]
+  },
+  "dsr": null,
+  "effect": {
+    "ci95": null,
+    "extra": {
+      "acf": {
+        "data": "AAAAAAAA8D8W2SND17+yv95mjJLOf5c/PIVv+WVvl78ueQKq4mi+v3MYE4A+RLU/",
+        "dtype": "f64",
+        "shape": [
+          6
+        ]
+      },
+      "lags": {
+        "data": "AAAAAAAAFEA=",
+        "dtype": "f64",
+        "shape": [
+          1
+        ]
+      },
+      "p_values": {
+        "data": "nnRCS36n4T9gUDkC31XqPzHi2QMb6+0/qWrTXt786j/kwxbG5KTrPw==",
+        "dtype": "f64",
+        "shape": [
+          5
+        ]
+      },
+      "q_stats": {
+        "data": "wIUkLaas1j98AuRc4e/YP1by36qOOds/tEeDzOJ59j8FdKP4nEX+Pw==",
+        "dtype": "f64",
+        "shape": [
+          5
+        ]
+      },
+      "series_kind": {
+        "data": "c3F1YXJlZF9yZXR1cm5z",
+        "dtype": "f64",
+        "shape": [
+          15
+        ]
+      }
+    },
+    "metric": "ljung_box_q_squared",
+    "n": 63,
+    "p_value": 0.8638786190914485,
+    "value": 1.8919954025689103
+  },
+  "fdr_q": null,
+  "kind": "result",
+  "param_hash": "0385ef26f24069a06702fa8d5189487e374cf0dbb7c5a3989958f645e12cf38e",
+  "params": {
+    "lags": 5
+  },
+  "produced_at_utc": "<masked_produced_at_utc>",
+  "raw": {
+    "series": {
+      "returns_squared": {
+        "data": "cBDrilg7lD/PD+1lN6TBP39oYj54nbA/PDdVJiCDjD/BDz+DBRG2P6zqupXoWr4/GNNes1kBsT/2qWNHugrRPwaEuLoN/G8/X0ffPaondj9VTXwUV/CmPwodYpHR1YA/Q3UevB0dkD8kJJ9Z4CWYP7Pb0rrdksI/cFCvr00cYD/qybXHsm7SP1PdYyGAxCY/joXhEJgvNj+5UsSbqAOkP5YZ1gkhB7M/b7Cw3WL9sj8OVNTetyemPyrlXrQsHMg/yrypIZsccT8i9Lv+7IjKP/ca4QKSCss/1NMoKy/3qD9jKrCAmem6P6xfCwSIGVY/2Ijz6bRJxT/6ar07rhmfP7GdkBTYVxI/Wq2kcr7VgT9Oq7jjrM+jP3YjcTPKmpM/bVpDDbOqcj/D7zAABzsUPwLx8zXPwPI+BCdljBMOlj/DQdUV6bS5P/IkSXDIx7M/VD4OFxB0ez/gNbVZjVyjP7HSQLZaBrA/yoLE4M4Ayj+83A+lpz2GP9RdSIR8o48/xPa/POyAsT9s9Qh9OkCSP5RhZnkDyGA/YG94tS4sqT9ozVl3iTyqP/eucnlwIV4/V0OfYQNovj+OodBfo7ZXP4HEjHWuUM8/h+OtKcf3yT8jcLcm3c+cP4z9AavpJJ0/CGq7MLejMj9O8BdorI6XP3zf4ClSLNQ/",
+        "dtype": "f64",
+        "shape": [
+          63
+        ]
+      },
+      "timestamps_ms": {
+        "data": "AAD6+iXMeEIAALTWJsx4QgAAbrInzHhCAAAojijMeEIAAOJpKcx4QgAAnEUqzHhCAABWISvMeEIAABD9K8x4QgAAytgszHhCAACEtC3MeEIAAD6QLsx4QgAA+GsvzHhCAACyRzDMeEIAAGwjMcx4QgAAJv8xzHhCAADg2jLMeEIAAJq2M8x4QgAAVJI0zHhCAAAObjXMeEIAAMhJNsx4QgAAgiU3zHhCAAA8ATjMeEIAAPbcOMx4QgAAsLg5zHhCAABqlDrMeEIAACRwO8x4QgAA3ks8zHhCAACYJz3MeEIAAFIDPsx4QgAADN8+zHhCAADGuj/MeEIAAICWQMx4QgAAOnJBzHhCAAD0TULMeEIAAK4pQ8x4QgAAaAVEzHhCAAAi4UTMeEIAANy8Rcx4QgAAlphGzHhCAABQdEfMeEIAAApQSMx4QgAAxCtJzHhCAAB+B0rMeEIAADjjSsx4QgAA8r5LzHhCAACsmkzMeEIAAGZ2Tcx4QgAAIFJOzHhCAADaLU/MeEIAAJQJUMx4QgAATuVQzHhCAAAIwVHMeEIAAMKcUsx4QgAAfHhTzHhCAAA2VFTMeEIAAPAvVcx4QgAAqgtWzHhCAABk51bMeEIAAB7DV8x4QgAA2J5YzHhCAACSelnMeEIAAExWWsx4QgAABjJbzHhC",
+        "dtype": "f64",
+        "shape": [
+          63
+        ]
+      }
+    }
+  },
+  "run_id": "<masked_run_id>",
+  "scan_id@version": "stats.autocorr.ljung_box_sq@1",
+  "schema_version": 1
+}
