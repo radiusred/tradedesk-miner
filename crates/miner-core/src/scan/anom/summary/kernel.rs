@@ -22,7 +22,7 @@
 /// Output of [`welford_pass`] — mean / sample-std / bias-corrected skew /
 /// bias-corrected excess kurtosis.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct WelfordStats {
+pub(in crate::scan::anom) struct WelfordStats {
     pub mean: f64,
     pub std: f64,
     pub skew: f64,
@@ -51,7 +51,7 @@ pub(super) struct WelfordStats {
     clippy::many_single_char_names,
     reason = "m / m2 / m3 / m4 are the canonical central-moment names in the welford literature"
 )]
-pub(super) fn welford_pass(values: &[f64]) -> WelfordStats {
+pub(in crate::scan::anom) fn welford_pass(values: &[f64]) -> WelfordStats {
     debug_assert!(
         values.len() >= 2,
         "welford_pass: need >= 2 samples; got {}",
