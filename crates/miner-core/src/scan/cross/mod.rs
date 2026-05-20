@@ -16,8 +16,10 @@
 use super::Registry;
 
 pub mod corr_rolling;
+pub mod ols_rolling;
 
 pub use corr_rolling::{PearsonRollingScan, SpearmanRollingScan};
+pub use ols_rolling::OlsRollingScan;
 
 /// Register every CROSS scan into the supplied [`Registry`]. Plan 04-07
 /// appends three `r.register(...)` lines (alphabetical by scan-id):
@@ -27,22 +29,23 @@ pub use corr_rolling::{PearsonRollingScan, SpearmanRollingScan};
 pub fn register_cross_scans(r: &mut Registry) {
     r.register(Box::new(PearsonRollingScan));
     r.register(Box::new(SpearmanRollingScan));
+    r.register(Box::new(OlsRollingScan));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Plan 04-07 Task 1 — `register_cross_scans` now registers the two
-    /// rolling correlation scans (Pearson + Spearman). Plan 04-07 Task 2
-    /// adds the third (`cross.ols.rolling`).
+    /// Plan 04-07 — `register_cross_scans` registers three Pair-arity
+    /// rolling scans (Pearson + Spearman correlation, and OLS regression).
+    /// Subsequent Phase-4 plans extend this helper with further scans.
     #[test]
-    fn register_cross_scans_includes_pearson_and_spearman_rolling() {
+    fn register_cross_scans_includes_pearson_spearman_and_ols_rolling() {
         let mut r = Registry::new();
         let before = r.scans.len();
         register_cross_scans(&mut r);
         let added = r.scans.len() - before;
-        assert!(added >= 2, "expected >= 2 CROSS scans registered; got {added}");
+        assert!(added >= 3, "expected >= 3 CROSS scans registered; got {added}");
         assert!(
             r.get("cross.corr.pearson_rolling", 1).is_some(),
             "cross.corr.pearson_rolling@1 must be registered"
@@ -50,6 +53,10 @@ mod tests {
         assert!(
             r.get("cross.corr.spearman_rolling", 1).is_some(),
             "cross.corr.spearman_rolling@1 must be registered"
+        );
+        assert!(
+            r.get("cross.ols.rolling", 1).is_some(),
+            "cross.ols.rolling@1 must be registered"
         );
     }
 }
