@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: phase_complete
-stopped_at: Phase 04 verified pass after Plan 04-12 (CR-01 resolved); ready for Phase 5
-last_updated: "2026-05-20T18:30:00.000Z"
-last_activity: 2026-05-20 -- Phase 04 verification PASS after CR-01 closure
+stopped_at: Phase 04 verified pass + CI gate 2 GREEN after Plan 04-13 (clippy::pedantic workspace cleanup); ready for Phase 5
+last_updated: "2026-05-20T20:30:00.000Z"
+last_activity: 2026-05-20 -- Plan 04-13 CI clippy::pedantic unblock complete
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 32
-  completed_plans: 32
+  total_plans: 33
+  completed_plans: 33
   percent: 100
 ---
 
@@ -90,8 +90,9 @@ Recent decisions affecting current work:
 - [Phase 04]: Plan 04-06: ANOM family complete (11/11). All implementation Plans 04-03..04-10 shipped (11 ANOM + 4 CROSS + 6 SEAS). Plan 04-11 owns goldens, engle_granger adf_step reconciliation, and registry test tightening from >= 1 to exact final count.
 - [Phase ?]: Plan 04-11: Stub-fixture fallback for Phase 4 goldens (Python 3.14 vs pinned 3.11 scipy/statsmodels); #[ignore]d cross-check tests behind provenance gate.
 - [Phase ?]: Plan 04-11: ADF reconciliation kept local for Engle-Granger v1; canonical anom::adf re-route deferred to Phase 5 / HYG-01 alongside bootstrap CIs.
-- [Phase ?]: Plan 04-11: cargo clippy -D warnings workspace cleanup deferred to Phase 7 hardening; only 3 in-scope LN_2 lints in drawdown/kernel.rs fixed.
+- [Phase ?]: Plan 04-11: cargo clippy -D warnings workspace cleanup deferred to Phase 7 hardening; only 3 in-scope LN_2 lints in drawdown/kernel.rs fixed. **AMENDED by Plan 04-13 (2026-05-20):** deferral reversed for the entire workspace (miner-core lib + tests + miner-cli) — all clippy::pedantic errors resolved, CI gate 2 now green. Phase 7 retains the deny-warnings audit responsibility for any NEW code added in Phases 5–6 + `cargo deny` / `cargo audit` sweeps.
 - [Phase ?]: Plan 04-12: CR-01 (Pair-arity engine dispatch) closed — engine::run_one_with_registry now branches on scan.arity() and routes Pair scans through dispatch_pair_arity_body (wraps the previously-orphaned engine::gap_policy::dispatch_pair). Coverage tightened: arity_preflight + byte_identical_rerun + 4 CROSS integration tests now drive the engine path (9 separate tests trip a future regression).
+- [Phase ?]: Plan 04-13 (2026-05-20): CI Gate 2 (cargo clippy --workspace --all-targets -- -D warnings) GREEN for the first time since Phase 4 implementation began. All clippy::pedantic errors resolved across miner-core lib + tests + miner-cli (88 lib-only inventory expanded to ~200 once lib compiled cleanly). Atomic-per-category commit discipline preserved (7 commits, 1 chore follow-up). `#[allow(..., reason = "...")]` for 5 intentional patterns (closed-form regression bodies, sample-size casts, CLI-bounded indices, canonical statistical notation, internal-facade pass-by-value convention). Crate-level `#![cfg_attr(test, allow(...))]` in lib.rs for test-fixture patterns (float_cmp on goldens, cast_* on synthetic OHLCV generators, etc.). Per-integration-test-file `#![allow(...)]` blocks. Plan 04-11's "deferred to Phase 7" decision reversed — Phase 7 retains only the deny-warnings audit for NEW code in Phases 5-6 + cargo deny / cargo audit sweeps.
 
 ### Pending Todos
 
@@ -116,7 +117,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-20T17:31:37.059Z
-Stopped at: Plan 04-05 complete — ANOM-05/06/07 hand-derived stationarity scans shipped (ANOM family 9/11)
-Resume file: None
-Next action: Execute Plan 04-06 (ARCH-LM/Jarque-Bera) to complete ANOM family at 11/11, then Plan 04-11 (Phase sign-off — goldens + engle_granger adf_step reconciliation + registry test tightening).
+Last session: 2026-05-20T20:30:00.000Z
+Stopped at: Plan 04-13 complete — CI Gate 2 (clippy::pedantic) GREEN, all 5 CI gates verified locally. Phase 4 done with CI baseline clean for Phase 5.
+Resume file: .planning/phases/04-scan-catalogue-anom-cross-seas/04-13-SUMMARY.md
+Next action: Begin Phase 5 (Statistical Hygiene & Sweep Runner) via `/gsd-discuss-phase 5`. The Phase 5 plan in ROADMAP.md owns OP-04 (TOML sweep manifest fanout) + HYG-01..05 (effect sizes, BH-FDR, block bootstrap, phase-scrambled nulls, bit-for-bit reproducible RNG).
