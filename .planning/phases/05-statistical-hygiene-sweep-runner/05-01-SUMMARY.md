@@ -244,6 +244,12 @@ None — no external service configuration required. This plan adds compile-time
 - **Plan 05-05 (CLI) READY:** can wire `--bootstrap-method`/`--null-method`/`--master-seed` flags against the `BootstrapSpec`/`NullSpec`/`NullMethod` types without back-pressure on Plan 05-01.
 - **Zero blockers** for the rest of Phase 5. The CI gate (`cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `git diff --exit-code schemas/`) is green at this commit.
 
+## Self-Check: PASSED
+
+- `SUMMARY.md` exists at `.planning/phases/05-statistical-hygiene-sweep-runner/05-01-SUMMARY.md`.
+- All 5 task commits exist: `545ca5f` (Task 1 chore), `1d554f9` (Task 2 RED), `2ec17dc` (Task 2 GREEN), `674c6db` (Task 3 RED), `e4d790f` (Task 3 GREEN).
+- SUMMARY metadata commit: `623d6d9`.
+
 ---
 *Phase: 05-statistical-hygiene-sweep-runner*
 *Completed: 2026-05-20*
