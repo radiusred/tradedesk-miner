@@ -1,0 +1,112 @@
+---
+source: crates/miner-core/tests/scan_seas_eom_som.rs
+assertion_line: 109
+expression: masked
+---
+{
+  "code_revision": "test-rev-abc1234",
+  "data_slice": {
+    "gap_manifest": null,
+    "gap_manifest_ref": null,
+    "range": {
+      "end_utc": "2024-06-29T00:00:00Z",
+      "start_utc": "2024-01-01T00:00:00Z"
+    },
+    "sources": [
+      {
+        "side": "bid",
+        "source_id": "dukascopy",
+        "symbol": "EURUSD",
+        "timeframe": "1d"
+      }
+    ]
+  },
+  "dsr": null,
+  "effect": {
+    "ci95": null,
+    "extra": {
+      "bucket_labels": {
+        "data": "WyJFT00tMyIsIkVPTS0yIiwiRU9NLTEiLCJTT00tMSIsIlNPTS0yIiwiU09NLTMiXQ==",
+        "dtype": "f64",
+        "shape": [
+          49
+        ]
+      },
+      "counts": {
+        "data": "AAAAAAAAGEAAAAAAAAAYQAAAAAAAABhAAAAAAAAAGEAAAAAAAAAYQAAAAAAAABhA",
+        "dtype": "f64",
+        "shape": [
+          6
+        ]
+      },
+      "cutoff_n": {
+        "data": "AAAAAAAACEA=",
+        "dtype": "f64",
+        "shape": [
+          1
+        ]
+      },
+      "iqrs": {
+        "data": "qq2nYOVk0j8yPfx05UnbP7yQLVlxUcE/Fq/3TFzmrj+YXIUo1RvTP0hXF0+5etU/",
+        "dtype": "f64",
+        "shape": [
+          6
+        ]
+      },
+      "means": {
+        "data": "SEG7mtlktj/tuoEkGxm4v/ScsvOuv7s/N3bmAqBJt79Wst5MtprNP6JuTqVh7sy/",
+        "dtype": "f64",
+        "shape": [
+          6
+        ]
+      },
+      "stds": {
+        "data": "2JshE5bX1D8BvH+8PM3XP1xbjj3RQ84/EjejqMXEuT/a28UUiizOP8nN/MkFvtI/",
+        "dtype": "f64",
+        "shape": [
+          6
+        ]
+      },
+      "t_stats": {
+        "data": "UYWKrRAO5T+v2bSFBNfjv+cNuMV99/E/0WdXuI21AcCAPQSq2TkDQFIYAgu3P/6/",
+        "dtype": "f64",
+        "shape": [
+          6
+        ]
+      }
+    },
+    "metric": "eom_som_max_abs_t_stat",
+    "n": 179,
+    "p_value": null,
+    "value": 2.403247192625429
+  },
+  "fdr_q": null,
+  "kind": "result",
+  "param_hash": "f08441115c5eca74c3205b815deab5b4c773c454d017be5b3e34a5ca239c914c",
+  "params": {
+    "cutoff_n": 3,
+    "min_obs_per_bucket": 1
+  },
+  "produced_at_utc": "<masked_produced_at_utc>",
+  "raw": {
+    "series": {
+      "returns": {
+        "data": "N7ntej0cl78q1+fKMynaP+VXS6U/u96/g418lJG+xL8zyjopJ4DbPzp2Hc10MMM/LFz4WzkIpD+fo3IfRD6mvwUfixYWleG/7fkKdwSq4z/EvcSt8eHOvwDkarTLlau/8cG5tZcY1r9LCxPbZMDkP2/XlE0nZsW/qkuCCkniwL8Q7+SX5VyoP8501ZbmydK/bEJHCX5K4T/eitw1j/WyvzIsH+FOobO/4h/hJAkjuT8kMwijLPrjv6GZyPw6COA/UCm+s8fKy7+CW5em6UPFv88natZQpqc/WEDmH7DSwz+34aPGNWulv+A8nbVNk8I/EgZFC0X6uL/j+WOB0RjXP/+tD3uH8di/Vbec+xJ9pL88B6AqBubNv3RnD6J7MuU/0wCtKyXMYT88tKA6PmXWv7U4YPXWQcU/63RM+kdP2b9RcoOBq03QP9tgSlYZXcI/3FvEUHt2sr+tseIE59/TvzJz5pb5i5E/Bm11YvWB0T8ezj5GCk6xP9qMaKBQOtW/HzzoSluUvj/Uil1MOFjTP5qduPv9HGY/0GXEGkc30r9WjBRresHWP2tulQUyPsO/l9h9D7Ttsb/INE0nrOTDP8l7fMtKMJy/ixwErutxo78aA3FGvXPKvwVGcr0y8bW/LVigoSWK0z+JxRGV/0azv+tMCVHfdcK/J5SZV2QL0D/3e7Myu7jbv2cXKEJcL+E/cNDhuXbIij8OiJN58azdv8vNkzhzjqC/MWzcQMjMxT8BiPSGd27SP4qsg2U5FeO/muFOpLga0T+Hj/9+pUfRP/efIJNQFcG/vDDn8RAqQj/N8yp5RGOdPxTrjXPsp96/9IAlbaJt3z8Ce7refJGSv2BIrNqF28g/TRaov/6k3r9MqCMWWiLHPygKns+ztc6/05Xb0WXCtD86vaxqO7uRP+FgTwPrLcU/Vvc3ZyNVsT8mXRpSv4mmv3JCNgayKs6/KK8fKRu+sb/RtLOL273dP9vYgnJU1tK/063qOBgo0z9SAPYl3QzUv8Iz91YGFbm/O7Q9XGS/0z8n2LUbUbDav6oiLoWa4+M/A2PkDvoV4r9X6yDVP2zFPxoPKbimqKs/PYUloDs6u79Siwzbmw7JvxR9Ci63juE/U3gS2XJuob/2D/6hl6+nP5Rj5UjtjeK/ToTc0+nj0j/Xj8dar5XOP6y/6WetL7s/cqEDiMQg4L/yYeoFv526vyBIiCeE9cA/ldhBdAettL+zA2W2S9TTP1R6ePVZUNa/1oRmNVRZ4z9GTvcDhLbZv4Y5pkRMWcI/wumBmRTlgT/JmV3lfPzPP4vAFDVHd+G/U80+vnLxyz+89Q/SDCrHPz/+3QiAhsC/uas8EnXPoz+tKhbpLwrQP59Exmaous+/niiKLyrDbr/mrGpq5PfLP6insoT1JtW/5/rHhIjHwT/24M877GPEPz5PvSN4Eca/BsgH7UYz1L+XNkfRMG+8v7NKwiJj6r8/MBZsqa8u4T8OxFkFkt7Iv64aheKfEcc/VS5LRwAkzL/zQBjnFMWyv4TNwfZv7Ky/0qIwzu/20L/R9ToLgFbKP36llkndYNc/pHaAvQOJ37/BTj2PiVngP4iMYpIBU+S/Lgt8FlVZ4D+eufL4MCTfvkRw9wB6vMM/PSYBFXDh0b+tVZMjmmeoP9dU6YEdG6u/waIvIDGCzT8HCavRZcfLv7NY6Vt6r9O/zapxwD/i4j8l0azmXbXQv1ciOAl/cNi/1nlOY4t+2z8jz0iqtwHXv9TCCiNz47g/F9jsRe+prD+RibsUtVHVP2JJIeUIBOK/aVA59yqx3T+rbk/m1HfGPyePkixl7+C/hIn+Wp7Eyj/qhkbtpnSYP+sIAaDqAMw/n0b7rC+OdD9gviByiAKfP43jrIYfMty/SR7nHo272D8UTWxkXpuEvw==",
+        "dtype": "f64",
+        "shape": [
+          179
+        ]
+      },
+      "timestamps_ms": {
+        "data": "AAAAhXfMeEIAAMDqycx4QgAAgFAczXhCAABAtm7NeEIAAAAcwc14QgAAwIETznhCAACA52XOeEIAAEBNuM54QgAAALMKz3hCAADAGF3PeEIAAIB+r894QgAAQOQB0HhCAAAASlTQeEIAAMCvptB4QgAAgBX50HhCAABAe0vReEIAAADhndF4QgAAwEbw0XhCAACArELSeEIAAEASldJ4QgAAAHjn0nhCAADA3TnTeEIAAIBDjNN4QgAAQKne03hCAAAADzHUeEIAAMB0g9R4QgAAgNrV1HhCAABAQCjVeEIAAACmetV4QgAAwAvN1XhCAACAcR/WeEIAAEDXcdZ4QgAAAD3E1nhCAADAohbXeEIAAIAIadd4QgAAQG6713hCAAAA1A3YeEIAAMA5YNh4QgAAgJ+y2HhCAABABQXZeEIAAABrV9l4QgAAwNCp2XhCAACANvzZeEIAAECcTtp4QgAAAAKh2nhCAADAZ/PaeEIAAIDNRdt4QgAAQDOY23hCAAAAmerbeEIAAMD+PNx4QgAAgGSP3HhCAABAyuHceEIAAAAwNN14QgAAwJWG3XhCAACA+9jdeEIAAEBhK954QgAAAMd93nhCAADALNDeeEIAAICSIt94QgAAQPh033hCAAAAXsffeEIAAMDDGeB4QgAAgCls4HhCAABAj77geEIAAAD1EOF4QgAAwFpj4XhCAACAwLXheEIAAEAmCOJ4QgAAAIxa4nhCAADA8azieEIAAIBX/+J4QgAAQL1R43hCAAAAI6TjeEIAAMCI9uN4QgAAgO5I5HhCAABAVJvkeEIAAAC67eR4QgAAwB9A5XhCAACAhZLleEIAAEDr5OV4QgAAAFE35nhCAADAtonmeEIAAIAc3OZ4QgAAQIIu53hCAAAA6IDneEIAAMBN0+d4QgAAgLMl6HhCAABAGXjoeEIAAAB/yuh4QgAAwOQc6XhCAACASm/peEIAAECwwel4QgAAABYU6nhCAADAe2bqeEIAAIDhuOp4QgAAQEcL63hCAAAArV3reEIAAMASsOt4QgAAgHgC7HhCAABA3lTseEIAAABEp+x4QgAAwKn57HhCAACAD0zteEIAAEB1nu14QgAAANvw7XhCAADAQEPueEIAAICmle54QgAAQAzo7nhCAAAAcjrveEIAAMDXjO94QgAAgD3f73hCAABAozHweEIAAAAJhPB4QgAAwG7W8HhCAACA1CjxeEIAAEA6e/F4QgAAAKDN8XhCAADABSDyeEIAAIBrcvJ4QgAAQNHE8nhCAAAANxfzeEIAAMCcafN4QgAAgAK883hCAABAaA70eEIAAADOYPR4QgAAwDOz9HhCAACAmQX1eEIAAED/V/V4QgAAAGWq9XhCAADAyvz1eEIAAIAwT/Z4QgAAQJah9nhCAAAA/PP2eEIAAMBhRvd4QgAAgMeY93hCAABALev3eEIAAACTPfh4QgAAwPiP+HhCAACAXuL4eEIAAEDENPl4QgAAACqH+XhCAADAj9n5eEIAAID1K/p4QgAAQFt++nhCAAAAwdD6eEIAAMAmI/t4QgAAgIx1+3hCAABA8sf7eEIAAABYGvx4QgAAwL1s/HhCAACAI7/8eEIAAECJEf14QgAAAO9j/XhCAADAVLb9eEIAAIC6CP54QgAAQCBb/nhCAAAAhq3+eEIAAMDr//54QgAAgFFS/3hCAABAt6T/eEIAAAAd9/94QgAAwIJJAHlCAACA6JsAeUIAAEBO7gB5QgAAALRAAXlCAADAGZMBeUIAAIB/5QF5QgAAQOU3AnlCAAAAS4oCeUIAAMCw3AJ5QgAAgBYvA3lCAABAfIEDeUIAAADi0wN5QgAAwEcmBHlCAACArXgEeUIAAEATywR5QgAAAHkdBXlCAADA3m8FeUIAAIBEwgV5Qg==",
+        "dtype": "f64",
+        "shape": [
+          179
+        ]
+      }
+    }
+  },
+  "run_id": "<masked_run_id>",
+  "scan_id@version": "seas.bucket.eom_som@1",
+  "schema_version": 1
+}
