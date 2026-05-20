@@ -370,20 +370,52 @@ per the disposition (preflight rejection before `Scan::run` invocation, no
 
 ## Known Stubs / Deferred Work
 
-- **Post-`Scan::run` hygiene integration not yet wired.** Plan 05-03's
-  Task 3 stretch surface (bootstrap CI population + null p-value
-  replacement + ReproEnvelope population) is deferred to a follow-up plan.
-  The wire contract (preflight rejection) is fully implemented; the
-  in-flight population requires a buffering-sink interception layer and a
-  per-scan stat-closure dispatch table that warrants its own focused plan.
-- **`bootstrap_n` / `null_n` ceiling not yet enforced.** Documented in the
-  ScanRequest doc-comments; the engine clamp lands with the population
-  logic.
-- **Byte-identical-rerun with hygiene-on case not yet exercised.** The
-  Plan 05-01 + Plan 05-02 byte-identical-rerun tests cover the no-hygiene
-  case (which still holds — ScanRequest's six new fields default to None).
-  The hygiene-on byte-identical-rerun test lands with the post-scan
-  hygiene logic.
+**Update (continuation):** The Plan 05-03 continuation commit landed the
+post-`Scan::run` hygiene integration for **two scans** (`LjungBox`,
+`Welford`). The remaining items below are NEW scope deferred to Phase 7
+hardening — not regressions of the original Plan 05-03 deferral.
+
+- **Hygiene dispatch table covers only 2 of 22 scans.** The continuation
+  wired `stats.autocorr.ljung_box@1` and `stats.summary.welford@1` in
+  `engine::hygiene_dispatch`. Every other scan in the D5-04
+  per-scan-opt-in matrix has `supports_bootstrap/supports_null_method`
+  returning `true` but the dispatch table returns `None` — the engine
+  silently no-ops on those scans (preflight already accepted the
+  request). Phase 7 closes the gap.
+  - **ANOM:** `stats.autocorr.ljung_box_sq@1`,
+    `stats.stationarity.adf@1`, `stats.stationarity.kpss@1`,
+    `stats.variance_ratio.lo_mackinlay@1`,
+    `stats.heteroskedasticity.arch_lm@1`, `stats.normality.jarque_bera@1`,
+    `stats.vol.rolling@1` — need scan-internal closures (ADF/KPSS use
+    kernel-internal regression state; ARCH-LM / VR / JB need parameter
+    forwarding into the stat closure).
+  - **CROSS (Pair-arity):** `cross.corr.pearson_rolling@1`,
+    `cross.corr.spearman_rolling@1`, `cross.ols.rolling@1`,
+    `cross.lead_lag.ccf@1`, `cross.cointegration.engle_granger@1` — need
+    joint per-leg resampling (resample leg A and leg B together so the
+    pair correlation/regression is computed against a coherent shuffle).
+    The engine's `apply_hygiene_mutations` currently passes only
+    `bars_a.close` and the dispatch table returns `None` for every CROSS
+    `scan_id@version`.
+  - **SEAS:** `seas.bucket.hour_of_day@1`, `seas.bucket.day_of_week@1`,
+    `seas.bucket.session@1`, `seas.bucket.eom_som@1`,
+    `seas.event.pre_post_window@1` — need closures over the bucketed
+    `max_abs_t_stat` recomputation (bucket boundaries come from
+    `ts_open_utc` which the dispatch closure cannot reach today).
+
+- **IAAFT `PhaseScramble` null still deferred to Phase 7.** Per Plan
+  05-02 SUMMARY, the kernel is unavailable. The continuation's engine
+  loop returns `NaN` for `NullMethod::PhaseScramble` so the analytic
+  p-value is preserved; preflight rejects `PhaseScramble` on every scan
+  whose `supports_null_method(PhaseScramble)` is `false`. The repro
+  envelope still echoes the requested method when caller asked for it.
+
+- **`block_length` heuristic floor.** The continuation calls
+  `hygiene::bootstrap::block_length_pwppw` and floors at `3` (matches
+  PATTERNS guidance for short synthetic series in tests). For production
+  scans on long real-world OHLCV series the heuristic recommends much
+  larger blocks; the engine's `block_length_pwppw` invocation is the
+  single point Phase 7 can refine without touching the kernels.
 
 ## User Setup Required
 
@@ -417,6 +449,102 @@ build-time dependencies.
 - 5 new `validate_hygiene_support` unit tests pass.
 - `cargo clippy -p miner-core --lib --all-targets -- -D warnings` is clean.
 
+## Continuation (2026-05-20)
+
+The original deferred Task 3 surface — post-`Scan::run` hygiene-kernel
+invocation, `Effect.ci95` population, `effect.p_value` replacement,
+`ReproEnvelope` population, `bootstrap_n` / `null_n` clamp, byte-identical
+rerun under hygiene flags, cancel polling between scan-body and
+hygiene-body — has now landed as a focused continuation on top of the
+original Plan 05-03 wire-contract commits.
+
+### Continuation Commits
+
+1. **`test(05-03-cont)`** (`c16ced6`) — Failing integration tests in
+   `crates/miner-core/tests/hygiene_engine_integration.rs` covering all
+   six items from the deferred-work list. 6 of 8 tests start RED (the 2
+   pre-passing tests are negative-path regression gates for behaviour
+   Plan 05-03 already shipped).
+2. **`feat(05-03-cont)`** (`3d8febf`) — Engine integration. Two new
+   modules under `crates/miner-core/src/engine/`:
+   - `hygiene_buffering_sink.rs` (`HygieneBufferingSink`) — wraps the
+     user sink and buffers `Finding::Result(_)` envelopes ONLY when
+     hygiene is active (`bootstrap_method.is_some() ||
+     null_method.is_some()`). Otherwise it's a thin pass-through. This
+     preserves PITFALLS #4 per-envelope-flush — the Plan 06 SIGINT
+     integration test (which depends on Results hitting stdout BEFORE
+     the cancel-aware sleep loop in `LjungBoxScan::run`) continues to
+     pass. 4 new unit tests in the module.
+   - `hygiene_dispatch.rs` — per-scan dispatch table. `input_series_for`
+     returns the resample input (log returns for both wired scans);
+     `stat_closure_for` returns a `Box<dyn Fn(&[f64]) -> f64 + Send +
+     Sync>` that recomputes the scan's `Effect.value`-equivalent
+     statistic over a resampled slice. Wired for `LjungBox` (Q-stat
+     at max lag using the kernel's `biased_acf` +
+     `ljung_box_q_and_p`) and `Welford` (arithmetic mean). 7 new unit
+     tests.
+   - `engine::mod.rs` — `apply_hygiene_mutations(result, req, close,
+     cancel)` helper applies bootstrap + null kernels in sequence with
+     a cancel poll between them; populates `effect.ci95`,
+     `effect.p_value`, and `repro`. Both Single-arity and Pair-arity
+     dispatch paths now use the buffering sink. `clamp_resample_n`
+     enforces the `100_000` ceiling (T-05-03-V5).
+
+### What the continuation closes
+
+- ✅ Engine invokes `hygiene::bootstrap::*_bootstrap_ci` post-`Scan::run`
+  for the wired scans, populating `Effect.ci95`.
+- ✅ Engine invokes `hygiene::null::circular_shift_null_p` post-`Scan::run`
+  for the wired scans, replacing `Effect.p_value`.
+- ✅ `ResultFinding.repro = Some(ReproEnvelope { … })` populated when
+  bootstrap or null ran.
+- ✅ `bootstrap_n` and `null_n` clamped at `100_000` (echoed in
+  `repro.bootstrap.n` / `repro.null.n`).
+- ✅ Byte-identical rerun under hygiene-on flags passes
+  (`byte_identical_rerun_under_hygiene_on_ljung_box`).
+- ✅ Cancel polling preserved at outer-engine cadence — both
+  before-hygiene and between-bootstrap-and-null.
+- ✅ Plan 06 SIGINT regression test still passes (verified via direct
+  cargo test against `miner-cli`).
+- ✅ Schema diff after the continuation is empty (`ScanRequest` was
+  always engine-internal; no JSON-Schema-derived surface changed).
+
+### What the continuation leaves to Phase 7
+
+See the updated **Known Stubs / Deferred Work** section above. The
+dispatch table currently wires 2 of the 19 opt-in scans; the rest
+return `None` from the dispatch helpers and the engine quietly no-ops
+on them. The `Scan::supports_*` opt-ins remain `true` for those scans
+(preflight accepts the requests), and `effect_size` is populated by
+every scan unchanged — only the engine-side ci95 / p_value population is
+absent for the 17 unwired scans.
+
+### Continuation Self-Check
+
+- `cargo test --workspace`: 0 failures across all integration test
+  binaries. Hygiene integration test passes 8/8;
+  `byte_identical_rerun.rs` continues to pass (3/3); Plan 06's
+  `sigint_preserves_already_streamed_findings_and_exits_130` continues
+  to pass (1/1).
+- `cargo test -p miner-core --lib`: 710 lib tests pass
+  (= 698 baseline + 11 new from the two new engine modules).
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- `cargo xtask gen-schema && git diff --exit-code
+  schemas/findings-v1.schema.json`: zero diff.
+
+### Continuation Files Created / Modified
+
+**Created (2):**
+- `crates/miner-core/src/engine/hygiene_buffering_sink.rs` (193 lines)
+- `crates/miner-core/src/engine/hygiene_dispatch.rs` (292 lines)
+- `crates/miner-core/tests/hygiene_engine_integration.rs` (487 lines)
+
+**Modified (1):**
+- `crates/miner-core/src/engine/mod.rs` (+185 lines: imports, dispatch
+  module registration, `apply_hygiene_mutations` + helpers, Single +
+  Pair dispatch branch buffering-sink wraps).
+
 ---
 *Phase: 05-statistical-hygiene-sweep-runner*
 *Completed: 2026-05-20*
+*Continuation completed: 2026-05-20*
