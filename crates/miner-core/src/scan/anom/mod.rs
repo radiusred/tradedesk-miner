@@ -22,6 +22,7 @@ pub mod ljung_box_sq;
 pub mod outliers;
 pub mod returns;
 pub mod summary;
+pub mod variance_ratio;
 pub mod vol;
 
 pub use adf::AdfScan;
@@ -31,6 +32,7 @@ pub use ljung_box_sq::LjungBoxSqScan;
 pub use outliers::OutliersZAndMadScan;
 pub use returns::ReturnsProfileScan;
 pub use summary::SummaryWelfordScan;
+pub use variance_ratio::VarianceRatioScan;
 pub use vol::VolRollingScan;
 
 /// Register every ANOM scan into the supplied [`Registry`]. Plan 04-03
@@ -50,6 +52,7 @@ pub fn register_anom_scans(r: &mut Registry) {
     //   stats.stationarity.adf        <- Plan 04-05
     //   stats.stationarity.kpss       <- Plan 04-05
     //   stats.summary.welford         <- Plan 04-03
+    //   stats.variance_ratio.lo_mackinlay  <- Plan 04-05
     //   stats.vol.rolling             <- Plan 04-03
     r.register(Box::new(LjungBoxSqScan));
     r.register(Box::new(DrawdownProfileScan));
@@ -58,6 +61,7 @@ pub fn register_anom_scans(r: &mut Registry) {
     r.register(Box::new(AdfScan));
     r.register(Box::new(KpssScan));
     r.register(Box::new(SummaryWelfordScan));
+    r.register(Box::new(VarianceRatioScan));
     r.register(Box::new(VolRollingScan));
 }
 
@@ -89,6 +93,10 @@ mod tests {
         assert!(r.get("stats.stationarity.adf", 1).is_some(), "ANOM-05");
         assert!(r.get("stats.stationarity.kpss", 1).is_some(), "ANOM-06");
         assert!(r.get("stats.summary.welford", 1).is_some(), "ANOM-02");
+        assert!(
+            r.get("stats.variance_ratio.lo_mackinlay", 1).is_some(),
+            "ANOM-07"
+        );
         assert!(r.get("stats.vol.rolling", 1).is_some(), "ANOM-03");
     }
 }
