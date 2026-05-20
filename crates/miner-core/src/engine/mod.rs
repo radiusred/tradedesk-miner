@@ -675,7 +675,7 @@ fn dispatch_pair_arity_body<R: Reader>(
             summary
                 .per_scan
                 .entry(scan_id_at_version.to_string())
-                .or_insert_with(PerScanCounts::default)
+                .or_default()
                 .errors += 1;
             emit_run_end(sink, run_id, started, summary)?;
             return Ok(RunOutcome::HadScanErrors);
@@ -692,7 +692,7 @@ fn dispatch_pair_arity_body<R: Reader>(
             summary
                 .per_scan
                 .entry(scan_id_at_version.to_string())
-                .or_insert_with(PerScanCounts::default)
+                .or_default()
                 .errors += 1;
             emit_run_end(sink, run_id, started, summary)?;
             return Ok(RunOutcome::HadScanErrors);
@@ -746,7 +746,7 @@ fn dispatch_pair_arity_body<R: Reader>(
             summary
                 .per_scan
                 .entry(scan_id_at_version.to_string())
-                .or_insert_with(PerScanCounts::default)
+                .or_default()
                 .gap_aborted += 1;
         }
         GapDispatch::SubRanges(sub_ranges) => {
@@ -789,7 +789,7 @@ fn dispatch_pair_arity_body<R: Reader>(
                         summary
                             .per_scan
                             .entry(scan_id_at_version.to_string())
-                            .or_insert_with(PerScanCounts::default)
+                            .or_default()
                             .errors += 1;
                         emit_run_end(sink, run_id, started, summary)?;
                         return Ok(RunOutcome::HadScanErrors);
@@ -821,7 +821,7 @@ fn dispatch_pair_arity_body<R: Reader>(
                         summary
                             .per_scan
                             .entry(scan_id_at_version.to_string())
-                            .or_insert_with(PerScanCounts::default)
+                            .or_default()
                             .errors += 1;
                         emit_run_end(sink, run_id, started, summary)?;
                         return Ok(RunOutcome::HadScanErrors);
@@ -850,7 +850,7 @@ fn dispatch_pair_arity_body<R: Reader>(
                         summary
                             .per_scan
                             .entry(scan_id_at_version.to_string())
-                            .or_insert_with(PerScanCounts::default)
+                            .or_default()
                             .results += 1;
                     }
                     Err(ScanError::Cancelled) => break,
@@ -859,7 +859,7 @@ fn dispatch_pair_arity_body<R: Reader>(
                         summary
                             .per_scan
                             .entry(scan_id_at_version.to_string())
-                            .or_insert_with(PerScanCounts::default)
+                            .or_default()
                             .errors += 1;
                         emit_scan_error(
                             sink,
@@ -884,7 +884,7 @@ fn dispatch_pair_arity_body<R: Reader>(
                         summary
                             .per_scan
                             .entry(scan_id_at_version.to_string())
-                            .or_insert_with(PerScanCounts::default)
+                            .or_default()
                             .errors += 1;
                         emit_run_end(sink, run_id, started, summary)?;
                         return Ok(RunOutcome::HadScanErrors);
@@ -903,7 +903,7 @@ fn dispatch_pair_arity_body<R: Reader>(
                         summary
                             .per_scan
                             .entry(scan_id_at_version.to_string())
-                            .or_insert_with(PerScanCounts::default)
+                            .or_default()
                             .errors += 1;
                         emit_run_end(sink, run_id, started, summary)?;
                         return Ok(RunOutcome::HadScanErrors);
