@@ -151,10 +151,10 @@ impl Scan for VarianceRatioScan {
         let mut z_stats: Vec<f64> = Vec::with_capacity(k_values.len());
         let mut p_values: Vec<f64> = Vec::with_capacity(k_values.len());
         for &k in &k_values {
-            let res = kernel::variance_ratio(&returns, k, robust).map_err(ScanError::Kernel)?;
-            vr_values.push(res.vr);
-            z_stats.push(res.z_stat);
-            p_values.push(res.p_value);
+            let vr_res = kernel::variance_ratio(&returns, k, robust).map_err(ScanError::Kernel)?;
+            vr_values.push(vr_res.vr);
+            z_stats.push(vr_res.z_stat);
+            p_values.push(vr_res.p_value);
         }
 
         let k_values_f64: Vec<f64> = k_values.iter().map(|k| usize_to_f64(*k)).collect();

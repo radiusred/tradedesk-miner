@@ -73,6 +73,14 @@ pub(super) struct ArchLmResult {
     clippy::cast_precision_loss,
     reason = "n / lag are bar counts << 2^52"
 )]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "n / x / y / β / e match the canonical Engle 1982 ARCH-LM regression notation; renaming obscures the formula"
+)]
+#[allow(
+    clippy::similar_names,
+    reason = "xt / xtx / xty / xtx_inv are canonical OLS normal-equations notation (X'X, X'y, (X'X)^-1)"
+)]
 pub(super) fn arch_lm_test(returns: &[f64], lag: usize) -> Result<ArchLmResult, String> {
     // Note: callers (the `ArchLmScan::run` body in `mod.rs`) are expected to
     // validate `lag >= 1` and `lag <= n/3` before calling here per T-04-06-01.

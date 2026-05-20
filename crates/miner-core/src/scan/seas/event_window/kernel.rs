@@ -93,12 +93,12 @@ pub(super) fn event_window_stats(
         }
         let pre_slice = &returns[idx - pre_bars..idx];
         let post_slice = &returns[idx..idx + post_bars];
-        let (pm, ps) = mean_and_std(pre_slice);
-        let (pom, pos) = mean_and_std(post_slice);
-        pre_means.push(pm);
-        post_means.push(pom);
-        pre_stds.push(ps);
-        post_stds.push(pos);
+        let (pre_mean, pre_std) = mean_and_std(pre_slice);
+        let (post_mean, post_std) = mean_and_std(post_slice);
+        pre_means.push(pre_mean);
+        post_means.push(post_mean);
+        pre_stds.push(pre_std);
+        post_stds.push(post_std);
     }
 
     let event_count = pre_means.len();

@@ -148,6 +148,10 @@ pub(super) fn kpss_statistic(
     clippy::cast_precision_loss,
     reason = "n + t fit trivially in f64's 52-bit mantissa for any realistic series"
 )]
+#[allow(
+    clippy::similar_names,
+    reason = "sum_t / sum_tt / sum_y / sum_ty + xtx / xty / xtx_inv are canonical OLS normal-equations notation for a 2×2 trend regression"
+)]
 pub(super) fn detrend_with_trend(y: &[f64]) -> Result<Vec<f64>, String> {
     let n = y.len();
     if n < 3 {

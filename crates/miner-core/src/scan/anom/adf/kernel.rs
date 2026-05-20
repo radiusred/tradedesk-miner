@@ -255,6 +255,10 @@ pub(super) struct AdfFit {
     clippy::similar_names,
     reason = "delta_y / lag_y / y_lag are canonical names for the ADF regression columns"
 )]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "y / k / n / t / dof match the canonical Dickey-Fuller derivation (Said-Dickey 1984); renaming obscures the formula"
+)]
 pub(super) fn fit_adf_regression(
     y: &[f64],
     k: usize,
