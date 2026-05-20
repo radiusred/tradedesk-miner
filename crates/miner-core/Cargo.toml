@@ -54,6 +54,17 @@ statrs.workspace     = true
 ndarray.workspace       = true
 ndarray-stats.workspace = true
 nalgebra.workspace      = true
+# Phase 5 (Plan 05-01) additions per 05-RESEARCH.md §"Standard Stack":
+# - `rand`           — `Rng` + `SeedableRng` trait surface (NOT thread-local rngs;
+#                      `SmallRng`/`StdRng` are explicitly non-portable — pin Xoshiro)
+# - `rand_xoshiro`   — `Xoshiro256PlusPlus` portable PRNG for bootstrap + null
+#                      resampling (HYG-05 bit-for-bit reproducible RNG)
+# - `toml`           — TOML deserialiser for the sweep manifest (Plan 05-04 / OP-04)
+# All three are sync-only — FOUND-04 invariant preserved. `realfft` is INTENTIONALLY
+# NOT added here — Plan 05-02 conditionally adds it if IAAFT phase-scramble ships.
+rand.workspace          = true
+rand_xoshiro.workspace  = true
+toml.workspace          = true
 
 [dev-dependencies]
 jsonschema.workspace = true

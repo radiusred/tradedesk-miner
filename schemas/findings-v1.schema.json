@@ -6,6 +6,26 @@
       "description": "Little-endian f64 bytes, base64-encoded",
       "type": "string"
     },
+    "BootstrapSpec": {
+      "description": "Phase 5 (Plan 05-01 / D5-05) — describes the resampling method that\nproduced a `Finding::Result`'s p-value / CI under bootstrap.\n\nEmbedded in [`ReproEnvelope::bootstrap`] when a scan ran a bootstrap pass.\n`method` is an open string in v1 (`\"stationary\"` | `\"block\"`), permitting\nadditive growth (e.g., `\"pair_bootstrap\"`) without a schema break.",
+      "properties": {
+        "method": {
+          "description": "Open-string method name — v1 values: `\"stationary\"`, `\"block\"`.",
+          "type": "string"
+        },
+        "n": {
+          "description": "Number of bootstrap resamples drawn (`B`).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "method",
+        "n"
+      ],
+      "type": "object"
+    },
     "DataSlice": {
       "description": "The input range a scan actually consumed (post gap-partitioning).\n\n`gap_manifest_ref` is reserved for the Phase-7 content-addressed\ndeduplication path. `gap_manifest` is populated by Phase 3's\n`continuous_only` gap policy (D3-10 / D3-12) — the full Phase-2\n`GapManifest` is inlined into every `Result` finding's `data_slice` so the\nfinding is self-describing without cross-referencing.\n\nBoth optional fields MUST serialise as JSON `null` when absent (NOT\nomitted) — the same convention used by `dsr` / `fdr_q` on `ResultFinding`.\nDO NOT add `#[serde(skip_serializing_if = \"Option::is_none\")]` to either\nfield (03-PATTERNS line 572).",
       "properties": {
@@ -89,7 +109,7 @@
       "type": "string"
     },
     "Effect": {
-      "description": "The `effect` block on a `Result` finding — the OUTPUTS the scan produced (D-04).\n\n`extra` carries scan-derived arrays (e.g., Ljung-Box `lags`/`acf`; OLS\n`residuals`). Same `{data, shape, dtype}` shape as `raw.series` entries. Uses\n`BTreeMap` for deterministic ordering — OUT-03.",
+      "description": "The `effect` block on a `Result` finding — the OUTPUTS the scan produced (D-04).\n\n`extra` carries scan-derived arrays (e.g., Ljung-Box `lags`/`acf`; OLS\n`residuals`). Same `{data, shape, dtype}` shape as `raw.series` entries. Uses\n`BTreeMap` for deterministic ordering — OUT-03.\n\nPhase 5 (Plan 05-01 / D5-03) added the optional `effect_size` field\nadditively — `#[serde(default)]` keeps the schema diff non-breaking. The\nNone case MUST serialise as JSON `null` (NOT omitted) per OUT-03; that is\nwhy no `#[serde(skip_serializing_if = ...)]` attribute is attached.",
       "properties": {
         "ci95": {
           "default": null,
@@ -103,6 +123,18 @@
             "array",
             "null"
           ]
+        },
+        "effect_size": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EffectSize"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Phase 5 (Plan 05-01 / D5-03) — optional standardised effect-size\nstatistic alongside `value`. Canonical `kind` values include\n`\"cohens_d\"`, `\"hedges_g\"`, `\"cliffs_delta\"`, `\"vr_minus_one\"`, plus\nscan-specific kinds (see D5-03 table). `None` for scans that do not\nemit a standardised effect size; serialises as JSON `null`."
         },
         "extra": {
           "additionalProperties": {
@@ -140,6 +172,79 @@
       "required": [
         "metric",
         "value"
+      ],
+      "type": "object"
+    },
+    "EffectSize": {
+      "description": "Phase 5 (Plan 05-01 / D5-03) — standardised effect-size statistic carried on\n`Effect.effect_size`.\n\n`kind` is an open string (NOT a sealed enum) so adding new effect-size\nkinds in later phases is additive and does not break the JSON Schema.\nCanonical values: `\"cohens_d\"`, `\"hedges_g\"`, `\"cliffs_delta\"`,\n`\"vr_minus_one\"`, plus scan-specific kinds per D5-03.",
+      "properties": {
+        "kind": {
+          "description": "Open-string discriminator — see canonical values above.",
+          "type": "string"
+        },
+        "value": {
+          "description": "The numeric effect-size value.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    "FdrFamilySummary": {
+      "description": "Phase 5 (Plan 05-01 / D5-02 / HYG-02) — per-family BH-FDR result embedded\nin [`SweepSummaryFinding::fdr_by_family`].\n\n`method` is an open string (`\"benjamini_hochberg\"` in v1; extension hook\nfor `\"benjamini_yekutieli\"` in v2). `per_finding` is `Vec` (NEVER `HashMap`)\nso stable index order is preserved — `finding_index` references the\nzero-indexed position of the finding within the family in the streaming\nJSONL output.",
+      "properties": {
+        "alpha": {
+          "description": "FDR control level (typical: 0.05 or 0.10).",
+          "format": "double",
+          "type": "number"
+        },
+        "method": {
+          "description": "FDR method — v1 always `\"benjamini_hochberg\"`.",
+          "type": "string"
+        },
+        "per_finding": {
+          "description": "Per-finding raw-p / q-value pairs in stable index order. `Vec`\npreserves alignment with the streaming JSONL `finding_index` — NEVER\n`HashMap`.",
+          "items": {
+            "$ref": "#/$defs/FindingFdrEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "method",
+        "alpha",
+        "per_finding"
+      ],
+      "type": "object"
+    },
+    "FindingFdrEntry": {
+      "description": "Phase 5 (Plan 05-01 / D5-02 / HYG-02) — one row of\n[`FdrFamilySummary::per_finding`]: raw p-value + BH-adjusted q-value for a\nsingle finding, indexed by its position in the streaming JSONL.",
+      "properties": {
+        "finding_index": {
+          "description": "Zero-indexed position of this finding within its family in the\nstreaming JSONL output.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "q_value": {
+          "description": "BH-FDR adjusted q-value.",
+          "format": "double",
+          "type": "number"
+        },
+        "raw_p": {
+          "description": "Raw (unadjusted) p-value as emitted on the finding's\n`effect.p_value`.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "finding_index",
+        "raw_p",
+        "q_value"
       ],
       "type": "object"
     },
@@ -320,6 +425,26 @@
       ],
       "type": "object"
     },
+    "NullSpec": {
+      "description": "Phase 5 (Plan 05-01 / D5-05) — describes the null-distribution method\n(phase-scramble / circular-shift) that produced a `Finding::Result`'s\np-value under a null-resampling pass.\n\nEmbedded in [`ReproEnvelope::null`] when a scan ran a null pass.\n`method` is an open string in v1 (`\"phase_scramble\"` | `\"circular_shift\"`),\npermitting additive growth without a schema break. Mirrors\n[`crate::scan::NullMethod`] on the wire.",
+      "properties": {
+        "method": {
+          "description": "Open-string method name — v1 values: `\"phase_scramble\"`,\n`\"circular_shift\"`.",
+          "type": "string"
+        },
+        "n": {
+          "description": "Number of null draws (`N_null`).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "method",
+        "n"
+      ],
+      "type": "object"
+    },
     "PerScanCounts": {
       "description": "Per-scan counters embedded in [`RunSummary::per_scan`] (D-11).\n\n`Copy` is safe — three `u64`s, no allocations. `Default` produces zero counters.",
       "properties": {
@@ -387,6 +512,52 @@
       ],
       "type": "object"
     },
+    "ReproEnvelope": {
+      "description": "Phase 5 (Plan 05-01 / D5-05) — auditable reproducibility envelope echoed\non every hygiene-touched [`Finding::Result`].\n\nHYG-05 makes the master seed + per-job seed visible alongside the\nbootstrap / null spec so a consumer can replay the resampling pass bit-for-\nbit. The threat-model disposition `T-05-01-I1` accepts this disclosure —\n`Xoshiro256PlusPlus` is NOT cryptographic and predicting future outputs\nfrom observed outputs is trivial; the threat model has no secrecy\nrequirement for resampling RNG state.\n\nPopulation rule (enforced by Plan 05-03 engine integration):\n`repro = Some(_)` iff bootstrap or null was run for the finding.",
+      "properties": {
+        "bootstrap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BootstrapSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional bootstrap descriptor — `None` when the finding's p-value did\nnot involve a bootstrap pass."
+        },
+        "job_seed": {
+          "description": "Per-job seed derived from `master_seed` + the canonical job key\n(`scan_id@version`, instrument(s), timeframe, window, `param_hash`).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "master_seed": {
+          "description": "Run-level master seed (echoed verbatim on every finding from a single\nrun for cross-finding correlation).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "null": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NullSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional null-distribution descriptor — `None` when the finding's\np-value did not involve a null-resampling pass."
+        }
+      },
+      "required": [
+        "master_seed",
+        "job_seed"
+      ],
+      "type": "object"
+    },
     "ResultFinding": {
       "description": "A `result` finding: the headline scan output (D-04).\n\nCarries the seven locked envelope fields plus per-variant additions. `dsr` and\n`fdr_q` MUST serialise as JSON `null` in v1 (NOT absent) — DO NOT add\n`#[serde(skip_serializing_if = \"Option::is_none\")]` to either field.",
       "properties": {
@@ -435,6 +606,18 @@
             }
           ],
           "description": "Optional inputs the scan consumed (D-04 input/output split)."
+        },
+        "repro": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReproEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Phase 5 (Plan 05-01 / D5-05) — optional reproducibility envelope.\n`Some(_)` iff bootstrap or null resampling produced the finding's\np-value / CI; `None` for closed-form-only findings. Population rule\nis enforced by the Plan 05-03 engine integration; this struct only\npins the type-level shape. Serialises as JSON `null` when absent\n(NOT omitted) per OUT-03 — DO NOT add\n`#[serde(skip_serializing_if = \"Option::is_none\")]`."
         },
         "run_id": {
           "$ref": "#/$defs/RunId"
@@ -651,6 +834,70 @@
       ],
       "type": "object"
     },
+    "SweepSummaryFinding": {
+      "description": "Phase 5 (Plan 05-01 / D5-02) — payload for the `sweep_summary` envelope\nemitted ONCE at the end of a sweep run after BH-FDR adjustment lands the\nper-finding q-values (HYG-02).\n\nFRAMING-LIKE record — does NOT carry the seven locked envelope fields\n(`schema_version`, `scan_id_at_version`, `param_hash`, `code_revision`,\n`data_slice`, `dsr`, `fdr_q`); the sweep summary is run-level, not\nscan-level, so those scan-scoped fields are intentionally absent (per\n05-RESEARCH Open Question 3 recommendation). Run-level identity travels in\n`run_id` + `produced_at_utc`.",
+      "properties": {
+        "fdr_by_family": {
+          "additionalProperties": {
+            "$ref": "#/$defs/FdrFamilySummary"
+          },
+          "description": "Per-family FDR result, keyed by `scan_id@version` (default scope) or\n`scan_family` per `[fdr].family` config. `BTreeMap` (NEVER `HashMap`)\nfor deterministic ordering — OUT-03.",
+          "type": "object"
+        },
+        "produced_at_utc": {
+          "description": "Timestamp the summary was emitted.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId",
+          "description": "ULID identifying the sweep run; matches the surrounding `RunStart` /\n`RunEnd` records' `run_id`."
+        },
+        "totals": {
+          "$ref": "#/$defs/SweepTotals",
+          "description": "Run-level totals (jobs run, results emitted, scan errors, gap aborts)."
+        }
+      },
+      "required": [
+        "run_id",
+        "produced_at_utc",
+        "fdr_by_family",
+        "totals"
+      ],
+      "type": "object"
+    },
+    "SweepTotals": {
+      "description": "Phase 5 (Plan 05-01 / D5-02) — run-level aggregate counters embedded in\n[`SweepSummaryFinding::totals`].\n\n`Default::default()` produces all-zero counters — convenient for tests and\nfor the initial fan-out before any job completes.",
+      "properties": {
+        "gap_aborted": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "jobs_run": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "results_emitted": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scan_errors": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "jobs_run",
+        "results_emitted",
+        "scan_errors",
+        "gap_aborted"
+      ],
+      "type": "object"
+    },
     "TimeRange": {
       "description": "Half-open UTC time interval [`start_utc`, `end_utc`).",
       "properties": {
@@ -671,7 +918,7 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The six-variant Finding envelope discriminated by the JSON `kind` field.\n\nPer RESEARCH §Anti-Patterns: do NOT use `#[serde(flatten)]` on a \"common-fields\"\nstruct. The seven locked envelope fields are inlined directly into each variant\npayload struct that carries them (Result, `ScanError`, `GapAborted`).\n\nPhase 3 added the `DryRun` variant additively (D3-21) — the existing\n`#[serde(tag = \"kind\", rename_all = \"snake_case\")]` attribute automatically\nproduces the `\"dry_run\"` discriminator without per-variant serde\nannotations.",
+  "description": "The six-variant Finding envelope discriminated by the JSON `kind` field.\n\nPer RESEARCH §Anti-Patterns: do NOT use `#[serde(flatten)]` on a \"common-fields\"\nstruct. The seven locked envelope fields are inlined directly into each variant\npayload struct that carries them (Result, `ScanError`, `GapAborted`).\n\nPhase 3 added the `DryRun` variant additively (D3-21) — the existing\n`#[serde(tag = \"kind\", rename_all = \"snake_case\")]` attribute automatically\nproduces the `\"dry_run\"` discriminator without per-variant serde\nannotations. Phase 5 Plan 05-01 (D5-02) extends the enum a second time with\nthe `SweepSummary` variant emitted once per sweep run after BH-FDR\nadjustment (HYG-02); the existing tag attribute likewise produces the\n`\"sweep_summary\"` discriminator automatically.",
   "oneOf": [
     {
       "$ref": "#/$defs/RunStart",
@@ -743,6 +990,19 @@
       "properties": {
         "kind": {
           "const": "dry_run",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "$ref": "#/$defs/SweepSummaryFinding",
+      "properties": {
+        "kind": {
+          "const": "sweep_summary",
           "type": "string"
         }
       },

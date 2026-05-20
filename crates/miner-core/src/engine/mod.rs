@@ -1271,6 +1271,12 @@ mod tests {
                 Finding::GapAborted(_) => gap_aborted += 1,
                 Finding::RunEnd(_) => end += 1,
                 Finding::DryRun(_) => dry_run += 1,
+                // Phase 5 (Plan 05-01 / D5-02): `Finding::SweepSummary` is
+                // emitted only by the sweep runner (Plan 05-04) — the
+                // single-run engine tests in this module never produce it,
+                // so the test helper does not increment any counter on it.
+                // Variant must still be matched exhaustively (E0004).
+                Finding::SweepSummary(_) => {}
             }
         }
         (start, result, scan_err, gap_aborted, end, dry_run)
@@ -2119,9 +2125,11 @@ mod tests {
                     p_value: None,
                     n: None,
                     ci95: None,
+                    effect_size: None,
                     extra: std::collections::BTreeMap::new(),
                 },
                 raw: Some(raw),
+                repro: None,
             });
             sink.write_envelope(&result)?;
             Ok(())

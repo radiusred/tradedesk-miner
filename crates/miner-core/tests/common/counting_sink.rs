@@ -28,6 +28,12 @@ pub struct CountingSink<S: FindingSink> {
     pub gap_aborted_count: Arc<AtomicUsize>,
     pub run_end_count: Arc<AtomicUsize>,
     pub dry_run_count: Arc<AtomicUsize>,
+    /// Phase 5 (Plan 05-01 / D5-02) — `Finding::SweepSummary` envelope counter.
+    /// Currently always zero in single-run engine integration tests (the
+    /// sweep summary is emitted only by the Plan 05-04 sweep runner), but
+    /// the counter exists so the exhaustive match in `write_envelope`
+    /// compiles (E0004).
+    pub sweep_summary_count: Arc<AtomicUsize>,
     pub on_first_result: Option<Box<dyn FnMut() + Send>>,
 }
 
@@ -43,6 +49,7 @@ impl<S: FindingSink> CountingSink<S> {
             gap_aborted_count: Arc::new(AtomicUsize::new(0)),
             run_end_count: Arc::new(AtomicUsize::new(0)),
             dry_run_count: Arc::new(AtomicUsize::new(0)),
+            sweep_summary_count: Arc::new(AtomicUsize::new(0)),
             on_first_result: None,
         }
     }
@@ -82,6 +89,9 @@ impl<S: FindingSink> FindingSink for CountingSink<S> {
             }
             Finding::DryRun(_) => {
                 self.dry_run_count.fetch_add(1, Ordering::SeqCst);
+            }
+            Finding::SweepSummary(_) => {
+                self.sweep_summary_count.fetch_add(1, Ordering::SeqCst);
             }
         }
         self.inner.write_envelope(finding)

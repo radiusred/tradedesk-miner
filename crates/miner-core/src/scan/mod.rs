@@ -105,6 +105,47 @@ impl ScanArity {
 }
 
 // ---------------------------------------------------------------------------
+// NullMethod — Phase 5 (Plan 05-01 / D5-04) null-distribution methods.
+// ---------------------------------------------------------------------------
+
+/// Phase 5 (Plan 05-01 / D5-04) — null-distribution resampling method used by
+/// the scan's hygiene pass (HYG-04).
+///
+/// Mirrors [`ScanArity`] on the wire (same derives, same
+/// `#[serde(rename_all = "snake_case")]`, sibling `as_str` helper). The two
+/// v1 methods are `PhaseScramble` (FFT phase randomisation; preserves the
+/// power spectrum and the autocorrelation function) and `CircularShift`
+/// (random rotation by `k` bars; trivially serialisable as the canonical
+/// fallback when `realfft` is unavailable).
+///
+/// Mirrored on the wire by `crate::findings::NullSpec.method`
+/// (open-string field) for forward-compat — adding a new variant here is
+/// schema-additive (`schemars 1.x` `oneOf` gains a new option without
+/// invalidating existing parsers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NullMethod {
+    /// FFT phase randomisation — preserves the marginal distribution and
+    /// power spectrum; canonical null for autocorrelation-based scans.
+    PhaseScramble,
+    /// Random rotation of the bar series by `k` bars. Universal fallback
+    /// available without an FFT crate.
+    CircularShift,
+}
+
+impl NullMethod {
+    /// `snake_case` wire form — mirrors `ScanArity::as_str` (Pattern F at
+    /// PATTERNS.md `scan/mod.rs (MODIFIED — Scan trait extension)`).
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NullMethod::PhaseScramble => "phase_scramble",
+            NullMethod::CircularShift => "circular_shift",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Scan trait — D3-14, mirrors `reader.rs:198-258` Send+Sync+&'static str shape.
 // ---------------------------------------------------------------------------
 
@@ -166,6 +207,39 @@ pub trait Scan: Send + Sync {
         req: &ScanRequest,
         sink: &mut dyn FindingSink,
     ) -> Result<(), ScanError>;
+
+    /// Phase 5 (Plan 05-01 / D5-04) — does this scan opt into bootstrap
+    /// resampling (HYG-03)?
+    ///
+    /// Default-false; every scan opts in EXPLICITLY in Plan 05-02 (per-scan
+    /// opt-in table at PATTERNS §"Scan trait extension"). The Phase 5
+    /// sweep runner (Plan 05-04) reads this to decide whether to allocate
+    /// bootstrap budget per job; if the user requests bootstrap on a scan
+    /// that returns `false` here, the engine rejects with
+    /// `PreflightCode::HygieneNotSupported`.
+    ///
+    /// No generics, no `where Self: Sized` — the method is dyn-safe (the
+    /// `scan_trait_object_safe` regression gate compiles the type-erased
+    /// coercion and fails the build if a future change introduces a
+    /// non-dyn-safe self-type).
+    fn supports_bootstrap(&self) -> bool {
+        false
+    }
+
+    /// Phase 5 (Plan 05-01 / D5-04) — does this scan opt into the given
+    /// null-distribution method (HYG-04)?
+    ///
+    /// Default-false; every scan opts in EXPLICITLY in Plan 05-02 (per-scan
+    /// opt-in table at PATTERNS §"Scan trait extension"). Scans MAY support
+    /// `PhaseScramble` without `CircularShift` or vice versa — the method
+    /// is per-`NullMethod`, not per-scan. If the user requests a null
+    /// method that returns `false` here, the engine rejects with
+    /// `PreflightCode::HygieneNotSupported`.
+    ///
+    /// No generics, no `where Self: Sized` — the method is dyn-safe.
+    fn supports_null_method(&self, _method: NullMethod) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -507,6 +581,54 @@ mod tests {
     #[test]
     fn scan_trait_object_safe() {
         fn _accept(_s: &dyn crate::scan::Scan) {}
+    }
+
+    // ---------------------------------------------------------------------
+    // Plan 05-01 Task 3 — TDD RED: Phase 5 scan trait + NullMethod tests
+    // ---------------------------------------------------------------------
+
+    /// Plan 05-01 Task 3 — `null_method_round_trip`: `NullMethod` mirrors
+    /// `ScanArity::as_str` (D5-04). `PhaseScramble` serialises as
+    /// `"phase_scramble"` and `CircularShift` as `"circular_shift"`. Both
+    /// round-trip through `serde_json` and the `as_str()` helper matches
+    /// the wire form.
+    #[test]
+    fn null_method_round_trip() {
+        let cases = [
+            (NullMethod::PhaseScramble, "phase_scramble"),
+            (NullMethod::CircularShift, "circular_shift"),
+        ];
+        for (method, expected) in cases {
+            let json = serde_json::to_string(&method).expect("serialise");
+            assert_eq!(json, format!("\"{expected}\""), "wire form mismatch");
+            let parsed: NullMethod = serde_json::from_str(&json).expect("deserialise");
+            assert_eq!(parsed, method);
+            assert_eq!(method.as_str(), expected);
+        }
+    }
+
+    /// Plan 05-01 Task 3 — `scan_supports_bootstrap_and_null_method_default_false`
+    /// (D5-04). Every Scan impl gets `supports_bootstrap()` and
+    /// `supports_null_method(_)` returning `false` by default; the default
+    /// methods are dyn-safe (no generics, no `where Self: Sized`). This test
+    /// constructs a real Scan impl (`LjungBoxScan`) through a `dyn Scan`
+    /// reference and asserts the defaults; the `scan_trait_object_safe`
+    /// compile-time gate proves dyn-safety.
+    #[test]
+    fn scan_supports_bootstrap_and_null_method_default_false() {
+        let scan: Box<dyn Scan> = Box::new(crate::scan::ljung_box::LjungBoxScan);
+        assert!(
+            !scan.supports_bootstrap(),
+            "default supports_bootstrap() must be false"
+        );
+        assert!(
+            !scan.supports_null_method(NullMethod::PhaseScramble),
+            "default supports_null_method(PhaseScramble) must be false"
+        );
+        assert!(
+            !scan.supports_null_method(NullMethod::CircularShift),
+            "default supports_null_method(CircularShift) must be false"
+        );
     }
 
     /// Plan 04-01 Task 2 — Behavior Test 1: `scan_arity_serialises_snake_case`.

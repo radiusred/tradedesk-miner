@@ -23,6 +23,7 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
+    "effect_size": null,
     "extra": {
       "dd_distribution_p50_p95_p99": {
         "data": "ROpHHA+L2z9E6kccD4vbP0TqRxwPi9s/",
@@ -97,6 +98,7 @@ expression: masked
       }
     }
   },
+  "repro": null,
   "run_id": "<masked_run_id>",
   "scan_id@version": "stats.drawdown.profile@1",
   "schema_version": 1

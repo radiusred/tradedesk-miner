@@ -83,6 +83,10 @@ impl Scan for HourOfDayScan {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Phase 5 (Plan 05-01 / D5-03) added `effect_size: None` + Phase 5 (D5-05) added `repro: None` to the Effect / ResultFinding struct literals, nudging the run body from 100 to 101 lines. Splitting the body would obscure the linear scan-build-emit flow without reducing complexity."
+    )]
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -147,6 +151,7 @@ impl Scan for HourOfDayScan {
             )]
             n: Some(n as u64),
             ci95: None,
+            effect_size: None,
             extra,
         };
 
@@ -207,6 +212,7 @@ impl Scan for HourOfDayScan {
             params: req.resolved_params.clone(),
             effect,
             raw: Some(raw_block),
+            repro: None,
         };
 
         sink.write_envelope(&Finding::Result(result))?;

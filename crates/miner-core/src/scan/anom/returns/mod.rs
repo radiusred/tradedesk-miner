@@ -164,6 +164,7 @@ impl Scan for ReturnsProfileScan {
             )]
             n: Some(n as u64),
             ci95: None,
+            effect_size: None,
             extra,
         };
 
@@ -227,6 +228,7 @@ impl Scan for ReturnsProfileScan {
             params: req.resolved_params.clone(),
             effect,
             raw: Some(raw_block),
+            repro: None,
         };
 
         // Step 7 — emit (Pitfall 5: NEVER call sink.flush from inside a scan).

@@ -39,6 +39,15 @@ pub enum PreflightCode {
     InvalidConfig,
     /// Sweep cardinality exceeds a configured upper bound (Phase 5+).
     SweepTooLarge,
+    /// Phase 5 (Plan 05-01 / D5-04) — user requested bootstrap or a
+    /// null-distribution method on a scan that returned `false` from
+    /// [`crate::scan::Scan::supports_bootstrap`] /
+    /// [`crate::scan::Scan::supports_null_method`]. Emitted by the sweep
+    /// runner's preflight (Plan 05-04) before any reader or cache work.
+    /// Wire-form `code` string: `"hygiene_not_supported"`. Variant
+    /// positioned between `SweepTooLarge` (the other Phase 5+ variant) and
+    /// `InternalError` (the catch-all) per PATTERNS Pattern G.
+    HygieneNotSupported,
     /// Catastrophic failure unrelated to inputs.
     InternalError,
 }
@@ -55,6 +64,7 @@ impl PreflightCode {
             PreflightCode::MissingRequiredConfig => "missing_required_config",
             PreflightCode::InvalidConfig => "invalid_config",
             PreflightCode::SweepTooLarge => "sweep_too_large",
+            PreflightCode::HygieneNotSupported => "hygiene_not_supported",
             PreflightCode::InternalError => "internal_error",
         }
     }
@@ -163,6 +173,13 @@ mod tests {
             ),
             (PreflightCode::InvalidConfig, "invalid_config"),
             (PreflightCode::SweepTooLarge, "sweep_too_large"),
+            // Phase 5 (Plan 05-01 / D5-04) — additive variant for scans that
+            // do not implement bootstrap / null hygiene under
+            // `supports_bootstrap()` / `supports_null_method()`.
+            (
+                PreflightCode::HygieneNotSupported,
+                "hygiene_not_supported",
+            ),
             (PreflightCode::InternalError, "internal_error"),
         ];
         for (code, expected) in cases {

@@ -165,6 +165,11 @@ impl Raw {
 /// `extra` carries scan-derived arrays (e.g., Ljung-Box `lags`/`acf`; OLS
 /// `residuals`). Same `{data, shape, dtype}` shape as `raw.series` entries. Uses
 /// `BTreeMap` for deterministic ordering — OUT-03.
+///
+/// Phase 5 (Plan 05-01 / D5-03) added the optional `effect_size` field
+/// additively — `#[serde(default)]` keeps the schema diff non-breaking. The
+/// None case MUST serialise as JSON `null` (NOT omitted) per OUT-03; that is
+/// why no `#[serde(skip_serializing_if = ...)]` attribute is attached.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Effect {
     pub metric: String,
@@ -175,9 +180,92 @@ pub struct Effect {
     pub n: Option<u64>,
     #[serde(default)]
     pub ci95: Option<[f64; 2]>,
+    /// Phase 5 (Plan 05-01 / D5-03) — optional standardised effect-size
+    /// statistic alongside `value`. Canonical `kind` values include
+    /// `"cohens_d"`, `"hedges_g"`, `"cliffs_delta"`, `"vr_minus_one"`, plus
+    /// scan-specific kinds (see D5-03 table). `None` for scans that do not
+    /// emit a standardised effect size; serialises as JSON `null`.
+    #[serde(default)]
+    pub effect_size: Option<EffectSize>,
     /// `BTreeMap` (NEVER `HashMap`) for deterministic ordering — OUT-03.
     #[serde(default)]
     pub extra: BTreeMap<String, RawArray>,
+}
+
+/// Phase 5 (Plan 05-01 / D5-03) — standardised effect-size statistic carried on
+/// `Effect.effect_size`.
+///
+/// `kind` is an open string (NOT a sealed enum) so adding new effect-size
+/// kinds in later phases is additive and does not break the JSON Schema.
+/// Canonical values: `"cohens_d"`, `"hedges_g"`, `"cliffs_delta"`,
+/// `"vr_minus_one"`, plus scan-specific kinds per D5-03.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EffectSize {
+    /// Open-string discriminator — see canonical values above.
+    pub kind: String,
+    /// The numeric effect-size value.
+    pub value: f64,
+}
+
+/// Phase 5 (Plan 05-01 / D5-05) — describes the resampling method that
+/// produced a `Finding::Result`'s p-value / CI under bootstrap.
+///
+/// Embedded in [`ReproEnvelope::bootstrap`] when a scan ran a bootstrap pass.
+/// `method` is an open string in v1 (`"stationary"` | `"block"`), permitting
+/// additive growth (e.g., `"pair_bootstrap"`) without a schema break.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BootstrapSpec {
+    /// Open-string method name — v1 values: `"stationary"`, `"block"`.
+    pub method: String,
+    /// Number of bootstrap resamples drawn (`B`).
+    pub n: u32,
+}
+
+/// Phase 5 (Plan 05-01 / D5-05) — describes the null-distribution method
+/// (phase-scramble / circular-shift) that produced a `Finding::Result`'s
+/// p-value under a null-resampling pass.
+///
+/// Embedded in [`ReproEnvelope::null`] when a scan ran a null pass.
+/// `method` is an open string in v1 (`"phase_scramble"` | `"circular_shift"`),
+/// permitting additive growth without a schema break. Mirrors
+/// [`crate::scan::NullMethod`] on the wire.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NullSpec {
+    /// Open-string method name — v1 values: `"phase_scramble"`,
+    /// `"circular_shift"`.
+    pub method: String,
+    /// Number of null draws (`N_null`).
+    pub n: u32,
+}
+
+/// Phase 5 (Plan 05-01 / D5-05) — auditable reproducibility envelope echoed
+/// on every hygiene-touched [`Finding::Result`].
+///
+/// HYG-05 makes the master seed + per-job seed visible alongside the
+/// bootstrap / null spec so a consumer can replay the resampling pass bit-for-
+/// bit. The threat-model disposition `T-05-01-I1` accepts this disclosure —
+/// `Xoshiro256PlusPlus` is NOT cryptographic and predicting future outputs
+/// from observed outputs is trivial; the threat model has no secrecy
+/// requirement for resampling RNG state.
+///
+/// Population rule (enforced by Plan 05-03 engine integration):
+/// `repro = Some(_)` iff bootstrap or null was run for the finding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ReproEnvelope {
+    /// Run-level master seed (echoed verbatim on every finding from a single
+    /// run for cross-finding correlation).
+    pub master_seed: u64,
+    /// Per-job seed derived from `master_seed` + the canonical job key
+    /// (`scan_id@version`, instrument(s), timeframe, window, `param_hash`).
+    pub job_seed: u64,
+    /// Optional bootstrap descriptor — `None` when the finding's p-value did
+    /// not involve a bootstrap pass.
+    #[serde(default)]
+    pub bootstrap: Option<BootstrapSpec>,
+    /// Optional null-distribution descriptor — `None` when the finding's
+    /// p-value did not involve a null-resampling pass.
+    #[serde(default)]
+    pub null: Option<NullSpec>,
 }
 
 // ---------------------------------------------------------------------------
@@ -260,6 +348,15 @@ pub struct ResultFinding {
     pub effect: Effect,
     /// Optional inputs the scan consumed (D-04 input/output split).
     pub raw: Option<Raw>,
+    /// Phase 5 (Plan 05-01 / D5-05) — optional reproducibility envelope.
+    /// `Some(_)` iff bootstrap or null resampling produced the finding's
+    /// p-value / CI; `None` for closed-form-only findings. Population rule
+    /// is enforced by the Plan 05-03 engine integration; this struct only
+    /// pins the type-level shape. Serialises as JSON `null` when absent
+    /// (NOT omitted) per OUT-03 — DO NOT add
+    /// `#[serde(skip_serializing_if = "Option::is_none")]`.
+    #[serde(default)]
+    pub repro: Option<ReproEnvelope>,
 }
 
 /// A `scan_error` finding: mid-run scan failure (D-05).
@@ -344,6 +441,79 @@ pub struct DryRunFinding {
     pub estimated_findings_count: u64,
 }
 
+/// Phase 5 (Plan 05-01 / D5-02) — payload for the `sweep_summary` envelope
+/// emitted ONCE at the end of a sweep run after BH-FDR adjustment lands the
+/// per-finding q-values (HYG-02).
+///
+/// FRAMING-LIKE record — does NOT carry the seven locked envelope fields
+/// (`schema_version`, `scan_id_at_version`, `param_hash`, `code_revision`,
+/// `data_slice`, `dsr`, `fdr_q`); the sweep summary is run-level, not
+/// scan-level, so those scan-scoped fields are intentionally absent (per
+/// 05-RESEARCH Open Question 3 recommendation). Run-level identity travels in
+/// `run_id` + `produced_at_utc`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SweepSummaryFinding {
+    /// ULID identifying the sweep run; matches the surrounding `RunStart` /
+    /// `RunEnd` records' `run_id`.
+    pub run_id: RunId,
+    /// Timestamp the summary was emitted.
+    pub produced_at_utc: DateTime<Utc>,
+    /// Per-family FDR result, keyed by `scan_id@version` (default scope) or
+    /// `scan_family` per `[fdr].family` config. `BTreeMap` (NEVER `HashMap`)
+    /// for deterministic ordering — OUT-03.
+    pub fdr_by_family: BTreeMap<String, FdrFamilySummary>,
+    /// Run-level totals (jobs run, results emitted, scan errors, gap aborts).
+    pub totals: SweepTotals,
+}
+
+/// Phase 5 (Plan 05-01 / D5-02 / HYG-02) — per-family BH-FDR result embedded
+/// in [`SweepSummaryFinding::fdr_by_family`].
+///
+/// `method` is an open string (`"benjamini_hochberg"` in v1; extension hook
+/// for `"benjamini_yekutieli"` in v2). `per_finding` is `Vec` (NEVER `HashMap`)
+/// so stable index order is preserved — `finding_index` references the
+/// zero-indexed position of the finding within the family in the streaming
+/// JSONL output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FdrFamilySummary {
+    /// FDR method — v1 always `"benjamini_hochberg"`.
+    pub method: String,
+    /// FDR control level (typical: 0.05 or 0.10).
+    pub alpha: f64,
+    /// Per-finding raw-p / q-value pairs in stable index order. `Vec`
+    /// preserves alignment with the streaming JSONL `finding_index` — NEVER
+    /// `HashMap`.
+    pub per_finding: Vec<FindingFdrEntry>,
+}
+
+/// Phase 5 (Plan 05-01 / D5-02 / HYG-02) — one row of
+/// [`FdrFamilySummary::per_finding`]: raw p-value + BH-adjusted q-value for a
+/// single finding, indexed by its position in the streaming JSONL.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FindingFdrEntry {
+    /// Zero-indexed position of this finding within its family in the
+    /// streaming JSONL output.
+    pub finding_index: u64,
+    /// Raw (unadjusted) p-value as emitted on the finding's
+    /// `effect.p_value`.
+    pub raw_p: f64,
+    /// BH-FDR adjusted q-value.
+    pub q_value: f64,
+}
+
+/// Phase 5 (Plan 05-01 / D5-02) — run-level aggregate counters embedded in
+/// [`SweepSummaryFinding::totals`].
+///
+/// `Default::default()` produces all-zero counters — convenient for tests and
+/// for the initial fan-out before any job completes.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SweepTotals {
+    pub jobs_run: u64,
+    pub results_emitted: u64,
+    pub scan_errors: u64,
+    pub gap_aborted: u64,
+}
+
 // ---------------------------------------------------------------------------
 // The tagged `Finding` enum — single Rust type produces every JSON variant
 // ---------------------------------------------------------------------------
@@ -357,7 +527,10 @@ pub struct DryRunFinding {
 /// Phase 3 added the `DryRun` variant additively (D3-21) — the existing
 /// `#[serde(tag = "kind", rename_all = "snake_case")]` attribute automatically
 /// produces the `"dry_run"` discriminator without per-variant serde
-/// annotations.
+/// annotations. Phase 5 Plan 05-01 (D5-02) extends the enum a second time with
+/// the `SweepSummary` variant emitted once per sweep run after BH-FDR
+/// adjustment (HYG-02); the existing tag attribute likewise produces the
+/// `"sweep_summary"` discriminator automatically.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Finding {
@@ -367,6 +540,7 @@ pub enum Finding {
     GapAborted(GapAbortedFinding),
     RunEnd(RunEnd),
     DryRun(DryRunFinding),
+    SweepSummary(SweepSummaryFinding),
 }
 
 // ---------------------------------------------------------------------------
@@ -411,6 +585,7 @@ mod tests {
             p_value: Some(0.012),
             n: Some(1024),
             ci95: None,
+            effect_size: None,
             extra: BTreeMap::new(),
         }
     }
@@ -429,6 +604,7 @@ mod tests {
             params: serde_json::json!({"lags": 20}),
             effect: sample_effect(),
             raw: None,
+            repro: None,
         }
     }
 
@@ -619,7 +795,8 @@ mod tests {
 
     /// Test 8 — `all_variants_round_trip`: each `Finding` variant survives a
     /// `serde_json` round-trip. Phase 3 extended the array to include
-    /// `Finding::DryRun(_)` (D3-21).
+    /// `Finding::DryRun(_)` (D3-21); Phase 5 Plan 05-01 (D5-02) extended it to
+    /// include `Finding::SweepSummary(_)`.
     #[test]
     fn all_variants_round_trip() {
         for finding in [
@@ -629,6 +806,7 @@ mod tests {
             Finding::GapAborted(sample_gap_aborted()),
             Finding::RunEnd(sample_run_end()),
             Finding::DryRun(sample_dry_run()),
+            Finding::SweepSummary(sample_sweep_summary()),
         ] {
             let json = serde_json::to_string(&finding).expect("serialise");
             let parsed: Finding = serde_json::from_str(&json).expect("deserialise");
@@ -791,6 +969,211 @@ mod tests {
         assert!(
             legacy.sources.is_empty(),
             "Omitted `sources` must default to an empty Vec"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // Plan 05-01 Task 2 — TDD RED: Phase 5 schema-additive envelope tests
+    // ---------------------------------------------------------------------
+
+    /// Build a deterministic `SweepSummaryFinding` for round-trip tests.
+    /// Uses fixed `Utc.with_ymd_and_hms(...)` (NOT `Utc::now()`) so the test
+    /// is reproducible — matches the convention of `sample_run_start()` etc.
+    /// `fdr_by_family` has TWO entries to prove `BTreeMap` ordering is
+    /// alphabetic per OUT-03.
+    fn sample_sweep_summary() -> SweepSummaryFinding {
+        let mut fdr_by_family = BTreeMap::new();
+        // Inserted in non-alphabetic order — the BTreeMap should re-order on
+        // serialise (stats.* sorts before x.* lexicographically).
+        fdr_by_family.insert(
+            "x.test.placeholder@1".into(),
+            FdrFamilySummary {
+                method: "benjamini_hochberg".into(),
+                alpha: 0.05,
+                per_finding: vec![FindingFdrEntry {
+                    finding_index: 0,
+                    raw_p: 0.001,
+                    q_value: 0.002,
+                }],
+            },
+        );
+        fdr_by_family.insert(
+            "stats.autocorr.ljung_box@1".into(),
+            FdrFamilySummary {
+                method: "benjamini_hochberg".into(),
+                alpha: 0.05,
+                per_finding: vec![
+                    FindingFdrEntry {
+                        finding_index: 0,
+                        raw_p: 0.012,
+                        q_value: 0.024,
+                    },
+                    FindingFdrEntry {
+                        finding_index: 1,
+                        raw_p: 0.030,
+                        q_value: 0.030,
+                    },
+                ],
+            },
+        );
+        SweepSummaryFinding {
+            run_id: RunId::new(),
+            produced_at_utc: Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap(),
+            fdr_by_family,
+            totals: SweepTotals {
+                jobs_run: 2,
+                results_emitted: 3,
+                scan_errors: 0,
+                gap_aborted: 0,
+            },
+        }
+    }
+
+    /// Plan 05-01 Task 2 — Behavior Test 1 + 2 (`effect_size_round_trip`):
+    /// `Effect.effect_size: Option<EffectSize>` round-trips through serde for
+    /// both `Some(_)` and `None` paths. Per OUT-03, the `None` variant
+    /// serialises as JSON `null` (NOT an omitted field) — DO NOT add
+    /// `#[serde(skip_serializing_if = "Option::is_none")]`.
+    #[test]
+    fn effect_size_round_trip() {
+        // Some path.
+        let effect_some = Effect {
+            metric: "vr_minus_one".into(),
+            value: 0.4,
+            p_value: Some(0.02),
+            n: Some(512),
+            ci95: None,
+            effect_size: Some(EffectSize {
+                kind: "cohens_d".into(),
+                value: 0.4,
+            }),
+            extra: BTreeMap::new(),
+        };
+        let json = serde_json::to_string(&effect_some).expect("serialise Some");
+        let parsed: Effect = serde_json::from_str(&json).expect("deserialise Some");
+        assert_eq!(parsed, effect_some, "Some path round-trip mismatch");
+
+        // None path: must serialise the literal JSON null (NOT omit the key).
+        let effect_none = Effect {
+            metric: "x".into(),
+            value: 0.0,
+            p_value: None,
+            n: None,
+            ci95: None,
+            effect_size: None,
+            extra: BTreeMap::new(),
+        };
+        let json_none = serde_json::to_string(&effect_none).expect("serialise None");
+        assert!(
+            json_none.contains("\"effect_size\":null"),
+            "effect_size must serialise as literal `null` when None; got: {json_none}"
+        );
+        let parsed_none: Effect = serde_json::from_str(&json_none).expect("deserialise None");
+        assert_eq!(parsed_none, effect_none);
+
+        // Belt-and-brace: backward-compat — an old payload omitting
+        // `effect_size` deserialises with `effect_size: None` (the
+        // `#[serde(default)]` attribute keeps the schema diff purely additive).
+        let legacy_json = r#"{
+            "metric": "vr_minus_one",
+            "value": 0.4,
+            "p_value": null,
+            "n": null,
+            "ci95": null,
+            "extra": {}
+        }"#;
+        let legacy: Effect = serde_json::from_str(legacy_json).expect("legacy parse ok");
+        assert!(
+            legacy.effect_size.is_none(),
+            "Omitted `effect_size` must default to None"
+        );
+    }
+
+    /// Plan 05-01 Task 2 — Behavior Test 7 (`repro_envelope_population_rule`):
+    /// `ResultFinding.repro: Option<ReproEnvelope>` round-trips through serde
+    /// for both `Some(_)` (with a `BootstrapSpec`) and `None` paths. The rule
+    /// "`repro = Some(_)` iff bootstrap or null was run" is enforced by the
+    /// Plan 05-03 engine integration; this test pins the type-level shape
+    /// (both variants exist + round-trip cleanly).
+    #[test]
+    fn repro_envelope_population_rule() {
+        let mut with_repro = sample_result();
+        with_repro.repro = Some(ReproEnvelope {
+            master_seed: 0xDEAD,
+            job_seed: 0xBEEF,
+            bootstrap: Some(BootstrapSpec {
+                method: "stationary".into(),
+                n: 1000,
+            }),
+            null: None,
+        });
+        let json = serde_json::to_string(&with_repro).expect("serialise Some");
+        let parsed: ResultFinding = serde_json::from_str(&json).expect("deserialise Some");
+        assert_eq!(parsed, with_repro, "Some repro round-trip mismatch");
+
+        // None path: serialise as literal `null`.
+        let without_repro = sample_result();
+        assert!(without_repro.repro.is_none());
+        let json_none = serde_json::to_string(&without_repro).expect("serialise None");
+        assert!(
+            json_none.contains("\"repro\":null"),
+            "repro must serialise as literal `null` when None; got: {json_none}"
+        );
+        let parsed_none: ResultFinding =
+            serde_json::from_str(&json_none).expect("deserialise None");
+        assert_eq!(parsed_none, without_repro);
+
+        // Belt-and-brace: backward-compat — an old payload (Phase 4 era)
+        // omitting `repro` deserialises with `repro: None`.
+        // Build the JSON by stripping `repro` from a serialised `ResultFinding`.
+        let mut value = serde_json::to_value(&without_repro).expect("serialise");
+        let kind = value
+            .as_object_mut()
+            .expect("top-level object")
+            .remove("kind"); // strip discriminant for direct ResultFinding parse
+        let _ = kind;
+        value
+            .as_object_mut()
+            .expect("top-level object")
+            .remove("repro");
+        let legacy_str = serde_json::to_string(&value).expect("legacy serialise");
+        let legacy: ResultFinding =
+            serde_json::from_str(&legacy_str).expect("legacy parse ok");
+        assert!(
+            legacy.repro.is_none(),
+            "Omitted `repro` must default to None"
+        );
+    }
+
+    /// Plan 05-01 Task 2 — Behavior Test 4 (`sweep_summary_finding_uses_snake_case_kind`):
+    /// `Finding::SweepSummary(_)` serialises with the top-level `"kind":"sweep_summary"`
+    /// discriminant produced by the existing `#[serde(rename_all = "snake_case")]`
+    /// attribute on `Finding`. `fdr_by_family` `BTreeMap` ordering is alphabetic
+    /// per OUT-03 (proves we are not using a `HashMap` — the test serialises and
+    /// checks the JSON string for stable key ordering).
+    #[test]
+    fn sweep_summary_finding_uses_snake_case_kind() {
+        let summary = sample_sweep_summary();
+        let finding = Finding::SweepSummary(summary);
+        let json = serde_json::to_string(&finding).expect("serialise");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(
+            value["kind"], "sweep_summary",
+            "expected kind discriminator 'sweep_summary'; got {}",
+            value["kind"]
+        );
+        // BTreeMap ordering: "stats.autocorr.ljung_box@1" must appear BEFORE
+        // "x.test.placeholder@1" in the serialised JSON, regardless of
+        // insertion order.
+        let stats_pos = json
+            .find("stats.autocorr.ljung_box@1")
+            .expect("stats family key must be present");
+        let x_pos = json
+            .find("x.test.placeholder@1")
+            .expect("x family key must be present");
+        assert!(
+            stats_pos < x_pos,
+            "BTreeMap must emit keys alphabetically (OUT-03); stats@{stats_pos} vs x@{x_pos}: {json}"
         );
     }
 

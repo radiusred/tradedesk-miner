@@ -23,6 +23,7 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
+    "effect_size": null,
     "extra": {
       "mean": {
         "data": "pPhkOAvIfT8=",
@@ -90,6 +91,7 @@ expression: masked
       }
     }
   },
+  "repro": null,
   "run_id": "<masked_run_id>",
   "scan_id@version": "stats.returns.profile@1",
   "schema_version": 1

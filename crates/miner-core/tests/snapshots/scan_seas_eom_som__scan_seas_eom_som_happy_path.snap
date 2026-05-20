@@ -24,6 +24,7 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
+    "effect_size": null,
     "extra": {
       "bucket_labels": {
         "data": "WyJFT00tMyIsIkVPTS0yIiwiRU9NLTEiLCJTT00tMSIsIlNPTS0yIiwiU09NLTMiXQ==",
@@ -106,6 +107,7 @@ expression: masked
       }
     }
   },
+  "repro": null,
   "run_id": "<masked_run_id>",
   "scan_id@version": "seas.bucket.eom_som@1",
   "schema_version": 1

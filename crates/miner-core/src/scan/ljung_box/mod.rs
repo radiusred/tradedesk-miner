@@ -161,6 +161,7 @@ impl Scan for LjungBoxScan {
             )]
             n: Some(n as u64),
             ci95: None,
+            effect_size: None,
             extra,
         };
 
@@ -234,6 +235,7 @@ impl Scan for LjungBoxScan {
             params: req.resolved_params.clone(),
             effect,
             raw: Some(raw_block),
+            repro: None,
         };
 
         // Step 6 — emit. Pitfall 5: scans NEVER call the sink's flush method;
