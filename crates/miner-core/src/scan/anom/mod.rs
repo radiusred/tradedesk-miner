@@ -16,6 +16,7 @@
 use super::Registry;
 
 pub mod adf;
+pub mod arch_lm;
 pub mod drawdown;
 pub mod kpss;
 pub mod ljung_box_sq;
@@ -26,6 +27,7 @@ pub mod variance_ratio;
 pub mod vol;
 
 pub use adf::AdfScan;
+pub use arch_lm::ArchLmScan;
 pub use drawdown::DrawdownProfileScan;
 pub use kpss::KpssScan;
 pub use ljung_box_sq::LjungBoxSqScan;
@@ -45,17 +47,19 @@ pub use vol::VolRollingScan;
 /// the central `registry::bootstrap` body.
 pub fn register_anom_scans(r: &mut Registry) {
     // Alphabetical by scan-id:
-    //   stats.autocorr.ljung_box_sq   <- Plan 04-04
-    //   stats.drawdown.profile        <- Plan 04-04
-    //   stats.outliers.z_and_mad      <- Plan 04-04
-    //   stats.returns.profile         <- Plan 04-03
-    //   stats.stationarity.adf        <- Plan 04-05
-    //   stats.stationarity.kpss       <- Plan 04-05
-    //   stats.summary.welford         <- Plan 04-03
-    //   stats.variance_ratio.lo_mackinlay  <- Plan 04-05
-    //   stats.vol.rolling             <- Plan 04-03
+    //   stats.autocorr.ljung_box_sq       <- Plan 04-04
+    //   stats.drawdown.profile            <- Plan 04-04
+    //   stats.heteroskedasticity.arch_lm  <- Plan 04-06
+    //   stats.outliers.z_and_mad          <- Plan 04-04
+    //   stats.returns.profile             <- Plan 04-03
+    //   stats.stationarity.adf            <- Plan 04-05
+    //   stats.stationarity.kpss           <- Plan 04-05
+    //   stats.summary.welford             <- Plan 04-03
+    //   stats.variance_ratio.lo_mackinlay <- Plan 04-05
+    //   stats.vol.rolling                 <- Plan 04-03
     r.register(Box::new(LjungBoxSqScan));
     r.register(Box::new(DrawdownProfileScan));
+    r.register(Box::new(ArchLmScan));
     r.register(Box::new(OutliersZAndMadScan));
     r.register(Box::new(ReturnsProfileScan));
     r.register(Box::new(AdfScan));
@@ -70,11 +74,11 @@ mod tests {
     use super::*;
 
     /// `register_anom_scans` registers the ANOM scans rolled out through
-    /// Plan 04-04 (ANOM-01, ANOM-02, ANOM-03, ANOM-04 squared, ANOM-10,
-    /// ANOM-11). Plan 04-11 tightens this to a full count assertion across
-    /// the complete catalogue.
+    /// Plan 04-06 (ANOM-01..ANOM-08, ANOM-10, ANOM-11 — ANOM-09 lands with
+    /// `stats.normality.jarque_bera` at the end of Plan 04-06). Plan 04-11
+    /// tightens this to a full count assertion across the complete catalogue.
     #[test]
-    fn register_anom_scans_registers_phase4_scans_through_plan_04() {
+    fn register_anom_scans_registers_phase4_scans_through_plan_06() {
         let mut r = Registry::new();
         register_anom_scans(&mut r);
         assert!(
@@ -84,6 +88,10 @@ mod tests {
         assert!(
             r.get("stats.drawdown.profile", 1).is_some(),
             "ANOM-11 drawdown"
+        );
+        assert!(
+            r.get("stats.heteroskedasticity.arch_lm", 1).is_some(),
+            "ANOM-08 arch_lm"
         );
         assert!(
             r.get("stats.outliers.z_and_mad", 1).is_some(),
