@@ -19,10 +19,10 @@
 //! - `effect.metric = "ljung_box_q_squared"`, `effect.value = Q[lags-1]`,
 //!   `effect.p_value = chi2(df=lags).sf(Q[lags-1])`, `effect.n = returns.len()`.
 //! - `effect.extra = {acf, lags, p_values, q_stats, series_kind}` (alphabetical
-//!   under BTreeMap discipline).
+//!   under `BTreeMap` discipline).
 //! - `raw.series = {returns_squared, timestamps_ms}`.
 //!
-//! ## Phase 3 LjungBox golden invariant
+//! ## Phase 3 `LjungBox` golden invariant
 //!
 //! The new squared-variant scan reuses the existing Phase 3 ACF + Q-stat
 //! kernels (`crate::scan::ljung_box::kernel::{biased_acf, ljung_box_q_and_p}`).
@@ -290,7 +290,7 @@ fn default_lags(n: usize) -> i64 {
 }
 
 /// Convert a usize lag value to f64 for the `effect.extra["lags"]` 1-element
-/// RawArray. Bounded by `n` (returns count); fits trivially in f64.
+/// `RawArray`. Bounded by `n` (returns count); fits trivially in f64.
 #[allow(
     clippy::cast_precision_loss,
     reason = "lags is bounded by n (returns count); realistic values << 2^52"
@@ -301,7 +301,7 @@ fn lags_to_f64(lags: usize) -> f64 {
 
 /// Encode a UTF-8 string as a 1-element string-payload `RawArray`.
 ///
-/// The catalogue's v1 wire-form only supports `Dtype::F64` RawArrays — but a
+/// The catalogue's v1 wire-form only supports `Dtype::F64` `RawArray` — but a
 /// scan envelope still needs to carry the `series_kind` discriminator label
 /// (`"squared_returns"`) so the Quant agent can disambiguate the level vs
 /// squared variant without a per-scan look-up table.

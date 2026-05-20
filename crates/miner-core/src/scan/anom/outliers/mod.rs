@@ -18,7 +18,7 @@
 //!   OR `|modified_z| > modified_z_threshold`.
 //! - `effect.extra = {mad, median, modified_z_threshold, outlier_indices,
 //!    outlier_values_modified_z, outlier_values_z, z_threshold}`
-//!   (alphabetical BTreeMap order).
+//!   (alphabetical `BTreeMap` order).
 //! - `raw.series = {returns, timestamps_ms}` under default series; under
 //!   `series=close` the raw series carries `{closes, timestamps_ms}`.
 //!

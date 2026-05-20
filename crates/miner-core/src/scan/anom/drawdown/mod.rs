@@ -18,7 +18,7 @@
 //!   episodes`.
 //! - `effect.extra = {dd_distribution_p50_p95_p99, drawdown_durations_ms,
 //!    equity_curve, peaks, time_to_recover_ms, troughs}` (alphabetical
-//!   BTreeMap order).
+//!   `BTreeMap` order).
 //! - `raw.series = {returns, timestamps_ms}`.
 //!
 //! ## Registration

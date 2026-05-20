@@ -38,7 +38,7 @@ use chrono::{DateTime, Utc};
 pub(super) struct DrawdownProfile {
     /// The most-negative drawdown magnitude ever reached. Always `<= 0.0`.
     pub max_dd: f64,
-    /// Cumulative log-equity curve. Length == returns.len().
+    /// Cumulative log-equity curve. Length == `returns.len()`.
     pub equity_curve: Vec<f64>,
     /// Peak indices per closed drawdown episode (one per episode).
     pub peaks: Vec<usize>,
@@ -56,8 +56,8 @@ pub(super) struct DrawdownProfile {
     pub dd_dist_percentiles: [f64; 3],
 }
 
-/// Cumulative sum of `log_returns`: equity_curve\[t\] = sum_{i<=t} log_returns[i].
-/// Length == log_returns.len(). Equity at t=0 is `log_returns[0]` (we use
+/// Cumulative sum of `log_returns`: `equity_curve[t] = sum_{i<=t} log_returns[i]`.
+/// Length == `log_returns.len()`. Equity at t=0 is `log_returns[0]` (we use
 /// the log-return path; the absolute price level is irrelevant — drawdowns
 /// are translation-invariant in log-space).
 ///
