@@ -125,6 +125,9 @@ impl Scan for SessionScan {
         clippy::too_many_lines,
         reason = "envelope construction + many-to-many bucket assignment + label/boundary encoding live together in this single function per Pattern A; splitting would obscure the call-site flow"
     )]
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
     fn run(
         &self,
         ctx: &ScanCtx<'_>,

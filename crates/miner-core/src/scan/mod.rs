@@ -976,15 +976,22 @@ mod tests {
     /// (D5-04). Every Scan impl gets `supports_bootstrap()` and
     /// `supports_null_method(_)` returning `false` by default; the default
     /// methods are dyn-safe (no generics, no `where Self: Sized`). This test
-    /// constructs a real Scan impl (`LjungBoxScan`) through a `dyn Scan`
-    /// reference and asserts the defaults; the `scan_trait_object_safe`
-    /// compile-time gate proves dyn-safety.
+    /// constructs a real Scan impl that has NOT opted into hygiene per the
+    /// Plan 05-03 per-scan matrix (`OutliersZAndMadScan` — both supports are
+    /// `false`) through a `dyn Scan` reference and asserts the defaults;
+    /// the `scan_trait_object_safe` compile-time gate proves dyn-safety.
+    ///
+    /// Plan 05-03 update: the original Plan 05-01 test used `LjungBoxScan`,
+    /// but Plan 05-03 opts LjungBox into both bootstrap + null methods per
+    /// the D5-04 matrix. The default-false assertion still applies to
+    /// scans whose per-scan matrix row is (false, false, false) — namely
+    /// `OutliersZAndMadScan`, `DrawdownProfileScan`, `AnovaKruskalScan`.
     #[test]
     fn scan_supports_bootstrap_and_null_method_default_false() {
-        let scan: Box<dyn Scan> = Box::new(crate::scan::ljung_box::LjungBoxScan);
+        let scan: Box<dyn Scan> = Box::new(crate::scan::anom::OutliersZAndMadScan);
         assert!(
             !scan.supports_bootstrap(),
-            "default supports_bootstrap() must be false"
+            "OutliersZAndMadScan default supports_bootstrap() must be false"
         );
         assert!(
             !scan.supports_null_method(NullMethod::PhaseScramble),

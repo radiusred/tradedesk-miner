@@ -115,6 +115,14 @@ impl Scan for PearsonRollingScan {
     fn finding_fields(&self) -> ScanFindingShape {
         FINDING_SHAPE
     }
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to CircularShift only.
+    fn supports_null_method(&self, m: crate::scan::NullMethod) -> bool {
+        matches!(m, crate::scan::NullMethod::CircularShift)
+    }
+
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -148,6 +156,14 @@ impl Scan for SpearmanRollingScan {
     fn finding_fields(&self) -> ScanFindingShape {
         FINDING_SHAPE
     }
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to CircularShift only.
+    fn supports_null_method(&self, m: crate::scan::NullMethod) -> bool {
+        matches!(m, crate::scan::NullMethod::CircularShift)
+    }
+
     fn run(
         &self,
         ctx: &ScanCtx<'_>,

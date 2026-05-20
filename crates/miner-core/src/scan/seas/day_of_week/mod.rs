@@ -78,6 +78,9 @@ impl Scan for DayOfWeekScan {
         clippy::too_many_lines,
         reason = "Phase 5 (Plan 05-01 / D5-03) added `effect_size: None` + Phase 5 (D5-05) added `repro: None` to the Effect / ResultFinding struct literals, nudging the run body from 100 to 101 lines. Splitting the body would obscure the linear scan-build-emit flow without reducing complexity."
     )]
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
     fn run(
         &self,
         ctx: &ScanCtx<'_>,

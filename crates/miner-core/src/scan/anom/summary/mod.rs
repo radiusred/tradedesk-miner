@@ -102,6 +102,9 @@ impl Scan for SummaryWelfordScan {
         clippy::too_many_lines,
         reason = "Scan::run is the single linear dispatch + envelope build path; splitting into 4-5 sub-functions per Pattern A scan obscures the 7-step structure documented in LjungBoxScan"
     )]
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
     fn run(
         &self,
         ctx: &ScanCtx<'_>,

@@ -109,6 +109,15 @@ impl Scan for LjungBoxScan {
         }
     }
 
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to null methods
+    /// (PhaseScramble + CircularShift) per the per-scan matrix.
+    fn supports_null_method(&self, m: crate::scan::NullMethod) -> bool {
+        matches!(m, crate::scan::NullMethod::PhaseScramble | crate::scan::NullMethod::CircularShift)
+    }
+
     fn run(
         &self,
         ctx: &ScanCtx<'_>,

@@ -105,6 +105,9 @@ impl Scan for EomSomScan {
         clippy::too_many_lines,
         reason = "envelope construction + bucket-key derivation + label encoding live together per Pattern A; splitting would obscure flow"
     )]
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
     fn run(
         &self,
         ctx: &ScanCtx<'_>,

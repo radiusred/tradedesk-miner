@@ -108,6 +108,9 @@ impl Scan for EventWindowScan {
         clippy::too_many_lines,
         reason = "envelope construction + per-event window aggregation live together per Pattern A"
     )]
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
