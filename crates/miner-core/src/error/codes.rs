@@ -163,6 +163,13 @@ mod tests {
             ),
             (PreflightCode::InvalidConfig, "invalid_config"),
             (PreflightCode::SweepTooLarge, "sweep_too_large"),
+            // Phase 5 (Plan 05-01 / D5-04) — additive variant for scans that
+            // do not implement bootstrap / null hygiene under
+            // `supports_bootstrap()` / `supports_null_method()`.
+            (
+                PreflightCode::HygieneNotSupported,
+                "hygiene_not_supported",
+            ),
             (PreflightCode::InternalError, "internal_error"),
         ];
         for (code, expected) in cases {

@@ -509,6 +509,54 @@ mod tests {
         fn _accept(_s: &dyn crate::scan::Scan) {}
     }
 
+    // ---------------------------------------------------------------------
+    // Plan 05-01 Task 3 — TDD RED: Phase 5 scan trait + NullMethod tests
+    // ---------------------------------------------------------------------
+
+    /// Plan 05-01 Task 3 — `null_method_round_trip`: `NullMethod` mirrors
+    /// `ScanArity::as_str` (D5-04). `PhaseScramble` serialises as
+    /// `"phase_scramble"` and `CircularShift` as `"circular_shift"`. Both
+    /// round-trip through `serde_json` and the `as_str()` helper matches
+    /// the wire form.
+    #[test]
+    fn null_method_round_trip() {
+        let cases = [
+            (NullMethod::PhaseScramble, "phase_scramble"),
+            (NullMethod::CircularShift, "circular_shift"),
+        ];
+        for (method, expected) in cases {
+            let json = serde_json::to_string(&method).expect("serialise");
+            assert_eq!(json, format!("\"{expected}\""), "wire form mismatch");
+            let parsed: NullMethod = serde_json::from_str(&json).expect("deserialise");
+            assert_eq!(parsed, method);
+            assert_eq!(method.as_str(), expected);
+        }
+    }
+
+    /// Plan 05-01 Task 3 — `scan_supports_bootstrap_and_null_method_default_false`
+    /// (D5-04). Every Scan impl gets `supports_bootstrap()` and
+    /// `supports_null_method(_)` returning `false` by default; the default
+    /// methods are dyn-safe (no generics, no `where Self: Sized`). This test
+    /// constructs a real Scan impl (`LjungBoxScan`) through a `dyn Scan`
+    /// reference and asserts the defaults; the `scan_trait_object_safe`
+    /// compile-time gate proves dyn-safety.
+    #[test]
+    fn scan_supports_bootstrap_and_null_method_default_false() {
+        let scan: Box<dyn Scan> = Box::new(crate::scan::ljung_box::LjungBoxScan);
+        assert!(
+            !scan.supports_bootstrap(),
+            "default supports_bootstrap() must be false"
+        );
+        assert!(
+            !scan.supports_null_method(NullMethod::PhaseScramble),
+            "default supports_null_method(PhaseScramble) must be false"
+        );
+        assert!(
+            !scan.supports_null_method(NullMethod::CircularShift),
+            "default supports_null_method(CircularShift) must be false"
+        );
+    }
+
     /// Plan 04-01 Task 2 — Behavior Test 1: `scan_arity_serialises_snake_case`.
     /// `ScanArity::Single` serialises as `"single"`; `ScanArity::Pair` as
     /// `"pair"`. Round-trip deser equality holds for both. The `as_str()`
