@@ -324,7 +324,36 @@ pub fn run_one_with_registry<R: Reader>(
     let scan_id_at_version = format!("{}@{}", req.scan_id, req.version);
 
     // -----------------------------------------------------------------------
-    // Step 5 — Gap detection.
+    // Phase 4 Plan 04-12 (CR-01): dispatch on `scan.arity()`. The historical
+    // single-leg body lives in the `Single` arm below; the new Pair arm
+    // delegates to `dispatch_pair_arity_body` which mirrors the single-leg
+    // shape but loads BOTH legs, intersects their gap manifests via
+    // `gap_policy::dispatch_pair`, and constructs `ScanCtx` with
+    // `bars_pair: Some((a, b))`.
+    //
+    // Before the fix the engine hard-coded the single-leg path here, so
+    // every Pair-arity CROSS scan emitted `Finding::ScanError` with the
+    // "expected Pair arity (ctx.bars_pair is None)" message. See
+    // .planning/phases/04-scan-catalogue-anom-cross-seas/04-REVIEW.md CR-01
+    // for the hand-off chain that orphaned `gap_policy::dispatch_pair`.
+    // -----------------------------------------------------------------------
+    if matches!(scan.arity(), crate::scan::ScanArity::Pair) {
+        return dispatch_pair_arity_body(
+            req,
+            cfg,
+            reader,
+            sink,
+            cancel,
+            scan,
+            run_id,
+            started,
+            summary,
+            &scan_id_at_version,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 5 — Gap detection (Single-arity path).
     //
     // Plan 03-07 CR-01: on reader error, emit `Finding::ScanError` +
     // `Finding::RunEnd` BEFORE returning `Ok(RunOutcome::HadScanErrors)` so
@@ -335,12 +364,11 @@ pub fn run_one_with_registry<R: Reader>(
     // `run_one_reader_error_emits_run_start_and_run_end_with_scan_error`.
     // -----------------------------------------------------------------------
     // Phase 4 (D4-01): single-leg dispatch reads instruments[0]. The Plan
-    // 04-02 `validate_arity` preflight will reject mismatched arity before
-    // this point with `PreflightCode::WrongInstrumentArity`. Until that
-    // preflight lands, the engine assumes single-leg (LjungBox is the only
-    // registered scan) and panics on an empty Vec (preflight should make
-    // this unreachable; the expect message is for diagnosis if the
-    // invariant ever leaks).
+    // 04-02 `validate_arity` preflight rejects mismatched arity before this
+    // point with `PreflightCode::WrongInstrumentArity`; the Pair branch is
+    // handled above (Plan 04-12). The `.expect(...)` panic is structurally
+    // unreachable post-preflight — it stays as a diagnosis hook if the
+    // invariant ever leaks.
     let leg = req
         .instruments
         .first()
@@ -589,6 +617,305 @@ pub fn run_one_with_registry<R: Reader>(
     // -----------------------------------------------------------------------
     // Step 8 — Map summary to RunOutcome.
     // -----------------------------------------------------------------------
+    if had_errors {
+        Ok(RunOutcome::HadScanErrors)
+    } else {
+        Ok(RunOutcome::Ok)
+    }
+}
+
+/// Phase 4 Plan 04-12 (CR-01 fix): Pair-arity dispatch body.
+///
+/// Mirrors the Single-arity body in `run_one_with_registry` but operates on
+/// TWO legs: gap-detects leg A AND leg B, dispatches through
+/// [`gap_policy::dispatch_pair`] (which UNIONs the per-leg manifests via
+/// [`crate::scan::primitives::time_alignment::intersect_gaps`]), loads bars
+/// for BOTH legs per sub-range, and builds `ScanCtx` with
+/// `bars_pair: Some((leg_a, leg_b))`.
+///
+/// The function carries the SAME 5-arm error-handling shape as the Single
+/// path: reader error (per leg), cache error (per leg), ScanError::Kernel,
+/// ScanError::Io, ScanError::Miner. Cancel-poll cadence is preserved
+/// (cancel-before-subrange at sub-range loop top). The single GapAborted
+/// envelope on `GapDispatch::Aborted` carries the JOINT manifest (the UNION
+/// of leg-A and leg-B gaps, per `dispatch_pair`'s contract);
+/// `data_slice.sources` carries BOTH legs (D4-03) in the same order as
+/// `req.instruments`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Pair body mirrors the Single body's 5-arm error walk inline so the call site reads top-to-bottom against the Single algorithm's doc-comment numbering"
+)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "All arguments come from the caller's stack frame; introducing a context struct only to satisfy this lint would obscure the data flow"
+)]
+fn dispatch_pair_arity_body<R: Reader>(
+    req: &ScanRequest,
+    cfg: &MinerConfig,
+    reader: &R,
+    sink: &mut dyn FindingSink,
+    cancel: Arc<AtomicBool>,
+    scan: &dyn crate::scan::Scan,
+    run_id: RunId,
+    started: chrono::DateTime<Utc>,
+    mut summary: RunSummary,
+    scan_id_at_version: &str,
+) -> Result<RunOutcome, MinerError> {
+    // Preflight has guaranteed instruments.len() == 2 (ScanArity::Pair).
+    let leg_a = &req.instruments[0];
+    let leg_b = &req.instruments[1];
+
+    // Step 5a — Gap detection for leg A.
+    let manifest_a = match GapDetector::detect(reader, &leg_a.symbol, leg_a.side, req.window) {
+        Ok(m) => m,
+        Err(e) => {
+            let msg = format!("reader (leg a): {e}");
+            emit_scan_error(sink, run_id, scan_id_at_version, req, reader.source_id(), &msg)?;
+            summary.scan_errors += 1;
+            summary
+                .per_scan
+                .entry(scan_id_at_version.to_string())
+                .or_insert_with(PerScanCounts::default)
+                .errors += 1;
+            emit_run_end(sink, run_id, started, summary)?;
+            return Ok(RunOutcome::HadScanErrors);
+        }
+    };
+
+    // Step 5b — Gap detection for leg B.
+    let manifest_b = match GapDetector::detect(reader, &leg_b.symbol, leg_b.side, req.window) {
+        Ok(m) => m,
+        Err(e) => {
+            let msg = format!("reader (leg b): {e}");
+            emit_scan_error(sink, run_id, scan_id_at_version, req, reader.source_id(), &msg)?;
+            summary.scan_errors += 1;
+            summary
+                .per_scan
+                .entry(scan_id_at_version.to_string())
+                .or_insert_with(PerScanCounts::default)
+                .errors += 1;
+            emit_run_end(sink, run_id, started, summary)?;
+            return Ok(RunOutcome::HadScanErrors);
+        }
+    };
+
+    // Joint manifest = UNION of per-leg gaps (the "do not run" set for
+    // CROSS scans). Computed inside `gap_policy::dispatch_pair`; we also
+    // reconstruct it here for ScanCtx.gap_manifest under ContinuousOnly so
+    // the kernel can echo it into Finding::Result.data_slice (D3-12 parity
+    // with the Single-arity path).
+    let joint_manifest =
+        crate::scan::primitives::time_alignment::intersect_gaps(&manifest_a, &manifest_b);
+    let dispatch_result =
+        gap_policy::dispatch_pair(&manifest_a, &manifest_b, req.window, req.gap_policy);
+
+    match dispatch_result {
+        GapDispatch::Aborted(m) => {
+            let sources: Vec<Source> = req
+                .instruments
+                .iter()
+                .map(|spec| Source {
+                    source_id: reader.source_id().to_string(),
+                    symbol: spec.symbol.clone(),
+                    side: spec.side.as_str().to_string(),
+                    timeframe: req.timeframe.as_str().to_string(),
+                })
+                .collect();
+            let gap_aborted_finding = Finding::GapAborted(GapAbortedFinding {
+                schema_version: 1,
+                scan_id_at_version: scan_id_at_version.to_string(),
+                param_hash: req.param_hash.as_str().to_string(),
+                code_revision: crate::CODE_REVISION.to_string(),
+                data_slice: DataSlice {
+                    range: TimeRange {
+                        start_utc: req.window.start,
+                        end_utc: req.window.end,
+                    },
+                    gap_manifest_ref: None,
+                    gap_manifest: Some(m.clone()),
+                    sources,
+                },
+                dsr: None,
+                fdr_q: None,
+                run_id,
+                produced_at_utc: Utc::now(),
+                gap_manifest: serde_json::to_value(&m).map_err(MinerError::from)?,
+            });
+            sink.write_envelope(&gap_aborted_finding)?;
+            summary.gap_aborted += 1;
+            summary
+                .per_scan
+                .entry(scan_id_at_version.to_string())
+                .or_insert_with(PerScanCounts::default)
+                .gap_aborted += 1;
+        }
+        GapDispatch::SubRanges(sub_ranges) => {
+            let cache = BarCache::new(&cfg.bar_cache_root);
+            for sub_range in sub_ranges {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                let mut per_sub_req = req.clone();
+                per_sub_req.sub_range = sub_range.clone();
+
+                let sub_range_utc = ClosedRangeUtc {
+                    start: sub_range.start_utc,
+                    end: sub_range.end_utc,
+                };
+
+                // Load leg A bars.
+                let bars_a = match cache.get_or_build(
+                    reader,
+                    AggParams {
+                        symbol: &leg_a.symbol,
+                        side: leg_a.side,
+                        tf: req.timeframe,
+                        range: sub_range_utc,
+                    },
+                ) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        let msg = format!("cache (leg a): {e}");
+                        emit_scan_error(
+                            sink,
+                            run_id,
+                            scan_id_at_version,
+                            req,
+                            reader.source_id(),
+                            &msg,
+                        )?;
+                        summary.scan_errors += 1;
+                        summary
+                            .per_scan
+                            .entry(scan_id_at_version.to_string())
+                            .or_insert_with(PerScanCounts::default)
+                            .errors += 1;
+                        emit_run_end(sink, run_id, started, summary)?;
+                        return Ok(RunOutcome::HadScanErrors);
+                    }
+                };
+
+                // Load leg B bars.
+                let bars_b = match cache.get_or_build(
+                    reader,
+                    AggParams {
+                        symbol: &leg_b.symbol,
+                        side: leg_b.side,
+                        tf: req.timeframe,
+                        range: sub_range_utc,
+                    },
+                ) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        let msg = format!("cache (leg b): {e}");
+                        emit_scan_error(
+                            sink,
+                            run_id,
+                            scan_id_at_version,
+                            req,
+                            reader.source_id(),
+                            &msg,
+                        )?;
+                        summary.scan_errors += 1;
+                        summary
+                            .per_scan
+                            .entry(scan_id_at_version.to_string())
+                            .or_insert_with(PerScanCounts::default)
+                            .errors += 1;
+                        emit_run_end(sink, run_id, started, summary)?;
+                        return Ok(RunOutcome::HadScanErrors);
+                    }
+                };
+
+                let ctx_gap_manifest: Option<&crate::gap::GapManifest> =
+                    if matches!(req.gap_policy, GapPolicyKind::ContinuousOnly) {
+                        Some(&joint_manifest)
+                    } else {
+                        None
+                    };
+                let ctx = make_scan_ctx(
+                    &bars_a,
+                    Some((&bars_a, &bars_b)),
+                    ctx_gap_manifest,
+                    run_id,
+                    crate::CODE_REVISION,
+                    Arc::clone(&cancel),
+                    req,
+                );
+
+                match scan.run(&ctx, &per_sub_req, sink) {
+                    Ok(()) => {
+                        summary.results_emitted += 1;
+                        summary
+                            .per_scan
+                            .entry(scan_id_at_version.to_string())
+                            .or_insert_with(PerScanCounts::default)
+                            .results += 1;
+                    }
+                    Err(ScanError::Cancelled) => break,
+                    Err(ScanError::Kernel(msg)) => {
+                        summary.scan_errors += 1;
+                        summary
+                            .per_scan
+                            .entry(scan_id_at_version.to_string())
+                            .or_insert_with(PerScanCounts::default)
+                            .errors += 1;
+                        emit_scan_error(
+                            sink,
+                            run_id,
+                            scan_id_at_version,
+                            req,
+                            reader.source_id(),
+                            &msg,
+                        )?;
+                    }
+                    Err(ScanError::Io(e)) => {
+                        let msg = format!("scan io: {e}");
+                        emit_scan_error(
+                            sink,
+                            run_id,
+                            scan_id_at_version,
+                            req,
+                            reader.source_id(),
+                            &msg,
+                        )?;
+                        summary.scan_errors += 1;
+                        summary
+                            .per_scan
+                            .entry(scan_id_at_version.to_string())
+                            .or_insert_with(PerScanCounts::default)
+                            .errors += 1;
+                        emit_run_end(sink, run_id, started, summary)?;
+                        return Ok(RunOutcome::HadScanErrors);
+                    }
+                    Err(ScanError::Miner(e)) => {
+                        let msg = format!("scan miner-error: {e}");
+                        emit_scan_error(
+                            sink,
+                            run_id,
+                            scan_id_at_version,
+                            req,
+                            reader.source_id(),
+                            &msg,
+                        )?;
+                        summary.scan_errors += 1;
+                        summary
+                            .per_scan
+                            .entry(scan_id_at_version.to_string())
+                            .or_insert_with(PerScanCounts::default)
+                            .errors += 1;
+                        emit_run_end(sink, run_id, started, summary)?;
+                        return Ok(RunOutcome::HadScanErrors);
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 7/8 — framing-close + RunOutcome map.
+    let had_errors = summary.scan_errors > 0;
+    emit_run_end(sink, run_id, started, summary)?;
     if had_errors {
         Ok(RunOutcome::HadScanErrors)
     } else {
@@ -1671,6 +1998,298 @@ mod tests {
         );
         let re = get_run_end(&findings);
         assert!(re.summary.scan_errors >= 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Plan 04-12 (CR-01) — Pair-arity dispatch regression gates.
+    //
+    // Pin the three dispatch branches the new `dispatch_pair_arity_body`
+    // helper introduces:
+    //
+    // 1. `run_one_dispatches_single_arity_scan_via_single_leg_path` — Single
+    //    arity continues to go through the historical single-leg path; the
+    //    produced Finding has `data_slice.sources.len() == 1`.
+    // 2. `run_one_dispatches_pair_arity_scan_via_dispatch_pair` — Pair arity
+    //    now reaches the kernel, produces a Finding::Result (NOT
+    //    Finding::ScanError "expected Pair arity"), and
+    //    `data_slice.sources.len() == 2`. Without the Plan 04-12 fix this
+    //    test would land a `Finding::ScanError(compute_error, "expected Pair
+    //    arity (ctx.bars_pair is None)")` envelope.
+    // 3. `run_one_pair_arity_with_mismatched_instrument_count_rejected_at_preflight`
+    //    — arity preflight still rejects a single-leg Pair-arity request
+    //    BEFORE any dispatch branch runs (i.e., the new Pair branch must
+    //    not bypass `validate_arity`).
+    // -----------------------------------------------------------------------
+
+    /// Stub Pair-arity scan used by Tests 2 and 3 below. Emits exactly one
+    /// `Finding::Result` envelope with the per-leg sources populated; reads
+    /// `ctx.bars_pair` and asserts `Some(_)` (the test would panic if the
+    /// engine reached this body with `bars_pair: None`).
+    struct StubPairScan;
+    impl crate::scan::Scan for StubPairScan {
+        fn id(&self) -> &'static str {
+            "stub.cross.pair_dispatch"
+        }
+        fn version(&self) -> u32 {
+            1
+        }
+        fn arity(&self) -> crate::scan::ScanArity {
+            crate::scan::ScanArity::Pair
+        }
+        fn param_schema(&self) -> serde_json::Value {
+            serde_json::json!({"type":"object","additionalProperties":false})
+        }
+        fn finding_fields(&self) -> crate::scan::ScanFindingShape {
+            crate::scan::ScanFindingShape {
+                effect_extra_keys: &[],
+                raw_series_keys: &["timestamps_ms"],
+            }
+        }
+        fn run(
+            &self,
+            ctx: &crate::scan::ScanCtx<'_>,
+            req: &crate::scan::ScanRequest,
+            sink: &mut dyn FindingSink,
+        ) -> Result<(), crate::scan::ScanError> {
+            // Plan 04-12 contract: Pair-arity scans MUST receive a populated
+            // `bars_pair`. If the engine drops to bars_pair: None this
+            // assertion fires the test as a panic.
+            assert!(
+                ctx.bars_pair.is_some(),
+                "StubPairScan invariant: engine must pass bars_pair: Some((a, b)) to Pair-arity scans"
+            );
+            let sources: Vec<crate::findings::Source> = req
+                .instruments
+                .iter()
+                .map(|spec| crate::findings::Source {
+                    source_id: ctx.bars.source_id.clone(),
+                    symbol: spec.symbol.clone(),
+                    side: spec.side.as_str().to_string(),
+                    timeframe: req.timeframe.as_str().to_string(),
+                })
+                .collect();
+            // Build a minimal raw block with the canonical timestamps_ms
+            // series (D-03) so `Raw::new` accepts it.
+            let mut series = std::collections::BTreeMap::new();
+            series.insert(
+                "timestamps_ms".to_string(),
+                crate::scan::primitives::raw_array::f64_slice_to_raw_array(&[]),
+            );
+            let raw = crate::findings::Raw { series };
+            let result = Finding::Result(crate::findings::ResultFinding {
+                schema_version: 1,
+                scan_id_at_version: format!("{}@{}", req.scan_id, req.version),
+                param_hash: req.param_hash.as_str().to_string(),
+                code_revision: ctx.code_revision.to_string(),
+                data_slice: DataSlice {
+                    range: req.sub_range.clone(),
+                    gap_manifest_ref: None,
+                    gap_manifest: None,
+                    sources,
+                },
+                dsr: None,
+                fdr_q: None,
+                run_id: ctx.run_id,
+                produced_at_utc: chrono::Utc::now(),
+                params: req.resolved_params.clone(),
+                effect: crate::findings::Effect {
+                    metric: "stub_pair_metric".to_string(),
+                    value: 0.0,
+                    p_value: None,
+                    n: None,
+                    ci95: None,
+                    extra: std::collections::BTreeMap::new(),
+                },
+                raw: Some(raw),
+            });
+            sink.write_envelope(&result)?;
+            Ok(())
+        }
+    }
+
+    fn pair_arity_request(scan_id: &str, instrument_count: usize) -> ScanRequest {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let resolved = serde_json::json!({});
+        let param_hash = param_hash::param_hash(&resolved).expect("hash ok");
+        let mut instruments = vec![InstrumentSpec {
+            symbol: "EURUSD".into(),
+            side: Side::Bid,
+        }];
+        if instrument_count >= 2 {
+            instruments.push(InstrumentSpec {
+                symbol: "GBPUSD".into(),
+                side: Side::Bid,
+            });
+        }
+        ScanRequest {
+            scan_id: scan_id.into(),
+            version: 1,
+            instruments,
+            timeframe: Timeframe::Tf15m,
+            window: ClosedRangeUtc { start, end },
+            sub_range: TimeRange {
+                start_utc: start,
+                end_utc: end,
+            },
+            gap_policy: GapPolicyKind::ContinuousOnly,
+            resolved_params: resolved,
+            param_hash,
+            dry_run: false,
+            sleep_after_first_finding_ms: None,
+        }
+    }
+
+    /// Plan 04-12 Task 1 Test 1 — Single-arity scans continue to flow through
+    /// the historical single-leg path. The existing run_one_strict_zero_gaps
+    /// test already proves the bulk of this; this test pins the
+    /// `data_slice.sources.len() == 1` invariant explicitly as a sibling
+    /// gate to Test 2.
+    #[test]
+    fn run_one_dispatches_single_arity_scan_via_single_leg_path() {
+        // Reuse the existing LjungBox single-arity wiring via bootstrap().
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, false);
+        let mut reader = FakeReader::new();
+        reader.insert_day(
+            "EURUSD",
+            Side::Bid,
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            build_full_day_1m_bars(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        let outcome = run_one(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("ok");
+        assert_eq!(outcome, RunOutcome::Ok);
+        let findings = parse_findings(&sink);
+        let result = findings
+            .iter()
+            .find_map(|f| match f {
+                Finding::Result(r) => Some(r),
+                _ => None,
+            })
+            .expect("Result present");
+        assert_eq!(
+            result.data_slice.sources.len(),
+            1,
+            "Single-arity dispatch must produce data_slice.sources.len() == 1"
+        );
+        assert_eq!(result.data_slice.sources[0].symbol, "EURUSD");
+    }
+
+    /// Plan 04-12 Task 1 Test 2 — Pair-arity scans now reach the kernel via
+    /// `dispatch_pair_arity_body`, producing a `Finding::Result` with
+    /// `data_slice.sources.len() == 2`. Without the Plan 04-12 fix the
+    /// engine would emit a `Finding::ScanError(compute_error, "expected Pair
+    /// arity (ctx.bars_pair is None)")` instead.
+    ///
+    /// This is the CR-01 engine-level regression gate.
+    #[test]
+    fn run_one_dispatches_pair_arity_scan_via_dispatch_pair() {
+        let req = pair_arity_request("stub.cross.pair_dispatch", 2);
+
+        // Both legs present in the fake reader so neither gap-detection
+        // arm short-circuits to ScanError.
+        let day = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
+        let mut reader = FakeReader::new();
+        reader.insert_day("EURUSD", Side::Bid, day, build_full_day_1m_bars(day, 1));
+        reader.insert_day("GBPUSD", Side::Bid, day, build_full_day_1m_bars(day, 2));
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        let mut registry = crate::scan::Registry::new();
+        registry.register(Box::new(StubPairScan));
+        let outcome = run_one_with_registry(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+            &registry,
+        )
+        .expect("ok — Pair dispatch reaches kernel via dispatch_pair_arity_body");
+        assert_eq!(
+            outcome,
+            RunOutcome::Ok,
+            "Pair-arity dispatch must produce RunOutcome::Ok, NOT HadScanErrors"
+        );
+
+        let findings = parse_findings(&sink);
+
+        // CR-01 negative pin: NO ScanError envelope with the bars_pair=None
+        // message must appear. If the engine regresses to hard-coded single
+        // dispatch this assertion fires.
+        for f in &findings {
+            if let Finding::ScanError(se) = f {
+                assert!(
+                    !se.message.contains("expected Pair arity"),
+                    "CR-01 regression: engine emitted ScanError({:?}); Pair-arity dispatch must reach the kernel",
+                    se.message
+                );
+            }
+        }
+
+        let result = findings
+            .iter()
+            .find_map(|f| match f {
+                Finding::Result(r) => Some(r),
+                _ => None,
+            })
+            .expect("Result envelope present — Pair-arity dispatch reached the kernel");
+        assert_eq!(
+            result.data_slice.sources.len(),
+            2,
+            "Pair-arity dispatch must populate data_slice.sources with BOTH legs (D4-03)"
+        );
+        assert_eq!(result.data_slice.sources[0].symbol, "EURUSD");
+        assert_eq!(result.data_slice.sources[1].symbol, "GBPUSD");
+        assert_eq!(result.scan_id_at_version, "stub.cross.pair_dispatch@1");
+    }
+
+    /// Plan 04-12 Task 1 Test 3 — Pair-arity dispatch must NOT bypass the
+    /// arity preflight gate. A single-leg request against a Pair-arity scan
+    /// is still rejected at preflight with `PreflightCode::WrongInstrumentArity`;
+    /// stdout (the sink) stays empty (D-06).
+    #[test]
+    fn run_one_pair_arity_with_mismatched_instrument_count_rejected_at_preflight() {
+        let req = pair_arity_request("stub.cross.pair_dispatch", 1);
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let reader = FakeReader::new();
+        let mut sink = VecSink::new();
+        let mut registry = crate::scan::Registry::new();
+        registry.register(Box::new(StubPairScan));
+        let result = run_one_with_registry(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+            &registry,
+        );
+        match result {
+            Err(MinerError::Preflight(w)) => {
+                assert_eq!(
+                    w.code, "wrong_instrument_arity",
+                    "Pair-dispatch must NOT bypass validate_arity preflight"
+                );
+            }
+            other => panic!("expected MinerError::Preflight(WrongInstrumentArity); got {other:?}"),
+        }
+        assert!(
+            sink.0.is_empty(),
+            "stdout must stay empty on preflight rejection (D-06)"
+        );
     }
 }
 
