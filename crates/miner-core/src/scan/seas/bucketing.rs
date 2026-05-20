@@ -47,6 +47,74 @@ pub struct BucketResult {
     pub iqrs: Vec<f64>,
 }
 
+/// Compute per-bucket mean / std / count / t-stat / IQR from pre-grouped
+/// per-bucket value vectors. Sister API to [`bucket_stats`] for the case
+/// where one input can belong to multiple buckets (Plan 04-09 SEAS-03
+/// trading-session windows overlap: a bar at 13:00 UTC falls in BOTH the
+/// London (07-16) AND NY (12-21) buckets per RESEARCH §1.8).
+///
+/// `per_bucket[k]` is the value vector for bucket `k`; the function mutates
+/// each vector in place during the IQR-sort phase.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "count_u is bounded by the bucket vector length; realistic OHLCV slices fit in f64's 52-bit mantissa"
+)]
+pub fn bucket_stats_from_groups(per_bucket: &mut [Vec<f64>], min_obs: usize) -> BucketResult {
+    let num_buckets = per_bucket.len();
+    debug_assert!(num_buckets >= 1, "bucket_stats_from_groups: num_buckets must be >= 1");
+    let mut means = Vec::with_capacity(num_buckets);
+    let mut stds = Vec::with_capacity(num_buckets);
+    let mut counts = Vec::with_capacity(num_buckets);
+    let mut t_stats = Vec::with_capacity(num_buckets);
+    let mut iqrs = Vec::with_capacity(num_buckets);
+
+    for vec_ref in per_bucket.iter_mut() {
+        let c_us = vec_ref.len();
+        let c = c_us as u64;
+        counts.push(c);
+        let threshold = min_obs.max(2);
+        if c_us < threshold {
+            means.push(f64::NAN);
+            stds.push(f64::NAN);
+            t_stats.push(f64::NAN);
+            iqrs.push(f64::NAN);
+            continue;
+        }
+        // Sequential Welford for determinism.
+        let mut mean = 0.0_f64;
+        let mut m2 = 0.0_f64;
+        let mut count_running: u64 = 0;
+        for &v in vec_ref.iter() {
+            count_running += 1;
+            let n_f = count_running as f64;
+            let delta = v - mean;
+            mean += delta / n_f;
+            let delta2 = v - mean;
+            m2 += delta * delta2;
+        }
+        means.push(mean);
+        let c_f = c as f64;
+        let var = m2 / (c_f - 1.0);
+        let s = var.sqrt();
+        stds.push(s);
+        if s == 0.0 {
+            t_stats.push(f64::NAN);
+        } else {
+            let se = s / c_f.sqrt();
+            t_stats.push(mean / se);
+        }
+        iqrs.push(compute_iqr(vec_ref));
+    }
+
+    BucketResult {
+        means,
+        stds,
+        counts,
+        t_stats,
+        iqrs,
+    }
+}
+
 /// Compute per-bucket mean / std / count / t-stat / IQR for the supplied
 /// parallel `(values, bucket_keys)` pair.
 ///
@@ -62,6 +130,7 @@ pub struct BucketResult {
 /// # Panics
 /// Panics via `debug_assert!` when `num_buckets < 1` or when `values.len()` and
 /// `bucket_keys.len()` mismatch.
+#[must_use]
 #[allow(
     clippy::cast_precision_loss,
     reason = "count_u is bounded by values.len(); realistic OHLCV slices fit in f64's 52-bit mantissa"
@@ -117,6 +186,10 @@ pub fn bucket_stats(
     for k in 0..num_buckets {
         let c = count[k];
         counts.push(c);
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "u64 -> usize lossless on 64-bit targets (Phase 1 invariant)"
+        )]
         let c_us = c as usize;
         // Sparse buckets — count < max(min_obs, 2). The min_obs == 0 path still
         // returns NaN-stats for count < 2 (Bessel-corrected std needs n >= 2).
@@ -176,7 +249,7 @@ fn compute_iqr(values: &mut [f64]) -> f64 {
     // ±0.0 deterministically. The values here come from log-return kernels so
     // NaN entries are not expected in normal flow but defensive ordering keeps
     // determinism.
-    values.sort_by(|a, b| a.total_cmp(b));
+    values.sort_by(f64::total_cmp);
     let q1 = linear_quantile(values, 0.25);
     let q3 = linear_quantile(values, 0.75);
     q3 - q1
@@ -360,5 +433,47 @@ mod tests {
     #[should_panic(expected = "num_buckets must be >= 1")]
     fn bucket_stats_zero_buckets_panics_under_debug() {
         let _ = bucket_stats(&[], &[], 0, 0);
+    }
+
+    /// `bucket_stats_from_groups` produces the same per-bucket stats as
+    /// `bucket_stats` when the inputs are equivalent — sanity check for the
+    /// many-to-many SEAS-03 session path.
+    #[test]
+    fn bucket_stats_from_groups_matches_bucket_stats_for_disjoint_inputs() {
+        let values = vec![1.0_f64, 2.0, 3.0, 10.0, 20.0, 30.0];
+        let keys = vec![0_usize, 0, 0, 1, 1, 1];
+        let from_pairs = bucket_stats(&values, &keys, 2, 0);
+        let mut groups: Vec<Vec<f64>> = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![10.0, 20.0, 30.0],
+        ];
+        let from_groups = bucket_stats_from_groups(&mut groups, 0);
+        assert!(approx_eq(from_pairs.means[0], from_groups.means[0], TOL));
+        assert!(approx_eq(from_pairs.means[1], from_groups.means[1], TOL));
+        assert!(approx_eq(from_pairs.stds[0], from_groups.stds[0], TOL));
+        assert!(approx_eq(from_pairs.stds[1], from_groups.stds[1], TOL));
+        assert!(approx_eq(from_pairs.t_stats[0], from_groups.t_stats[0], TOL));
+        assert!(approx_eq(from_pairs.t_stats[1], from_groups.t_stats[1], TOL));
+        assert!(approx_eq(from_pairs.iqrs[0], from_groups.iqrs[0], TOL));
+        assert!(approx_eq(from_pairs.iqrs[1], from_groups.iqrs[1], TOL));
+        assert_eq!(from_pairs.counts, from_groups.counts);
+    }
+
+    /// `bucket_stats_from_groups` handles a many-to-many input where bucket 0
+    /// has 3 values, bucket 1 has 2 values (one shared with bucket 0).
+    #[test]
+    fn bucket_stats_from_groups_many_to_many() {
+        let mut groups: Vec<Vec<f64>> = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![3.0, 4.0],
+        ];
+        let r = bucket_stats_from_groups(&mut groups, 0);
+        assert_eq!(r.counts, vec![3, 2]);
+        assert!(approx_eq(r.means[0], 2.0, TOL));
+        assert!(approx_eq(r.means[1], 3.5, TOL));
+        // ddof=1 std for [1, 2, 3] = 1.0
+        assert!(approx_eq(r.stds[0], 1.0, TOL));
+        // ddof=1 std for [3, 4] = sqrt(0.5) ≈ 0.7071...
+        assert!(approx_eq(r.stds[1], (0.5_f64).sqrt(), TOL));
     }
 }

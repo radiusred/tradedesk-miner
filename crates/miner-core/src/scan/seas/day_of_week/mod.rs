@@ -106,7 +106,15 @@ impl Scan for DayOfWeekScan {
         let value = max_abs_finite(&r.t_stats);
 
         let mut extra: BTreeMap<String, RawArray> = BTreeMap::new();
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "NUM_BUCKETS is 7; trivially fits in f64's 52-bit mantissa"
+        )]
         let bucket_indices: Vec<f64> = (0..NUM_BUCKETS).map(|i| i as f64).collect();
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "counts are bounded by the bar count; realistic OHLCV slices fit in f64's 52-bit mantissa"
+        )]
         let counts_f: Vec<f64> = r.counts.iter().map(|c| *c as f64).collect();
         extra.insert("buckets".into(), f64_slice_to_raw_array(&bucket_indices));
         extra.insert("means".into(), f64_slice_to_raw_array(&r.means));
