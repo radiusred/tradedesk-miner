@@ -81,6 +81,23 @@ statrs             = "0.17"
 ndarray            = "0.16"
 ndarray-stats      = "0.6"
 nalgebra           = { version = "0.33", default-features = false, features = ["std"] }
+# Phase 5 (Plan 05-01) additions — 05-RESEARCH §"Standard Stack" + §"Package Legitimacy Audit":
+# - `rand` 0.8 — trait surface (`Rng`, `SeedableRng`); intentionally NOT used for
+#   thread-local rngs anywhere in miner-core. D5-05 + 05-RESEARCH §1.5 anti-pattern:
+#   `SmallRng`/`StdRng` are explicitly non-portable; this crate exists ONLY to provide
+#   the `Rng` + `SeedableRng` traits that `rand_xoshiro::Xoshiro256PlusPlus` implements.
+# - `rand_xoshiro` 0.6 — the documented portable RNG (`Xoshiro256PlusPlus`) seeded
+#   from per-job `u64` for bootstrap + null resampling (HYG-05).
+# - `toml` 0.8 — TOML deserialiser for the sweep manifest (Plan 05-04). D5-01 +
+#   05-RESEARCH §1.2: bare `toml` is preferred over `figment` here because the sweep
+#   manifest is a single config source (no profile/env layering).
+# All three are sync-only (no tokio/async-std transitive add); FOUND-04 invariant
+# preserved. `realfft` is INTENTIONALLY NOT added here — it is conditional on Plan
+# 05-02 shipping IAAFT in Phase 5; if it does, Plan 05-02 adds it. Do not add
+# speculatively.
+rand               = "0.8"
+rand_xoshiro       = "0.6"
+toml               = "0.8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
