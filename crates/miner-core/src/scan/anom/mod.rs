@@ -15,12 +15,14 @@
 
 use super::Registry;
 
+pub mod drawdown;
 pub mod ljung_box_sq;
 pub mod outliers;
 pub mod returns;
 pub mod summary;
 pub mod vol;
 
+pub use drawdown::DrawdownProfileScan;
 pub use ljung_box_sq::LjungBoxSqScan;
 pub use outliers::OutliersZAndMadScan;
 pub use returns::ReturnsProfileScan;
@@ -38,12 +40,13 @@ pub use vol::VolRollingScan;
 pub fn register_anom_scans(r: &mut Registry) {
     // Alphabetical by scan-id:
     //   stats.autocorr.ljung_box_sq   <- Plan 04-04
-    //   stats.drawdown.profile        <- Plan 04-04 (added in Task 3)
+    //   stats.drawdown.profile        <- Plan 04-04
     //   stats.outliers.z_and_mad      <- Plan 04-04
     //   stats.returns.profile         <- Plan 04-03
     //   stats.summary.welford         <- Plan 04-03
     //   stats.vol.rolling             <- Plan 04-03
     r.register(Box::new(LjungBoxSqScan));
+    r.register(Box::new(DrawdownProfileScan));
     r.register(Box::new(OutliersZAndMadScan));
     r.register(Box::new(ReturnsProfileScan));
     r.register(Box::new(SummaryWelfordScan));
@@ -55,9 +58,9 @@ mod tests {
     use super::*;
 
     /// `register_anom_scans` registers the ANOM scans rolled out through
-    /// Plan 04-04 (ANOM-01, ANOM-02, ANOM-03, ANOM-04 squared, ANOM-10).
-    /// Plan 04-11 tightens this to a full count assertion across the
-    /// complete catalogue.
+    /// Plan 04-04 (ANOM-01, ANOM-02, ANOM-03, ANOM-04 squared, ANOM-10,
+    /// ANOM-11). Plan 04-11 tightens this to a full count assertion across
+    /// the complete catalogue.
     #[test]
     fn register_anom_scans_registers_phase4_scans_through_plan_04() {
         let mut r = Registry::new();
@@ -65,6 +68,10 @@ mod tests {
         assert!(
             r.get("stats.autocorr.ljung_box_sq", 1).is_some(),
             "ANOM-04 squared"
+        );
+        assert!(
+            r.get("stats.drawdown.profile", 1).is_some(),
+            "ANOM-11 drawdown"
         );
         assert!(
             r.get("stats.outliers.z_and_mad", 1).is_some(),
