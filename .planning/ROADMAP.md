@@ -105,7 +105,7 @@ Plans:
 - [x] 04-02-PLAN.md — Engine + CLI + primitives + per-family register stubs: primitives::returns + time_alignment + raw_array, engine::validate_arity + two-leg gap dispatch, ScanCtx::bars_pair + bars_up_to, CLI repeatable --instrument SYMBOL:side, goldens/REFERENCE-VERSIONS.md + python-requirements.lock, integration test scaffolds (arity_preflight, two_leg_facade, gap_intersect_cross), LjungBox D4-06 refactor
 - [x] 04-03-PLAN.md — ANOM batch A: stats.returns.profile (ANOM-01), stats.summary.welford (ANOM-02), stats.vol.rolling (ANOM-03) + shuffled-future extension
 - [x] 04-04-PLAN.md — ANOM batch B: stats.autocorr.ljung_box_sq (ANOM-04 sq variant), stats.outliers.z_and_mad (ANOM-10), stats.drawdown.profile (ANOM-11)
-- [ ] 04-05-PLAN.md — ANOM batch C: stats.stationarity.adf (ANOM-05 hand-derived AIC), stats.stationarity.kpss (ANOM-06 hand-derived Bartlett), stats.variance_ratio.lo_mackinlay (ANOM-07 hand-derived overlapping VR)
+- [x] 04-05-PLAN.md — ANOM batch C: stats.stationarity.adf (ANOM-05 hand-derived AIC), stats.stationarity.kpss (ANOM-06 hand-derived Bartlett), stats.variance_ratio.lo_mackinlay (ANOM-07 hand-derived overlapping VR)
 - [ ] 04-06-PLAN.md — ANOM batch D: stats.heteroskedasticity.arch_lm (ANOM-08 Engle 1982), stats.normality.jarque_bera (ANOM-09 chi-squared df=2)
 - [x] 04-07-PLAN.md — CROSS batch A: cross.corr.pearson_rolling + cross.corr.spearman_rolling (CROSS-02), cross.ols.rolling (CROSS-03 nalgebra) + shuffled-future extensions
 - [x] 04-08-PLAN.md — CROSS batch B: cross.lead_lag.ccf (CROSS-04 symmetric ±max_lag), cross.cointegration.engle_granger (CROSS-05 two-step + OU half-life, reuses ANOM-05 ADF)
@@ -165,7 +165,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. Foundations & Contracts | 7/7 | Complete | 2026-05-17 |
 | 2. Reader, Aggregator & Derived-Bar Cache | 6/6 | Complete | 2026-05-18 |
 | 3. Scan Engine, Facade & CLI | 0/6 | Planned | - |
-| 4. Scan Catalogue (ANOM, CROSS, SEAS) | 6/11 | In Progress|  |
+| 4. Scan Catalogue (ANOM, CROSS, SEAS) | 7/11 | In Progress|  |
 | 5. Statistical Hygiene & Sweep Runner | 0/TBD | Not started | - |
 | 6. MCP & HTTP Wrappers | 0/TBD | Not started | - |
 | 7. Hardening, Benchmarks & Reproducibility | 0/TBD | Not started | - |
