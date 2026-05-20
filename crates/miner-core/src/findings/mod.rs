@@ -439,6 +439,15 @@ pub struct DryRunFinding {
     /// the actual run would emit. `0` is a valid value (the scan computes none
     /// on the provided slice).
     pub estimated_findings_count: u64,
+    /// **Phase 5 (Plan 05-04 / OP-04 / RESEARCH Pattern 5).** When the dry-run
+    /// originates from a sweep, the number of jobs the sweep would have
+    /// executed. Single-shot `miner scan --dry-run` leaves this as `None`;
+    /// `miner sweep --dry-run` populates it with the cartesian-expanded job
+    /// count. `#[serde(default)]` keeps the field additive (single-shot dry-run
+    /// envelopes round-trip unchanged) per RESEARCH Pattern 5 — explicitly NOT
+    /// a new `Finding::SweepDryRun` variant.
+    #[serde(default)]
+    pub planned_job_count: Option<u64>,
 }
 
 /// Phase 5 (Plan 05-01 / D5-02) — payload for the `sweep_summary` envelope
@@ -673,6 +682,9 @@ mod tests {
             resolved_params: serde_json::json!({"lags": 20}),
             planned_data_slice: sample_data_slice(),
             estimated_findings_count: 0,
+            // Plan 05-04: single-shot dry-run leaves planned_job_count None;
+            // sweep --dry-run populates it.
+            planned_job_count: None,
         }
     }
 
@@ -812,6 +824,71 @@ mod tests {
             let parsed: Finding = serde_json::from_str(&json).expect("deserialise");
             assert_eq!(finding, parsed, "round-trip mismatch for {json}");
         }
+    }
+
+    /// Plan 05-04 Task 1 / Test 7 — `DryRunFinding.planned_job_count`
+    /// round-trips: `Some(_)` (sweep dry-run) AND `None` (single-shot dry-run
+    /// — Phase 3 unchanged) both survive serde JSON round-trip.
+    #[test]
+    fn dry_run_planned_job_count_round_trip_some_and_none() {
+        // Case 1: None (Phase 3 single-shot — must serialise as JSON null per
+        // OUT-03 null-not-omitted and deserialise back to None).
+        let dr_none = DryRunFinding {
+            planned_job_count: None,
+            ..sample_dry_run()
+        };
+        let json_none = serde_json::to_string(&dr_none).expect("serialise none");
+        assert!(
+            json_none.contains("\"planned_job_count\":null"),
+            "planned_job_count=None must serialise as literal null (additive OUT-03); got: {json_none}"
+        );
+        let parsed_none: DryRunFinding =
+            serde_json::from_str(&json_none).expect("deserialise none");
+        assert_eq!(parsed_none.planned_job_count, None);
+
+        // Case 2: Some(42) (Plan 05-04 sweep --dry-run path).
+        let dr_some = DryRunFinding {
+            planned_job_count: Some(42),
+            ..sample_dry_run()
+        };
+        let json_some = serde_json::to_string(&dr_some).expect("serialise some");
+        assert!(
+            json_some.contains("\"planned_job_count\":42"),
+            "planned_job_count=Some(42) must serialise as `42`; got: {json_some}"
+        );
+        let parsed_some: DryRunFinding =
+            serde_json::from_str(&json_some).expect("deserialise some");
+        assert_eq!(parsed_some.planned_job_count, Some(42));
+    }
+
+    /// Plan 05-04 Task 1 / Test 7b — backward-compat: legacy `DryRunFinding`
+    /// JSON (Phase 3 — without `planned_job_count`) still deserialises
+    /// (the `#[serde(default)]` attribute fills `None`).
+    #[test]
+    fn dry_run_planned_job_count_legacy_json_deserialises_with_none() {
+        // Construct a JSON value that omits planned_job_count entirely (the
+        // pre-Plan-05-04 wire form). Must deserialise with the field as None.
+        let legacy = serde_json::json!({
+            "run_id": "01HWQ5MMNJ9CWGR7XGMR4PHZJX",
+            "produced_at_utc": "2026-01-01T00:00:30Z",
+            "request": {"scan_id@version": "stats.autocorr.ljung_box@1", "dry_run": true},
+            "resolved_params": {"lags": 20},
+            "planned_data_slice": {
+                "range": {"start_utc": "2026-01-01T00:00:00Z", "end_utc": "2026-01-02T00:00:00Z"},
+                "gap_manifest_ref": null,
+                "gap_manifest": null,
+                "sources": [{
+                    "source_id": "test",
+                    "symbol": "EURUSD",
+                    "side": "bid",
+                    "timeframe": "15m"
+                }],
+            },
+            "estimated_findings_count": 0,
+        });
+        let parsed: DryRunFinding =
+            serde_json::from_value(legacy).expect("legacy JSON deserialises");
+        assert_eq!(parsed.planned_job_count, None);
     }
 
     /// Test 9 — `dry_run_finding_uses_snake_case_kind`: `Finding::DryRun(_)`

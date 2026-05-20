@@ -322,6 +322,10 @@ pub fn run_one_with_registry<R: Reader>(
             resolved_params: req.resolved_params.clone(),
             planned_data_slice,
             estimated_findings_count: 1,
+            // Plan 05-04 (RESEARCH Pattern 5): single-shot dry-run leaves
+            // planned_job_count None; only the sweep --dry-run path populates
+            // this with the cartesian-expanded job count.
+            planned_job_count: None,
         });
         sink.write_envelope(&dry_run_finding)?;
         // Pitfall 3: results_emitted stays at 0 — DryRun does NOT increment
