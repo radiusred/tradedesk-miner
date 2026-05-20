@@ -1,0 +1,110 @@
+---
+source: crates/miner-core/tests/scan_outliers.rs
+expression: masked
+---
+{
+  "code_revision": "test-rev-abc1234",
+  "data_slice": {
+    "gap_manifest": null,
+    "gap_manifest_ref": null,
+    "range": {
+      "end_utc": "2024-01-04T00:00:00Z",
+      "start_utc": "2024-01-01T00:00:00Z"
+    },
+    "sources": [
+      {
+        "side": "bid",
+        "source_id": "dukascopy",
+        "symbol": "EURUSD",
+        "timeframe": "15m"
+      }
+    ]
+  },
+  "dsr": null,
+  "effect": {
+    "ci95": null,
+    "extra": {
+      "mad": {
+        "data": "TKsyrMmexz8=",
+        "dtype": "f64",
+        "shape": [
+          1
+        ]
+      },
+      "median": {
+        "data": "m9ffCO39ir8=",
+        "dtype": "f64",
+        "shape": [
+          1
+        ]
+      },
+      "modified_z_threshold": {
+        "data": "AAAAAAAADEA=",
+        "dtype": "f64",
+        "shape": [
+          1
+        ]
+      },
+      "outlier_indices": {
+        "data": "",
+        "dtype": "f64",
+        "shape": [
+          0
+        ]
+      },
+      "outlier_values_modified_z": {
+        "data": "",
+        "dtype": "f64",
+        "shape": [
+          0
+        ]
+      },
+      "outlier_values_z": {
+        "data": "",
+        "dtype": "f64",
+        "shape": [
+          0
+        ]
+      },
+      "z_threshold": {
+        "data": "AAAAAAAACEA=",
+        "dtype": "f64",
+        "shape": [
+          1
+        ]
+      }
+    },
+    "metric": "outliers_count",
+    "n": 63,
+    "p_value": null,
+    "value": 0.0
+  },
+  "fdr_q": null,
+  "kind": "result",
+  "param_hash": "9f2c4d14964b5626c11305f1f39b8fd4033d2cce5e8b2485f1e065d0e9d2a580",
+  "params": {
+    "series": "log_returns"
+  },
+  "produced_at_utc": "<masked_produced_at_utc>",
+  "raw": {
+    "series": {
+      "returns": {
+        "data": "ZrkwWO79wb+YDVzPgMLXP5dOxgj+TdC/RO63rq80vj8+ly//PMrSv0PriMTGCdY/7JzbE7d+0L+rI924QoPgP15lyM0G/q8/CC4Sid7Tsr96YnY03RfLv/5FaVrjNbc/OPaORIgOwD/PVbaD/qfDvwQGCI4kYdi/Ta/LDZm0pj++jSyMVizhP5vX3wjt/Yq/yEbruDzXkr/GqMB8qE7Jv9OHeUjIctG/1GXGJFBu0T/uTjFDW6DKvxQ1w2a6xts/e9zQ0umLsL/q/twvvCPdv1CISIWVat0/OANm58hDzL+YYTMuO8DUv2KvACrczaK/CE8Syp0Z2j98Uumlm07GP3mDfLytIYE/TdlvsMPjt78IUMiAtS3Jv+4ItY76tcE/tfZxaDNIsT/DQTkWyv2BP4sVD4VsUnE/lHDA8vvIwj95oU8j3EfUv8FSxb1BytG/uwm8wlj1tD9c3Pj4IeTIPyoPbwotA9C/0DrWBJ7Y3D9W4yKRhq26vzTMs6Kc0b8/Gjqa9yO80L9WZ3AKoxbBv+djHzJdLKc/I1KETLlhzL+CkrRBrPnMP0x470Tg9KU/ueYVEYgO1j+NrB/lg3qjP0hy09zdp9+/T/FLWpvT3D/jmQOcgHjFvwj6aM8ZmMW/8aU7ffdEkb+TzgwFE2rDv7v3J9U+9+E/",
+        "dtype": "f64",
+        "shape": [
+          63
+        ]
+      },
+      "timestamps_ms": {
+        "data": "AAD6+iXMeEIAALTWJsx4QgAAbrInzHhCAAAojijMeEIAAOJpKcx4QgAAnEUqzHhCAABWISvMeEIAABD9K8x4QgAAytgszHhCAACEtC3MeEIAAD6QLsx4QgAA+GsvzHhCAACyRzDMeEIAAGwjMcx4QgAAJv8xzHhCAADg2jLMeEIAAJq2M8x4QgAAVJI0zHhCAAAObjXMeEIAAMhJNsx4QgAAgiU3zHhCAAA8ATjMeEIAAPbcOMx4QgAAsLg5zHhCAABqlDrMeEIAACRwO8x4QgAA3ks8zHhCAACYJz3MeEIAAFIDPsx4QgAADN8+zHhCAADGuj/MeEIAAICWQMx4QgAAOnJBzHhCAAD0TULMeEIAAK4pQ8x4QgAAaAVEzHhCAAAi4UTMeEIAANy8Rcx4QgAAlphGzHhCAABQdEfMeEIAAApQSMx4QgAAxCtJzHhCAAB+B0rMeEIAADjjSsx4QgAA8r5LzHhCAACsmkzMeEIAAGZ2Tcx4QgAAIFJOzHhCAADaLU/MeEIAAJQJUMx4QgAATuVQzHhCAAAIwVHMeEIAAMKcUsx4QgAAfHhTzHhCAAA2VFTMeEIAAPAvVcx4QgAAqgtWzHhCAABk51bMeEIAAB7DV8x4QgAA2J5YzHhCAACSelnMeEIAAExWWsx4QgAABjJbzHhC",
+        "dtype": "f64",
+        "shape": [
+          63
+        ]
+      }
+    }
+  },
+  "run_id": "<masked_run_id>",
+  "scan_id@version": "stats.outliers.z_and_mad@1",
+  "schema_version": 1
+}
