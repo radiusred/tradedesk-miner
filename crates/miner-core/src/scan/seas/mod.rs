@@ -22,12 +22,14 @@
 
 use super::Registry;
 
+pub mod anova_kw;
 pub mod bucketing;
 pub mod day_of_week;
 pub mod eom_som;
 pub mod hour_of_day;
 pub mod session;
 
+pub use anova_kw::AnovaKruskalScan;
 pub use day_of_week::DayOfWeekScan;
 pub use eom_som::EomSomScan;
 pub use hour_of_day::HourOfDayScan;
@@ -41,31 +43,34 @@ pub fn register_seas_scans(r: &mut Registry) {
     //   seas.bucket.eom_som            <- Plan 04-10
     //   seas.bucket.hour_of_day        <- Plan 04-09
     //   seas.bucket.session            <- Plan 04-09
+    //   seas.test.anova_kruskal        <- Plan 04-10
     r.register(Box::new(DayOfWeekScan));
     r.register(Box::new(EomSomScan));
     r.register(Box::new(HourOfDayScan));
     r.register(Box::new(SessionScan));
+    r.register(Box::new(AnovaKruskalScan));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Plan 04-10 Task 1 — after EOM/SOM lands the helper registers 4 SEAS
-    /// scans. Subsequent tasks (event_window, anova_kw) extend the count.
+    /// Plan 04-10 Task 2 — after EOM/SOM + ANOVA/KW land the helper registers
+    /// 5 SEAS scans. Task 3 (event_window) extends the count to 6.
     #[test]
-    fn register_seas_scans_registers_four_after_plan_04_10_task_1() {
+    fn register_seas_scans_registers_five_after_plan_04_10_task_2() {
         let mut r = Registry::new();
         let before = r.scans.len();
         register_seas_scans(&mut r);
         assert!(
-            r.scans.len() >= before + 4,
-            "Plan 04-10 Task 1 ships 4 SEAS registrations (3 from 04-09 + 1 eom_som); got {}",
+            r.scans.len() >= before + 5,
+            "Plan 04-10 Task 2 ships 5 SEAS registrations; got {}",
             r.scans.len() - before
         );
         assert!(r.get("seas.bucket.day_of_week", 1).is_some());
         assert!(r.get("seas.bucket.eom_som", 1).is_some());
         assert!(r.get("seas.bucket.hour_of_day", 1).is_some());
         assert!(r.get("seas.bucket.session", 1).is_some());
+        assert!(r.get("seas.test.anova_kruskal", 1).is_some());
     }
 }

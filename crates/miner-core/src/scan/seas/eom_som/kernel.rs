@@ -55,7 +55,7 @@ use crate::calendar::Calendar;
 /// Panics via `debug_assert` when `cutoff_n < 1`.
 #[inline]
 #[must_use]
-pub(super) fn trading_day_of_month_bucket(
+pub(crate) fn trading_day_of_month_bucket(
     ts: DateTime<Utc>,
     cutoff_n: usize,
     calendar: &Calendar,
