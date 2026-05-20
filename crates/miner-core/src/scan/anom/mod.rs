@@ -17,6 +17,7 @@ use super::Registry;
 
 pub mod adf;
 pub mod drawdown;
+pub mod kpss;
 pub mod ljung_box_sq;
 pub mod outliers;
 pub mod returns;
@@ -25,6 +26,7 @@ pub mod vol;
 
 pub use adf::AdfScan;
 pub use drawdown::DrawdownProfileScan;
+pub use kpss::KpssScan;
 pub use ljung_box_sq::LjungBoxSqScan;
 pub use outliers::OutliersZAndMadScan;
 pub use returns::ReturnsProfileScan;
@@ -46,6 +48,7 @@ pub fn register_anom_scans(r: &mut Registry) {
     //   stats.outliers.z_and_mad      <- Plan 04-04
     //   stats.returns.profile         <- Plan 04-03
     //   stats.stationarity.adf        <- Plan 04-05
+    //   stats.stationarity.kpss       <- Plan 04-05
     //   stats.summary.welford         <- Plan 04-03
     //   stats.vol.rolling             <- Plan 04-03
     r.register(Box::new(LjungBoxSqScan));
@@ -53,6 +56,7 @@ pub fn register_anom_scans(r: &mut Registry) {
     r.register(Box::new(OutliersZAndMadScan));
     r.register(Box::new(ReturnsProfileScan));
     r.register(Box::new(AdfScan));
+    r.register(Box::new(KpssScan));
     r.register(Box::new(SummaryWelfordScan));
     r.register(Box::new(VolRollingScan));
 }
@@ -83,6 +87,7 @@ mod tests {
         );
         assert!(r.get("stats.returns.profile", 1).is_some(), "ANOM-01");
         assert!(r.get("stats.stationarity.adf", 1).is_some(), "ANOM-05");
+        assert!(r.get("stats.stationarity.kpss", 1).is_some(), "ANOM-06");
         assert!(r.get("stats.summary.welford", 1).is_some(), "ANOM-02");
         assert!(r.get("stats.vol.rolling", 1).is_some(), "ANOM-03");
     }
