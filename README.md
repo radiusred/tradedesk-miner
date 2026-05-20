@@ -19,13 +19,17 @@ tradedesk-dukascopy (cache)  →  tradedesk-miner (raw findings)
 
 ## Status
 
-Phase 1 (Foundations & Contracts) and Phase 2 (reader / aggregator / cache)
-complete. Phase 3 (scan engine + facade + CLI) is the discovery surface — the
-`miner scan` and `miner scans` subcommands wire the locked envelope to a working
-Ljung-Box demo scan (`stats.autocorr.ljung_box@1`) end-to-end. The Phase 1
-contract surface — locked `Finding` JSON Schema, single sink writer, config
-precedence, CI gates — is FROZEN; later phases add scans and wrappers on top
-without re-litigating the envelope.
+Phase 1 (Foundations & Contracts), Phase 2 (reader / aggregator / cache),
+Phase 3 (scan engine + facade + CLI), and Phase 4 (the v1 scan catalogue)
+complete. Phase 4 ships 22 registered scans across three families — 11
+single-instrument anomaly tests (ANOM), 5 two-instrument cross scans
+(CROSS), and 6 seasonality scans (SEAS) — every one callable via
+`miner scan <id>@<version>` with identical envelope shape across families
+(single discriminant by `scan_id`, scan-specific extras in
+`effect.extra`). The Phase 1 contract surface — locked `Finding` JSON
+Schema, single sink writer, config precedence, CI gates — is FROZEN;
+later phases add hygiene + wrappers on top without re-litigating the
+envelope.
 
 ## Quickstart
 
@@ -120,6 +124,96 @@ streams `RunStart` → per-finding envelopes (`Result` / `ScanError` /
    continuous_only` (the default) partitions the requested window into
    maximal gap-free sub-ranges and emits one `Result` per sub-range with
    the manifest inlined into `data_slice.gap_manifest`.
+
+## Phase 4 Scan Catalogue (ANOM / CROSS / SEAS)
+
+Phase 4 lands 22 v1 scans plus the ANOM-04 squared-returns variant in the
+shared registry. Run `cargo run -p miner-cli -- scans | jq '.'` to list
+every catalogue entry with its `arity` (`"single"` / `"pair"`),
+`param_schema`, and the `effect.extra` / `raw.series` keys it will
+emit on success.
+
+Below are three representative invocations — one per scan family —
+showing the `miner scan` command line and the expected JSONL fragment.
+Per-scan parameter docs are reachable via
+`miner scans | jq '.[] | select(.scan_id == "<id>")'`.
+
+1. **ANOM: Welford summary statistics** (`stats.summary.welford@1`).
+
+   Computes mean / std / skew / excess-kurtosis / IQR / min / max of bar
+   log-returns via the bias-corrected G1 / G2 Welford pass. Single-leg
+   (one `--instrument`).
+
+   ```sh
+   cargo run -p miner-cli -- scan stats.summary.welford@1 \
+       --instrument EURUSD:bid --timeframe 15m \
+       --window 2024-01-01:2024-12-31
+   ```
+
+   Expected first `Result` line (truncated):
+
+   ```json
+   {"kind":"result","scan_id_at_version":"stats.summary.welford@1",
+    "effect":{"metric":"summary_welford_mean","value":-1.23e-6,
+              "extra":{"excess_kurtosis":...,"iqr":...,"max":...,
+                       "min":...,"n":...,"skew":...,"std":...}},
+    "data_slice":{"sources":[{"symbol":"EURUSD",...}]},...}
+   ```
+
+2. **CROSS: Engle-Granger cointegration** (`cross.cointegration.engle_granger@1`).
+
+   Two-step Engle-Granger pairs-trading diagnostic — OLS hedge ratio,
+   ADF on residuals, OU half-life. Pair arity (two `--instrument` flags;
+   leg order = regressand `a`, regressor `b` per D4-09).
+
+   ```sh
+   cargo run -p miner-cli -- scan cross.cointegration.engle_granger@1 \
+       --instrument EURUSD:bid --instrument GBPUSD:bid \
+       --timeframe 15m \
+       --window 2024-01-01:2024-12-31
+   ```
+
+   Expected first `Result` line (truncated):
+
+   ```json
+   {"kind":"result","scan_id_at_version":"cross.cointegration.engle_granger@1",
+    "effect":{"metric":"engle_granger_hedge_ratio","value":0.873,
+              "p_value":0.041,
+              "extra":{"adf_stat":...,"hedge_ratio_alpha":...,
+                       "ou_half_life":...,"residual_std":...,
+                       "residuals":...}},
+    "data_slice":{"sources":[
+        {"symbol":"EURUSD",...},{"symbol":"GBPUSD",...}]},...}
+   ```
+
+3. **SEAS: Hour-of-day return profile** (`seas.bucket.hour_of_day@1`).
+
+   Buckets log-returns by UTC bar-close hour, emits 24 parallel arrays
+   (means / stds / counts / t-stats / IQRs) plus the max-abs t-stat
+   headline.
+
+   ```sh
+   cargo run -p miner-cli -- scan seas.bucket.hour_of_day@1 \
+       --instrument EURUSD:bid --timeframe 15m \
+       --window 2024-01-01:2024-12-31
+   ```
+
+   Expected first `Result` line (truncated):
+
+   ```json
+   {"kind":"result","scan_id_at_version":"seas.bucket.hour_of_day@1",
+    "effect":{"metric":"hour_of_day_max_abs_t_stat","value":2.14,
+              "n":671,
+              "extra":{"buckets":[0,1,...,23],"counts":...,"iqrs":...,
+                       "means":...,"stds":...,"t_stats":...}},
+    "data_slice":{"sources":[{"symbol":"EURUSD",...}]},...}
+   ```
+
+Per ROADMAP Phase 4 Success Criterion #5, statsmodels / scipy / pandas
+golden fixtures are checked in for one representative scan from each
+family under `crates/miner-core/tests/goldens/`. The pinned reference
+versions live at `crates/miner-core/tests/goldens/REFERENCE-VERSIONS.md`
+and the regen recipe is bundled with each `generate_<scan>.py` script.
 
 ## What Phase 1 Delivers
 
