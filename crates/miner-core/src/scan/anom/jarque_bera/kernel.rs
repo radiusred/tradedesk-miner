@@ -33,7 +33,7 @@ use crate::scan::anom::summary::kernel::welford_pass;
 /// (bias-corrected) sample skew + excess kurtosis used in the formula, and
 /// the sample size `n`.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct JbResult {
+pub(crate) struct JbResult {
     /// JB statistic = `(n / 6) * (S² + (K-3)² / 4)`.
     pub statistic: f64,
     /// p-value = `1 - ChiSquared(2).cdf(statistic)`.
@@ -63,7 +63,7 @@ pub(super) struct JbResult {
     clippy::cast_precision_loss,
     reason = "n is a bar count; fits in f64's 52-bit mantissa for any realistic OHLCV series"
 )]
-pub(super) fn jarque_bera(values: &[f64]) -> Result<JbResult, String> {
+pub(crate) fn jarque_bera(values: &[f64]) -> Result<JbResult, String> {
     let n = values.len();
     if n < 4 {
         return Err(format!(

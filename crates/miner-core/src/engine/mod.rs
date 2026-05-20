@@ -567,7 +567,8 @@ pub fn run_one_with_registry<R: Reader>(
                                 let mutated = apply_hygiene_mutations(
                                     raw_result,
                                     &per_sub_req,
-                                    &bars.close,
+                                    &bars,
+                                    None,
                                     &cancel,
                                 );
                                 inner.write_envelope(&Finding::Result(mutated))?;
@@ -940,7 +941,8 @@ fn dispatch_pair_arity_body<R: Reader>(
                                 let mutated = apply_hygiene_mutations(
                                     raw_result,
                                     &per_sub_req,
-                                    &bars_a.close,
+                                    &bars_a,
+                                    Some(&bars_b),
                                     &cancel,
                                 );
                                 inner.write_envelope(&Finding::Result(mutated))?;
@@ -1073,7 +1075,8 @@ fn clamp_resample_n(n: Option<u32>) -> u32 {
 fn apply_hygiene_mutations(
     mut result: ResultFinding,
     req: &ScanRequest,
-    close: &[f64],
+    bars: &crate::aggregator::BarFrame,
+    bars_b: Option<&crate::aggregator::BarFrame>,
     cancel: &Arc<AtomicBool>,
 ) -> ResultFinding {
     // Early exit: no hygiene requested.
@@ -1087,19 +1090,8 @@ fn apply_hygiene_mutations(
     }
 
     let scan_id_at_version = result.scan_id_at_version.clone();
-    let Some(values) = hygiene_dispatch::input_series_for(&scan_id_at_version, close) else {
-        // Scan not wired into the dispatch table — leave the envelope
-        // untouched. The preflight (`validate_hygiene_support`) only
-        // gated `supports_*`, so the engine quietly no-ops on
-        // unwired-but-opted-in scans (Plan 05-03 continuation
-        // SUMMARY documents this gap).
-        return result;
-    };
-    if values.len() < 2 {
-        return result;
-    }
 
-    // Derive (or accept) the job seed.
+    // Derive (or accept) the job seed once — used by either dispatch arm.
     let master_seed = req.master_seed.unwrap_or(0);
     let job_seed = req.job_seed.unwrap_or_else(|| {
         hygiene_seed::derive_job_seed(
@@ -1112,7 +1104,48 @@ fn apply_hygiene_mutations(
         )
     });
 
-    let stat = hygiene_dispatch::stat_closure_for(&scan_id_at_version, req);
+    // Pair-arity dispatch — try the joint table first when leg B is available.
+    // Returns early if the scan id is wired into the Pair table; otherwise
+    // falls through to the Single-arity path (some Pair scans may also
+    // gracefully degrade — but every CROSS scan that opts in
+    // `supports_bootstrap == true` lives in the pair table).
+    if let Some(bars_b) = bars_b {
+        if let Some((values_a, values_b)) =
+            hygiene_dispatch::pair_input_series_for(&scan_id_at_version, bars, bars_b)
+        {
+            if values_a.len() >= 2 && values_b.len() == values_a.len() {
+                if let Some(pair_stat) =
+                    hygiene_dispatch::pair_stat_closure_for(&scan_id_at_version, req)
+                {
+                    result = apply_pair_hygiene(
+                        result,
+                        req,
+                        &values_a,
+                        &values_b,
+                        &pair_stat,
+                        job_seed,
+                        master_seed,
+                        cancel,
+                    );
+                    return result;
+                }
+            }
+        }
+    }
+
+    // Single-arity dispatch.
+    let Some(values) = hygiene_dispatch::input_series_for(&scan_id_at_version, bars) else {
+        // Scan not wired into the dispatch table — leave the envelope
+        // untouched. The preflight (`validate_hygiene_support`) only
+        // gated `supports_*`, so the engine quietly no-ops on
+        // unwired-but-opted-in scans.
+        return result;
+    };
+    if values.len() < 2 {
+        return result;
+    }
+
+    let stat = hygiene_dispatch::stat_closure_for(&scan_id_at_version, req, bars);
 
     // Bootstrap CI population.
     let bootstrap_spec = if let Some(method) = req.bootstrap_method {
@@ -1182,7 +1215,7 @@ fn apply_hygiene_mutations(
     let null_spec = if let Some(method) = req.null_method {
         let n = clamp_resample_n(req.null_n);
         if let Some(ref stat_fn) = stat {
-            // Use the observed Q-stat (Effect.value) as the reference
+            // Use the observed statistic (Effect.value) as the reference
             // statistic so the empirical p computation matches the
             // analytic distribution's tail-comparison semantics.
             let observed_stat = result.effect.value;
@@ -1206,6 +1239,139 @@ fn apply_hygiene_mutations(
             if p.is_finite() && (0.0..=1.0).contains(&p) {
                 result.effect.p_value = Some(p);
             }
+        }
+        Some(NullSpec {
+            method: method.as_str().to_string(),
+            n,
+        })
+    } else {
+        None
+    };
+
+    if bootstrap_spec.is_some() || null_spec.is_some() {
+        result.repro = Some(ReproEnvelope {
+            master_seed,
+            job_seed,
+            bootstrap: bootstrap_spec,
+            null: null_spec,
+        });
+    }
+    result
+}
+
+/// Pair-arity hygiene mutator (Plan 05-03 continuation 2).
+///
+/// Mirrors `apply_hygiene_mutations`'s Single-arity body but uses the
+/// joint resample helpers (`pair_stationary_bootstrap_ci`,
+/// `pair_block_bootstrap_ci`, `pair_circular_shift_null_p`) so leg A and
+/// leg B share the SAME index sequence per resample — preserving the
+/// joint relationship the CROSS scans' `Effect.value` depends on.
+///
+/// `values_a` / `values_b` are produced by `pair_input_series_for`
+/// (aligned + log-returns for correlation/OLS/lead-lag; aligned + LEVELS
+/// for Engle-Granger). Block-length selection uses leg A's series
+/// (consistent with the Single-arity contract for stationary bootstrap
+/// — the pwppw heuristic is a single-leg autocorrelation property).
+///
+/// Returns the mutated `ResultFinding`.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "linear hygiene walk parameterised on both legs + cancel + seeds — extracting a struct only to satisfy this lint hides the dataflow"
+)]
+fn apply_pair_hygiene(
+    mut result: ResultFinding,
+    req: &ScanRequest,
+    values_a: &[f64],
+    values_b: &[f64],
+    pair_stat: &hygiene_dispatch::PairStatClosure,
+    job_seed: u64,
+    master_seed: u64,
+    cancel: &Arc<AtomicBool>,
+) -> ResultFinding {
+    // Bootstrap CI.
+    let bootstrap_spec = if let Some(method) = req.bootstrap_method {
+        let n = clamp_resample_n(req.bootstrap_n);
+        let ci = match method {
+            BootstrapMethod::Stationary => {
+                let block_len_raw = hygiene_bootstrap::block_length_pwppw(values_a);
+                let block_len = if block_len_raw.is_finite() && block_len_raw > 0.0 {
+                    block_len_raw.max(3.0)
+                } else {
+                    3.0
+                };
+                hygiene_dispatch::pair_stationary_bootstrap_ci(
+                    values_a, values_b, pair_stat, n, block_len, job_seed, 0.95,
+                )
+            }
+            BootstrapMethod::Block => {
+                let block_len_raw = hygiene_bootstrap::block_length_pwppw(values_a);
+                let block_len_usize = if block_len_raw.is_finite() && block_len_raw > 0.0 {
+                    #[allow(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss,
+                        reason = "block_length_pwppw output is bounded by values_a.len()"
+                    )]
+                    let v = block_len_raw.ceil() as usize;
+                    v.max(3)
+                } else {
+                    3
+                };
+                hygiene_dispatch::pair_block_bootstrap_ci(
+                    values_a,
+                    values_b,
+                    pair_stat,
+                    n,
+                    block_len_usize,
+                    job_seed,
+                    0.95,
+                )
+            }
+        };
+        if ci[0].is_finite() && ci[1].is_finite() {
+            result.effect.ci95 = Some(ci);
+        }
+        Some(BootstrapSpec {
+            method: method.as_str().to_string(),
+            n,
+        })
+    } else {
+        None
+    };
+
+    // Cancel poll between bootstrap and null (RESEARCH Pitfall 7).
+    if cancel.load(Ordering::Relaxed) {
+        result.repro = Some(ReproEnvelope {
+            master_seed,
+            job_seed,
+            bootstrap: bootstrap_spec,
+            null: None,
+        });
+        return result;
+    }
+
+    // Null p-value replacement.
+    let null_spec = if let Some(method) = req.null_method {
+        let n = clamp_resample_n(req.null_n);
+        let observed_stat = result.effect.value;
+        let p = match method {
+            NullMethod::CircularShift => hygiene_dispatch::pair_circular_shift_null_p(
+                values_a,
+                values_b,
+                observed_stat,
+                pair_stat,
+                n,
+                job_seed,
+            ),
+            NullMethod::PhaseScramble => {
+                // IAAFT phase-scramble defers to Phase 7. Preflight
+                // rejects PhaseScramble on every Pair-arity scan whose
+                // `supports_null_method(PhaseScramble)` is false. Belt-
+                // and-braces: skip the mutation here too.
+                f64::NAN
+            }
+        };
+        if p.is_finite() && (0.0..=1.0).contains(&p) {
+            result.effect.p_value = Some(p);
         }
         Some(NullSpec {
             method: method.as_str().to_string(),

@@ -370,38 +370,36 @@ per the disposition (preflight rejection before `Scan::run` invocation, no
 
 ## Known Stubs / Deferred Work
 
-**Update (continuation):** The Plan 05-03 continuation commit landed the
-post-`Scan::run` hygiene integration for **two scans** (`LjungBox`,
+**Update (continuation 2 — 2026-05-21):** All 17 remaining opt-in scans
+are now wired through `engine::hygiene_dispatch` (continuation 2 commits
+`cf4951d` + `1c73051`). See the **Continuation 2 (2026-05-21)** section
+below for the architecture, byte-identical-rerun coverage, and the
+narrower remaining Phase 7 hooks (IAAFT `PhaseScramble` null,
+custom-sessions plumbing on SEAS-03 dispatch, `block_length` heuristic
+floor). The historical continuation 1 deferral list below is preserved
+struck-through for traceability.
+
+**Update (continuation 1):** The Plan 05-03 continuation commit landed
+the post-`Scan::run` hygiene integration for **two scans** (`LjungBox`,
 `Welford`). The remaining items below are NEW scope deferred to Phase 7
 hardening — not regressions of the original Plan 05-03 deferral.
 
-- **Hygiene dispatch table covers only 2 of 22 scans.** The continuation
-  wired `stats.autocorr.ljung_box@1` and `stats.summary.welford@1` in
-  `engine::hygiene_dispatch`. Every other scan in the D5-04
-  per-scan-opt-in matrix has `supports_bootstrap/supports_null_method`
-  returning `true` but the dispatch table returns `None` — the engine
-  silently no-ops on those scans (preflight already accepted the
-  request). Phase 7 closes the gap.
-  - **ANOM:** `stats.autocorr.ljung_box_sq@1`,
-    `stats.stationarity.adf@1`, `stats.stationarity.kpss@1`,
-    `stats.variance_ratio.lo_mackinlay@1`,
-    `stats.heteroskedasticity.arch_lm@1`, `stats.normality.jarque_bera@1`,
-    `stats.vol.rolling@1` — need scan-internal closures (ADF/KPSS use
-    kernel-internal regression state; ARCH-LM / VR / JB need parameter
-    forwarding into the stat closure).
-  - **CROSS (Pair-arity):** `cross.corr.pearson_rolling@1`,
-    `cross.corr.spearman_rolling@1`, `cross.ols.rolling@1`,
-    `cross.lead_lag.ccf@1`, `cross.cointegration.engle_granger@1` — need
-    joint per-leg resampling (resample leg A and leg B together so the
-    pair correlation/regression is computed against a coherent shuffle).
-    The engine's `apply_hygiene_mutations` currently passes only
-    `bars_a.close` and the dispatch table returns `None` for every CROSS
-    `scan_id@version`.
-  - **SEAS:** `seas.bucket.hour_of_day@1`, `seas.bucket.day_of_week@1`,
-    `seas.bucket.session@1`, `seas.bucket.eom_som@1`,
-    `seas.event.pre_post_window@1` — need closures over the bucketed
-    `max_abs_t_stat` recomputation (bucket boundaries come from
-    `ts_open_utc` which the dispatch closure cannot reach today).
+- **~~Hygiene dispatch table covers only 2 of 22 scans.~~ CLOSED in
+  continuation 2.** Every Phase-4 opt-in scan now correctly populates
+  `Effect.ci95` / `Effect.p_value` / `ResultFinding.repro` when
+  hygiene is requested.
+  - **~~ANOM:~~ CLOSED** — kernel visibility bumped to `pub(crate)`;
+    dispatch closures call the same kernels the scan body uses, so the
+    stat is byte-identical on the original input.
+  - **~~CROSS (Pair-arity):~~ CLOSED** via new joint resample helpers
+    (`pair_stationary_bootstrap_ci`, `pair_block_bootstrap_ci`,
+    `pair_circular_shift_null_p`) that mirror the Plan 05-02 kernels
+    byte-for-byte but operate on paired data.
+  - **~~SEAS:~~ CLOSED** by extending `apply_hygiene_mutations` to take
+    `&BarFrame` so dispatch closures can snapshot `ts_open_utc`-derived
+    bucket keys at construction time; resample loop then replays
+    `bucket_stats(resampled, snapshotted_keys, ...)` →
+    `max_abs_finite(t_stats)`.
 
 - **IAAFT `PhaseScramble` null still deferred to Phase 7.** Per Plan
   05-02 SUMMARY, the kernel is unavailable. The continuation's engine
@@ -511,13 +509,22 @@ original Plan 05-03 wire-contract commits.
 
 ### What the continuation leaves to Phase 7
 
-See the updated **Known Stubs / Deferred Work** section above. The
+**Update (continuation 2):** The 17-unwired-scan gap is now closed.
+The remaining Phase 7 hooks are narrower — see the **Continuation 2
+(2026-05-21)** section's "What continuation 2 still leaves to Phase 7"
+list below.
+
+[Original continuation 1 deferral note, preserved struck-through for
+traceability:]
+
+~~See the updated **Known Stubs / Deferred Work** section above. The
 dispatch table currently wires 2 of the 19 opt-in scans; the rest
 return `None` from the dispatch helpers and the engine quietly no-ops
-on them. The `Scan::supports_*` opt-ins remain `true` for those scans
+on them.~~ The `Scan::supports_*` opt-ins remain `true` for those scans
 (preflight accepts the requests), and `effect_size` is populated by
-every scan unchanged — only the engine-side ci95 / p_value population is
-absent for the 17 unwired scans.
+every scan unchanged — ~~only the engine-side ci95 / p_value population
+is absent for the 17 unwired scans.~~ **All 19 opt-in scans now
+populate ci95 / p_value / repro correctly per continuation 2.**
 
 ### Continuation Self-Check
 
@@ -544,7 +551,153 @@ absent for the 17 unwired scans.
   module registration, `apply_hygiene_mutations` + helpers, Single +
   Pair dispatch branch buffering-sink wraps).
 
+## Continuation 2 (2026-05-21)
+
+The first continuation wired 2 of 19 opt-in scans through the hygiene
+dispatch table. The remaining 17 scans correctly returned
+`supports_bootstrap == true` (preflight accepted the request) but
+`hygiene_dispatch::input_series_for` / `stat_closure_for` returned
+`None` for their `scan_id@version`, so the engine silently no-op'd:
+`Effect.ci95` / `Effect.p_value` / `ResultFinding.repro` stayed
+unpopulated. This continuation closes that contract-integrity gap.
+
+### Continuation 2 Commits
+
+1. **`feat(05-03-cont2)`** (`cf4951d`) — Wires all 17 remaining opt-in
+   scans through `engine::hygiene_dispatch`:
+   - **ANOM Single-arity (7 new entries)**: `stats.vol.rolling@1`,
+     `stats.stationarity.adf@1`, `stats.stationarity.kpss@1`,
+     `stats.variance_ratio.lo_mackinlay@1`,
+     `stats.heteroskedasticity.arch_lm@1`,
+     `stats.normality.jarque_bera@1`,
+     `stats.autocorr.ljung_box_sq@1`.
+   - **CROSS Pair-arity (5 new entries)** with joint per-leg
+     resampling: `cross.corr.pearson_rolling@1`,
+     `cross.corr.spearman_rolling@1`, `cross.ols.rolling@1`,
+     `cross.lead_lag.ccf@1`, `cross.cointegration.engle_granger@1`.
+     New `pair_stationary_bootstrap_ci`, `pair_block_bootstrap_ci`,
+     `pair_circular_shift_null_p` helpers in `hygiene_dispatch.rs`
+     mirror the Plan 05-02 kernels byte-for-byte (same
+     `Xoshiro256PlusPlus::seed_from_u64`, same `gen_range`, same sort
+     order) but operate on paired data — leg A and leg B sample the
+     SAME indices per resample iteration so the joint correlation /
+     regression / hedge-ratio is computed against a coherent shuffle.
+   - **SEAS Single-arity (5 new entries)** with bucket-keyed dispatch:
+     `seas.bucket.hour_of_day@1`, `seas.bucket.day_of_week@1`,
+     `seas.bucket.session@1`, `seas.bucket.eom_som@1`,
+     `seas.event.pre_post_window@1`. Per-return bucket keys derived
+     from `ts_open_utc` are snapshotted at closure-construction time;
+     the resample shuffles returns, bucket assignments stay stable,
+     and the closure recomputes `max_abs_finite(t_stats)` against the
+     snapshotted bucket keys (matching each scan's `Effect.value`
+     formula bit-for-bit on the original input).
+   - **Engine signature change**: `apply_hygiene_mutations(result,
+     req, bars, bars_b, cancel)` now takes a `&BarFrame` (and optional
+     `&BarFrame` for leg B) so SEAS closures can capture timestamps.
+     Pair-arity dispatch tries the joint table first; falls through
+     to Single-arity otherwise.
+   - **Kernel visibility bumps** from `pub(super)` to `pub(crate)`
+     across ANOM/CROSS/SEAS so the dispatch closures can call the
+     scan kernels directly. The kernels themselves are NOT modified
+     (per the continuation directive); the byte-identical contract
+     under fixed `master_seed` is preserved.
+   - **Shared helper**: `seas::bucketing::max_abs_finite` now exposed
+     as `pub fn` for use by the SEAS dispatch closures (mirrors the
+     per-SEAS-scan helper); the existing per-scan duplicates are
+     untouched.
+
+2. **`test(05-03-cont2)`** (`1c73051`) — New
+   `tests/hygiene_byte_identical_rerun.rs` adds 7 tests covering
+   byte-identical-rerun under hygiene for one scan per family:
+   - ANOM (`stats.variance_ratio.lo_mackinlay@1`) — bootstrap + null
+     bit-identity on `effect.ci95`, `effect.p_value`, `repro.job_seed`.
+   - CROSS Pair-arity (`cross.corr.pearson_rolling@1`) — confirms the
+     joint resample helpers preserve bit-identity across reruns.
+   - SEAS (`seas.bucket.hour_of_day@1`) — bootstrap-only (scan does not
+     opt into null methods per D5-04); confirms bucket-key snapshot +
+     closure resample produces bit-identical CI95.
+   - Plus 3 dispatch-not-stuck gates (one per family) that confirm
+     `effect.ci95` is finite + populated (not silently `None`).
+   - Plus 1 sanity gate (`differing_master_seed_yields_differing_ci`)
+     that catches a hypothetical stuck dispatch returning the same CI
+     for every seed.
+
+### What continuation 2 closes
+
+- ✅ All 19 Phase-4 opt-in scans now correctly populate `Effect.ci95`
+  (bootstrap), `Effect.p_value` (null where supported), and
+  `ResultFinding.repro` when hygiene is requested.
+- ✅ Pair-arity (CROSS) scans use joint per-leg resampling — leg A and
+  leg B share the same resample index sequence each iteration so the
+  joint statistic is preserved.
+- ✅ SEAS scans correctly snapshot `ts_open_utc`-derived bucket keys
+  at closure-construction time; resampling shuffles returns,
+  recomputes per-bucket stats, folds `max_abs_finite(t_stats)`.
+- ✅ Byte-identical-rerun verified for at least one scan per family
+  (ANOM `VarianceRatio`, CROSS `PearsonRolling`, SEAS `HourOfDay`),
+  in addition to the existing `LjungBox` test on ANOM-01.
+- ✅ Cancel polling cadence preserved (RESEARCH Pitfall 7) — outer-
+  engine polls between scan-body and hygiene-body; kernels remain
+  uninterruptible (small n).
+
+### What continuation 2 still leaves to Phase 7
+
+- **IAAFT `PhaseScramble` null still deferred to Phase 7.** Per Plan
+  05-02 SUMMARY, the kernel is unavailable. The engine's
+  `apply_pair_hygiene` and Single-arity `apply_hygiene_mutations`
+  return `NaN` for `NullMethod::PhaseScramble` so the analytic
+  p-value (or the bootstrap CI) is preserved; preflight rejects
+  `PhaseScramble` on every scan whose
+  `supports_null_method(PhaseScramble)` is `false`. The repro
+  envelope still echoes the requested method.
+- **`seas.bucket.session@1` dispatch uses `FX_MAJOR_DEFAULTS` only.**
+  The scan body permits a user-supplied `sessions` parameter
+  override; the dispatch closure does NOT yet plumb that override
+  through (would require duplicating the scan body's
+  `resolve_sessions` helper). The scan's wire-output `Effect.value`
+  remains correct for the user-supplied sessions — only the hygiene
+  resample uses the default FX-major sessions. A Phase 7 refinement
+  hook; documented here so the gap is auditable.
+- **`block_length` heuristic floor.** Continuation 2 inherits the
+  continuation 1 floor at 3 — same `block_length_pwppw` invocation
+  pattern. Phase 7 may refine.
+
+### Continuation 2 Self-Check
+
+- `cargo test --workspace`: 0 failures. 716 lib tests pass
+  (= 710 baseline + 6 new `hygiene_dispatch` unit tests). 15 hygiene
+  integration tests pass: 8 from continuation 1 + 7 new
+  byte-identical-rerun tests in continuation 2.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- No modifications to STATE.md / ROADMAP.md / Plan 05-04 / 05-05 /
+  hygiene kernels.
+
+### Continuation 2 Files Created / Modified
+
+**Created (1):**
+- `crates/miner-core/tests/hygiene_byte_identical_rerun.rs` (~460 lines,
+  7 tests).
+
+**Modified (18):**
+- `crates/miner-core/src/engine/hygiene_dispatch.rs` — rewritten as
+  Single+Pair dispatch tables with 17 new entries + joint resample
+  helpers (`pair_*` bootstrap + null) (~1100 lines).
+- `crates/miner-core/src/engine/mod.rs` — `apply_hygiene_mutations`
+  signature extended to `(result, req, bars, bars_b, cancel)`; new
+  `apply_pair_hygiene` helper; updated call sites in both Single
+  and Pair dispatch paths.
+- `crates/miner-core/src/scan/anom/{adf,arch_lm,jarque_bera,kpss,
+  ljung_box_sq,variance_ratio,vol}/kernel.rs` — kernel visibility
+  bumps (`pub(super)` → `pub(crate)`).
+- `crates/miner-core/src/scan/cross/{corr_rolling,engle_granger,
+  lead_lag,ols_rolling}/kernel.rs` — kernel visibility bumps.
+- `crates/miner-core/src/scan/seas/{hour_of_day,day_of_week,session,
+  event_window}/kernel.rs` — kernel visibility bumps.
+- `crates/miner-core/src/scan/seas/bucketing.rs` — added
+  `pub fn max_abs_finite` for shared use.
+
 ---
 *Phase: 05-statistical-hygiene-sweep-runner*
 *Completed: 2026-05-20*
 *Continuation completed: 2026-05-20*
+*Continuation 2 completed: 2026-05-21*

@@ -91,7 +91,7 @@ impl LeadLagResult {
 ///   caller validates `max_lag < n / 2` upstream so this is unreachable.
 #[inline]
 #[must_use]
-pub(super) fn lead_lag_ccf(a: &[f64], b: &[f64], max_lag: usize) -> LeadLagResult {
+pub(crate) fn lead_lag_ccf(a: &[f64], b: &[f64], max_lag: usize) -> LeadLagResult {
     debug_assert_eq!(a.len(), b.len(), "lead_lag_ccf: a.len() must equal b.len()");
     let n = a.len();
     let lag_count = 2 * max_lag + 1;

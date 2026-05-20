@@ -53,7 +53,7 @@ use statrs::distribution::{ContinuousCDF, Normal};
 /// Regression specification — matches `statsmodels.tsa.stattools.adfuller`'s
 /// `regression` parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum RegressionVariant {
+pub(crate) enum RegressionVariant {
     /// `nc`: no constant, no trend. ADF regression is `Δy_t = ρ·y_{t-1} + Σ γ_i·Δy_{t-i} + ε`.
     Nc,
     /// `c`: constant only (default). `Δy_t = α + ρ·y_{t-1} + Σ γ_i·Δy_{t-i} + ε`.
@@ -66,7 +66,7 @@ pub(super) enum RegressionVariant {
 
 /// AIC-vs-fixed-lag selection mode — matches `statsmodels`' `autolag` parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum AutoLagVariant {
+pub(crate) enum AutoLagVariant {
     /// `AIC`: minimise Akaike Information Criterion across `k ∈ 0..=max_lag`.
     Aic,
     /// `BIC`: minimise Bayesian Information Criterion across `k ∈ 0..=max_lag`.
@@ -77,7 +77,7 @@ pub(super) enum AutoLagVariant {
 
 /// Result of an ADF test on a series.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct AdfResult {
+pub(crate) struct AdfResult {
     /// τ test statistic — `ρ̂ / SE(ρ̂)` from the augmented regression.
     pub statistic: f64,
     /// MacKinnon-approximated p-value (linear interp on 1%/5%/10% crits with
@@ -103,7 +103,7 @@ pub(super) struct AdfResult {
 /// Returns `Err(String)` for invalid configurations (empty / too-short series,
 /// `max_lag` too large).
 #[inline]
-pub(super) fn adfuller(
+pub(crate) fn adfuller(
     y: &[f64],
     max_lag: usize,
     regression: RegressionVariant,

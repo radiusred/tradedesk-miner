@@ -97,7 +97,7 @@ pub struct EngleGrangerResult {
 /// `residual_std`).
 #[inline]
 #[must_use]
-pub(super) fn engle_granger(
+pub(crate) fn engle_granger(
     y: &[f64],
     x: &[f64],
     _regression: AdfRegression,

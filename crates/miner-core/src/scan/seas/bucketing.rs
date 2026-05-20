@@ -231,6 +231,22 @@ pub fn bucket_stats(
     }
 }
 
+/// Max absolute value over the supplied slice, ignoring `NaN` entries. Returns
+/// `0.0` when no finite entry exists (the bucket profile is degenerate — all
+/// buckets either empty or zero-variance).
+///
+/// Shared by every SEAS-family scan body that reduces a `t_stats` vector to a
+/// scalar `Effect.value` (`hour_of_day`, `day_of_week`, `session`,
+/// `eom_som`); also reused by the engine `hygiene_dispatch` table when the
+/// scan body's `max_abs_t_stat` recipe is recomputed over a resampled
+/// returns series (Plan 05-03 continuation 2).
+#[must_use]
+pub fn max_abs_finite(xs: &[f64]) -> f64 {
+    xs.iter()
+        .filter(|x| x.is_finite())
+        .fold(0.0_f64, |acc, x| acc.max(x.abs()))
+}
+
 /// Compute the inter-quartile range (Q3 − Q1) for the supplied bucket values
 /// using a linear-interpolation quantile estimator (Numpy / pandas default —
 /// `method="linear"`, equivalent to `scipy.stats.iqr` default settings).

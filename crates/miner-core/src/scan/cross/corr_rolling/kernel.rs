@@ -38,7 +38,7 @@
 /// (`corr_rolling::run`) detects and converts to `ScanError::Kernel`.
 #[inline]
 #[must_use]
-pub(super) fn rolling_pearson(a: &[f64], b: &[f64], window: usize) -> Vec<f64> {
+pub(crate) fn rolling_pearson(a: &[f64], b: &[f64], window: usize) -> Vec<f64> {
     debug_assert_eq!(
         a.len(),
         b.len(),
@@ -91,7 +91,7 @@ pub(super) fn rolling_pearson(a: &[f64], b: &[f64], window: usize) -> Vec<f64> {
 /// Returns a `Vec<f64>` of length `n - window + 1` (empty when `n < window`).
 #[inline]
 #[must_use]
-pub(super) fn rolling_spearman(a: &[f64], b: &[f64], window: usize) -> Vec<f64> {
+pub(crate) fn rolling_spearman(a: &[f64], b: &[f64], window: usize) -> Vec<f64> {
     debug_assert_eq!(
         a.len(),
         b.len(),

@@ -38,7 +38,7 @@
 use statrs::distribution::{ContinuousCDF, Normal};
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct VrResult {
+pub(crate) struct VrResult {
     /// Variance ratio at the specified k.
     pub vr: f64,
     /// Heteroskedasticity-robust (or asymptotic) z-statistic.
@@ -58,7 +58,7 @@ pub(super) struct VrResult {
     clippy::similar_names,
     reason = "sigma_1_sq vs sigma_k_sq is the canonical Lo-MacKinlay naming"
 )]
-pub(super) fn variance_ratio(returns: &[f64], k: usize, robust: bool) -> Result<VrResult, String> {
+pub(crate) fn variance_ratio(returns: &[f64], k: usize, robust: bool) -> Result<VrResult, String> {
     let n = returns.len();
     if k < 2 {
         return Err(format!("variance_ratio: k must be >= 2; got k={k}"));
