@@ -103,13 +103,13 @@ Plans:
 Plans:
 - [x] 04-01-PLAN.md — Facade-shape extension: D4-01..D4-04 type changes (InstrumentSpec, ScanArity, instruments: Vec, sources: Vec, WrongInstrumentArity), workspace deps (ndarray + ndarray-stats + nalgebra), schemars regen spike + D4-03 vs D4-03-ALT decision
 - [x] 04-02-PLAN.md — Engine + CLI + primitives + per-family register stubs: primitives::returns + time_alignment + raw_array, engine::validate_arity + two-leg gap dispatch, ScanCtx::bars_pair + bars_up_to, CLI repeatable --instrument SYMBOL:side, goldens/REFERENCE-VERSIONS.md + python-requirements.lock, integration test scaffolds (arity_preflight, two_leg_facade, gap_intersect_cross), LjungBox D4-06 refactor
-- [ ] 04-03-PLAN.md — ANOM batch A: stats.returns.profile (ANOM-01), stats.summary.welford (ANOM-02), stats.vol.rolling (ANOM-03) + shuffled-future extension
+- [x] 04-03-PLAN.md — ANOM batch A: stats.returns.profile (ANOM-01), stats.summary.welford (ANOM-02), stats.vol.rolling (ANOM-03) + shuffled-future extension
 - [ ] 04-04-PLAN.md — ANOM batch B: stats.autocorr.ljung_box_sq (ANOM-04 sq variant), stats.outliers.z_and_mad (ANOM-10), stats.drawdown.profile (ANOM-11)
 - [ ] 04-05-PLAN.md — ANOM batch C: stats.stationarity.adf (ANOM-05 hand-derived AIC), stats.stationarity.kpss (ANOM-06 hand-derived Bartlett), stats.variance_ratio.lo_mackinlay (ANOM-07 hand-derived overlapping VR)
 - [ ] 04-06-PLAN.md — ANOM batch D: stats.heteroskedasticity.arch_lm (ANOM-08 Engle 1982), stats.normality.jarque_bera (ANOM-09 chi-squared df=2)
-- [ ] 04-07-PLAN.md — CROSS batch A: cross.corr.pearson_rolling + cross.corr.spearman_rolling (CROSS-02), cross.ols.rolling (CROSS-03 nalgebra) + shuffled-future extensions
+- [x] 04-07-PLAN.md — CROSS batch A: cross.corr.pearson_rolling + cross.corr.spearman_rolling (CROSS-02), cross.ols.rolling (CROSS-03 nalgebra) + shuffled-future extensions
 - [ ] 04-08-PLAN.md — CROSS batch B: cross.lead_lag.ccf (CROSS-04 symmetric ±max_lag), cross.cointegration.engle_granger (CROSS-05 two-step + OU half-life, reuses ANOM-05 ADF)
-- [ ] 04-09-PLAN.md — SEAS batch A: seas.bucket.hour_of_day (SEAS-01), seas.bucket.day_of_week (SEAS-02), seas.bucket.session (SEAS-03 FX-major defaults per RESEARCH §1.8) + shared bucketing helper
+- [x] 04-09-PLAN.md — SEAS batch A: seas.bucket.hour_of_day (SEAS-01), seas.bucket.day_of_week (SEAS-02), seas.bucket.session (SEAS-03 FX-major defaults per RESEARCH §1.8) + shared bucketing helper
 - [ ] 04-10-PLAN.md — SEAS batch B: seas.bucket.eom_som (SEAS-04 trading-day-of-month via Calendar), seas.test.anova_kruskal (SEAS-05 F + KW), seas.event.pre_post_window (SEAS-06)
 - [ ] 04-11-PLAN.md — Goldens (ANOM-02 + CROSS-05 + SEAS-01) + schema regen + byte-identical-rerun test + README Quickstart + Phase 4 sign-off memo + human checkpoint
 **UI hint**: No
