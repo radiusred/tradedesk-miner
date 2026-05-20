@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "max_abs_t_stat",
+      "value": 0.18800291279155737
+    },
     "extra": {
       "buckets": {
         "data": "AAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAACEAAAAAAAAAQQAAAAAAAABRAAAAAAAAAGEA=",

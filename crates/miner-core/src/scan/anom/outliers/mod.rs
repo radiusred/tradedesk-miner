@@ -41,7 +41,7 @@ use chrono::Utc;
 use serde_json::Value as JsonValue;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
@@ -262,6 +262,13 @@ impl Scan for OutliersZAndMadScan {
         );
         extra.insert("z_threshold".into(), f64_slice_to_raw_array(&[z_threshold]));
 
+        // Plan 05-03 / D5-03: outlier_rate = flagged_count / n (fraction
+        // of bars flagged as outliers). n == 0 → 0.0 (wire-safe).
+        let outlier_rate = if n > 0 {
+            count_to_f64(outlier_indices.len()) / count_to_f64(n)
+        } else {
+            0.0
+        };
         let effect = Effect {
             metric: EFFECT_METRIC.to_string(),
             value: count_to_f64(outlier_indices.len()),
@@ -272,7 +279,10 @@ impl Scan for OutliersZAndMadScan {
             )]
             n: Some(n as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize {
+                kind: "outlier_rate".to_string(),
+                value: outlier_rate,
+            }),
             extra,
         };
 
@@ -485,6 +495,12 @@ mod tests {
             resolved_params: params,
             param_hash: blake3_hex_zero(),
             dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }

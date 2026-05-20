@@ -44,7 +44,7 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
@@ -109,6 +109,19 @@ impl Scan for LjungBoxScan {
         }
     }
 
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to null methods
+    /// (`PhaseScramble` + `CircularShift`) per the per-scan matrix.
+    fn supports_null_method(&self, m: crate::scan::NullMethod) -> bool {
+        matches!(m, crate::scan::NullMethod::PhaseScramble | crate::scan::NullMethod::CircularShift)
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
+    )]
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -147,6 +160,14 @@ impl Scan for LjungBoxScan {
         extra.insert("p_values".into(), f64_slice_to_raw_array(&p_values));
         extra.insert("acf".into(), f64_slice_to_raw_array(&acf));
 
+        // Plan 05-03 / D5-03: acf_lag_max_abs = max(|acf[k]|) for k >= 1.
+        // (Lag 0 = 1.0 by construction; only proper lags carry information.)
+        let acf_lag_max_abs = acf
+            .iter()
+            .skip(1)
+            .copied()
+            .map(f64::abs)
+            .fold(0.0_f64, f64::max);
         let effect = Effect {
             metric: EFFECT_METRIC.to_string(),
             value: q_stats[lags - 1],
@@ -161,7 +182,10 @@ impl Scan for LjungBoxScan {
             )]
             n: Some(n as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize {
+                kind: "acf_lag_max_abs".to_string(),
+                value: acf_lag_max_abs,
+            }),
             extra,
         };
 
@@ -418,6 +442,12 @@ mod tests {
             resolved_params: params,
             param_hash: blake3_hex_zero(),
             dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }

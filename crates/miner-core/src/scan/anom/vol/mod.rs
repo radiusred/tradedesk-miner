@@ -29,7 +29,7 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
@@ -107,6 +107,9 @@ impl Scan for VolRollingScan {
             raw_series_keys: &["returns", "timestamps_ms"],
         }
     }
+
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
 
     #[allow(
         clippy::too_many_lines,
@@ -216,6 +219,19 @@ impl Scan for VolRollingScan {
         );
 
         let last_vol = *vols.last().expect("vols non-empty: n_windows >= 1");
+        // Plan 05-03 / D5-03: vol_ratio_to_baseline = last_window_vol /
+        // baseline_vol. Baseline = mean of the rolling-vol array. Treat
+        // baseline == 0 (constant series → undefined ratio) as 1.0 — the
+        // ratio of equals is the wire-safe identity. NaN cannot round-trip
+        // through serde_json (it serialises as `null`); 1.0 also reflects
+        // "no regime shift" which is the right default under flat input.
+        let baseline_vol =
+            vols.iter().copied().sum::<f64>() / f64::from(u32::try_from(vols.len()).unwrap_or(1));
+        let vol_ratio = if baseline_vol > 0.0 {
+            last_vol / baseline_vol
+        } else {
+            1.0
+        };
         let effect = Effect {
             metric: EFFECT_METRIC.to_string(),
             value: last_vol,
@@ -226,7 +242,10 @@ impl Scan for VolRollingScan {
             )]
             n: Some(vols.len() as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize {
+                kind: "vol_ratio_to_baseline".to_string(),
+                value: vol_ratio,
+            }),
             extra,
         };
 
@@ -418,6 +437,12 @@ mod tests {
             resolved_params: params,
             param_hash: blake3_hex_zero(),
             dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }

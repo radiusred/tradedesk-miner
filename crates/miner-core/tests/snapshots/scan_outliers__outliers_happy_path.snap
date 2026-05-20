@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "outlier_rate",
+      "value": 0.0
+    },
     "extra": {
       "mad": {
         "data": "TKsyrMmexz8=",

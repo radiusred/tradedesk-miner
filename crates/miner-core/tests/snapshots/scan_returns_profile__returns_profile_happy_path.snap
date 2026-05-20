@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "log_returns_mean",
+      "value": 0.007270854787121337
+    },
     "extra": {
       "mean": {
         "data": "pPhkOAvIfT8=",

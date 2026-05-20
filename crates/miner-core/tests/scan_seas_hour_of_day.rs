@@ -1,7 +1,8 @@
 #![allow(
     clippy::cast_possible_wrap,
     clippy::cast_precision_loss,
-    clippy::cast_possible_truncation
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines
 )]
 
 //! Plan 04-09 Task 1 integration test — SEAS-01 hour-of-day envelope snapshot.
@@ -59,6 +60,12 @@ fn scan_seas_hour_of_day_happy_path() {
         resolved_params,
         param_hash,
         dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
         sleep_after_first_finding_ms: None,
     };
     let ctx = ScanCtx {
@@ -166,6 +173,12 @@ fn hour_of_day_matches_pandas_groupby_golden() {
         resolved_params,
         param_hash,
         dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
         sleep_after_first_finding_ms: None,
     };
     let ctx = ScanCtx {

@@ -42,7 +42,7 @@ use chrono::Utc;
 use serde_json::Value as JsonValue;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
@@ -98,6 +98,15 @@ impl Scan for VarianceRatioScan {
             effect_extra_keys: &["k_values", "p_values", "vr_values", "z_stats"],
             raw_series_keys: &["returns", "timestamps_ms"],
         }
+    }
+
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to null methods
+    /// (`PhaseScramble` + `CircularShift`) per the per-scan matrix.
+    fn supports_null_method(&self, m: crate::scan::NullMethod) -> bool {
+        matches!(m, crate::scan::NullMethod::PhaseScramble | crate::scan::NullMethod::CircularShift)
     }
 
     #[allow(
@@ -195,7 +204,12 @@ impl Scan for VarianceRatioScan {
             )]
             n: Some(n_returns as u64),
             ci95: None,
-            effect_size: None,
+            // Plan 05-03 / D5-03: vr_minus_one = VR(max_k) - 1 (centred on the
+            // random-walk null where VR == 1 for all k).
+            effect_size: Some(EffectSize {
+                kind: "vr_minus_one".to_string(),
+                value: max_k_vr - 1.0,
+            }),
             extra,
         };
 
@@ -425,6 +439,12 @@ mod tests {
             resolved_params: params,
             param_hash: blake3_hex_zero(),
             dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }

@@ -30,7 +30,7 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
@@ -93,7 +93,19 @@ impl Scan for OlsRollingScan {
     fn finding_fields(&self) -> ScanFindingShape {
         FINDING_SHAPE
     }
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to `CircularShift` only.
+    fn supports_null_method(&self, m: crate::scan::NullMethod) -> bool {
+        matches!(m, crate::scan::NullMethod::CircularShift)
+    }
+
     #[allow(clippy::too_many_lines)]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
+    )]
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -190,6 +202,7 @@ impl Scan for OlsRollingScan {
 
         let last_beta = *ols.betas.last().expect("betas non-empty by construction");
 
+        // Plan 05-03 / D5-03: beta_last_window mirrors the last-window β.
         let effect = Effect {
             metric: EFFECT_METRIC.to_string(),
             value: last_beta,
@@ -200,7 +213,10 @@ impl Scan for OlsRollingScan {
             )]
             n: Some(ols.len() as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize {
+                kind: "beta_last_window".to_string(),
+                value: last_beta,
+            }),
             extra,
         };
 
@@ -401,6 +417,12 @@ mod tests {
             resolved_params: params,
             param_hash: blake3_hex_zero(),
             dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }

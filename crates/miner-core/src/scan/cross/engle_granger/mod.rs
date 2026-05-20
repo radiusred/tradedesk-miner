@@ -41,7 +41,7 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::time_alignment::inner_join;
@@ -110,7 +110,20 @@ impl Scan for EngleGrangerScan {
     fn finding_fields(&self) -> ScanFindingShape {
         FINDING_SHAPE
     }
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
+
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-04) — opt-in to null methods
+    /// (`PhaseScramble` + `CircularShift`) per the per-scan matrix.
+    fn supports_null_method(&self, m: crate::scan::NullMethod) -> bool {
+        matches!(m, crate::scan::NullMethod::PhaseScramble | crate::scan::NullMethod::CircularShift)
+    }
+
     #[allow(clippy::too_many_lines)]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Scan::run is the linear dispatch + envelope build path; splitting into helpers obscures the 7-step Pattern A structure"
+    )]
     fn run(
         &self,
         ctx: &ScanCtx<'_>,
@@ -194,6 +207,7 @@ impl Scan for EngleGrangerScan {
         );
 
         // 10. effect.value = β (the hedge ratio per D4-09).
+        // Plan 05-03 / D5-03: hedge_ratio effect_size mirrors β (`hedge_ratio`).
         let effect = Effect {
             metric: EFFECT_METRIC.to_string(),
             value: result.hedge_ratio_beta,
@@ -204,7 +218,10 @@ impl Scan for EngleGrangerScan {
             )]
             n: Some(aligned_n as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize {
+                kind: "hedge_ratio".to_string(),
+                value: result.hedge_ratio_beta,
+            }),
             extra,
         };
 
@@ -397,6 +414,12 @@ mod tests {
             resolved_params: params,
             param_hash: blake3_hex_zero(),
             dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }

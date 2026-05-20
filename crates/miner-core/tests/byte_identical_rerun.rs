@@ -219,6 +219,12 @@ fn build_single_request(scan_id: &str) -> ScanRequest {
         resolved_params,
         param_hash,
         dry_run: false,
+    master_seed: None,
+    job_seed: None,
+    bootstrap_method: None,
+    bootstrap_n: None,
+    null_method: None,
+    null_n: None,
         #[cfg(any(test, feature = "test-internal"))]
         sleep_after_first_finding_ms: None,
     }
@@ -263,6 +269,12 @@ fn build_pair_request() -> ScanRequest {
         resolved_params,
         param_hash,
         dry_run: false,
+    master_seed: None,
+    job_seed: None,
+    bootstrap_method: None,
+    bootstrap_n: None,
+    null_method: None,
+    null_n: None,
         #[cfg(any(test, feature = "test-internal"))]
         sleep_after_first_finding_ms: None,
     }
@@ -365,6 +377,12 @@ fn run_pair_arity_via_engine_twice(
             resolved_params: resolved_params.clone(),
             param_hash,
             dry_run: false,
+            master_seed: None,
+            job_seed: None,
+            bootstrap_method: None,
+            bootstrap_n: None,
+            null_method: None,
+            null_n: None,
             #[cfg(any(test, feature = "test-internal"))]
             sleep_after_first_finding_ms: None,
         };
@@ -468,6 +486,12 @@ fn byte_identical_rerun_seas_hour_of_day() {
         resolved_params,
         param_hash: param_hash_v,
         dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
         #[cfg(any(test, feature = "test-internal"))]
         sleep_after_first_finding_ms: None,
     };

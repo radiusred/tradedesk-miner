@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "acf_lag_max_abs",
+      "value": 0.11878792429567817
+    },
     "extra": {
       "acf": {
         "data": "AAAAAAAA8D8W2SND17+yv95mjJLOf5c/PIVv+WVvl78ueQKq4mi+v3MYE4A+RLU/",

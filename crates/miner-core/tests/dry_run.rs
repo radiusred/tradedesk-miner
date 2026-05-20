@@ -70,6 +70,12 @@ fn dry_run_emits_dry_run_finding_only() {
         resolved_params: resolved.clone(),
         param_hash,
         dry_run: true, // <-- the canonical signal under test
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
         #[cfg(any(test, feature = "test-internal"))]
         sleep_after_first_finding_ms: None,
     };

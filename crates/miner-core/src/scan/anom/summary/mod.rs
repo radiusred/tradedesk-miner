@@ -24,7 +24,7 @@ use std::sync::atomic::Ordering;
 use chrono::Utc;
 
 use crate::findings::{
-    DataSlice, Effect, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
+    DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
@@ -97,6 +97,9 @@ impl Scan for SummaryWelfordScan {
             raw_series_keys: &["returns", "timestamps_ms"],
         }
     }
+
+    /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
+    fn supports_bootstrap(&self) -> bool { true }
 
     #[allow(
         clippy::too_many_lines,
@@ -198,6 +201,13 @@ impl Scan for SummaryWelfordScan {
         extra.insert("skew".into(), f64_slice_to_raw_array(&[skew]));
         extra.insert("std".into(), f64_slice_to_raw_array(&[std]));
 
+        // Plan 05-03 / D5-03: Cohen's d vs zero = mean / std. Treat
+        // std == 0 (constant series, e.g. n=1 trivial path) as 0.0 — no
+        // dispersion → no detectable signal. We do NOT emit NaN here
+        // because serde_json serialises NaN as `null` and f64 cannot
+        // deserialise from `null`, breaking the wire round-trip pinned by
+        // the test suite (Rule 1 bug — found while running scan tests).
+        let cohens_d = if std > 0.0 { mean / std } else { 0.0 };
         let effect = Effect {
             metric: EFFECT_METRIC.to_string(),
             value: mean,
@@ -208,7 +218,10 @@ impl Scan for SummaryWelfordScan {
             )]
             n: Some(n as u64),
             ci95: None,
-            effect_size: None,
+            effect_size: Some(EffectSize {
+                kind: "cohens_d_vs_zero".to_string(),
+                value: cohens_d,
+            }),
             extra,
         };
 
@@ -374,6 +387,12 @@ mod tests {
             resolved_params: params,
             param_hash: blake3_hex_zero(),
             dry_run: false,
+        master_seed: None,
+        job_seed: None,
+        bootstrap_method: None,
+        bootstrap_n: None,
+        null_method: None,
+        null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }

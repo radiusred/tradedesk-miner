@@ -147,6 +147,48 @@ impl NullMethod {
 }
 
 // ---------------------------------------------------------------------------
+// BootstrapMethod — Phase 5 (Plan 05-03 / D5-04) bootstrap resampling methods.
+// ---------------------------------------------------------------------------
+
+/// Phase 5 (Plan 05-03 / D5-04) — bootstrap resampling method used by the
+/// scan's hygiene pass (HYG-03).
+///
+/// Mirrors [`NullMethod`] on the wire (same derives, same
+/// `#[serde(rename_all = "snake_case")]`, sibling `as_str` helper). The two
+/// v1 methods are `Stationary` (Politis-Romano (1994) stationary bootstrap;
+/// geometric-block-length resampling for serially-correlated series) and
+/// `Block` (fixed-block bootstrap; deterministic block size).
+///
+/// Mirrored on the wire by `crate::findings::BootstrapSpec.method`
+/// (open-string field) for forward-compat — adding a new variant here is
+/// schema-additive (`schemars 1.x` `oneOf` gains a new option without
+/// invalidating existing parsers).
+///
+/// See 05-RESEARCH.md §"Alternatives Considered" stationary-vs-block-
+/// bootstrap row for the choice between the two methods.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BootstrapMethod {
+    /// Politis-Romano (1994) stationary bootstrap — geometric-block-length
+    /// resampling; canonical default for serially-correlated series.
+    Stationary,
+    /// Fixed-block bootstrap — deterministic block size; preferred when the
+    /// caller wants exact block-size control.
+    Block,
+}
+
+impl BootstrapMethod {
+    /// `snake_case` wire form — mirrors `NullMethod::as_str` (Pattern F).
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BootstrapMethod::Stationary => "stationary",
+            BootstrapMethod::Block => "block",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Scan trait — D3-14, mirrors `reader.rs:198-258` Send+Sync+&'static str shape.
 // ---------------------------------------------------------------------------
 
@@ -452,6 +494,47 @@ pub struct ScanRequest {
     /// variant — the signal lives here.
     #[serde(default)]
     pub dry_run: bool,
+    /// **Phase 5 (Plan 05-03 / HYG-05).** Master seed for the run; propagated
+    /// from `[sweep].seed` or `--seed` at the CLI/sweep boundary. Echoed into
+    /// `ReproEnvelope.master_seed` on every hygiene-touched finding so a
+    /// consumer can replay the resampling pass bit-for-bit. Override-resolution
+    /// order: per-job (sweep manifest) > sweep-level > CLI default.
+    #[serde(default)]
+    pub master_seed: Option<u64>,
+    /// **Phase 5 (Plan 05-03 / HYG-05).** Per-job seed derived via
+    /// `hygiene::seed::derive_job_seed`. When `None` and `master_seed` is
+    /// `Some`, the engine derives the job seed on the fly from the canonical
+    /// job-identity tuple. Echoed into `ReproEnvelope.job_seed`.
+    #[serde(default)]
+    pub job_seed: Option<u64>,
+    /// **Phase 5 (Plan 05-03 / HYG-03).** Bootstrap resampling method
+    /// requested for the hygiene pass. When `Some`, the engine invokes
+    /// `hygiene::bootstrap::*_bootstrap_ci` post-scan-body and populates
+    /// `Effect.ci95`. Caller-requested method on a scan whose
+    /// `Scan::supports_bootstrap()` returns `false` is rejected with
+    /// `PreflightCode::HygieneNotSupported`.
+    #[serde(default)]
+    pub bootstrap_method: Option<BootstrapMethod>,
+    /// **Phase 5 (Plan 05-03 / HYG-03).** Bootstrap resample count `B`. When
+    /// `bootstrap_method.is_some()` but `bootstrap_n` is `None` (or zero),
+    /// the engine defaults to 1000. Capped at `100_000` per
+    /// `T-05-03-V5` mitigation.
+    #[serde(default)]
+    pub bootstrap_n: Option<u32>,
+    /// **Phase 5 (Plan 05-03 / HYG-04).** Null-distribution method requested
+    /// for the hygiene pass. When `Some`, the engine invokes
+    /// `hygiene::null::circular_shift_null_p` (or the IAAFT variant once
+    /// shipped) post-scan-body and REPLACES `Effect.p_value`. Caller-
+    /// requested method on a scan whose
+    /// `Scan::supports_null_method(method)` returns `false` is rejected with
+    /// `PreflightCode::HygieneNotSupported`.
+    #[serde(default)]
+    pub null_method: Option<NullMethod>,
+    /// **Phase 5 (Plan 05-03 / HYG-04).** Null-draw count `N_null`. When
+    /// `null_method.is_some()` but `null_n` is `None` (or zero), the engine
+    /// defaults to 1000. Capped at `100_000` per `T-05-03-V5` mitigation.
+    #[serde(default)]
+    pub null_n: Option<u32>,
     /// **Test-only Pitfall 8 hook (Blocker 3).** Forwarded into `ScanCtx` by
     /// Plan 04's `run_one`. Plan 05 surfaces the matching
     /// `--sleep-after-first-finding-ms` CLI flag (also cfg-gated). Plan 06's
@@ -500,6 +583,15 @@ impl ScanRequest {
             resolved_params,
             param_hash,
             dry_run,
+            // Phase 5 (Plan 05-03 / HYG-03/04/05): hygiene Option fields
+            // default to None — schema-additive; pre-existing single-shot
+            // scans unchanged when the engine sees None.
+            master_seed: None,
+            job_seed: None,
+            bootstrap_method: None,
+            bootstrap_n: None,
+            null_method: None,
+            null_n: None,
             #[cfg(any(test, feature = "test-internal"))]
             sleep_after_first_finding_ms: None,
         }
@@ -588,6 +680,281 @@ mod tests {
     // Plan 05-01 Task 3 — TDD RED: Phase 5 scan trait + NullMethod tests
     // ---------------------------------------------------------------------
 
+    // ---------------------------------------------------------------------
+    // Plan 05-03 Task 1 — TDD RED: Phase 5 BootstrapMethod + ScanRequest
+    // additive Option fields + per-scan supports_* trait overrides
+    // ---------------------------------------------------------------------
+
+    /// Plan 05-03 Task 1 Test 3 — `bootstrap_method_round_trip`:
+    /// `BootstrapMethod` mirrors `NullMethod::as_str` (D5-04). `Stationary`
+    /// serialises as `"stationary"` and `Block` as `"block"`. Both
+    /// round-trip through `serde_json` and the `as_str()` helper matches
+    /// the wire form.
+    #[test]
+    fn bootstrap_method_round_trip() {
+        let cases = [
+            (BootstrapMethod::Stationary, "stationary"),
+            (BootstrapMethod::Block, "block"),
+        ];
+        for (method, expected) in cases {
+            let json = serde_json::to_string(&method).expect("serialise");
+            assert_eq!(json, format!("\"{expected}\""), "wire form mismatch");
+            let parsed: BootstrapMethod = serde_json::from_str(&json).expect("deserialise");
+            assert_eq!(parsed, method);
+            assert_eq!(method.as_str(), expected);
+        }
+    }
+
+    /// Plan 05-03 Task 1 Test 1 — `scan_request_carries_hygiene_option_fields`:
+    /// `ScanRequest` carries six new additive Option fields (`master_seed`,
+    /// `job_seed`, `bootstrap_method`, `bootstrap_n`, `null_method`, `null_n`)
+    /// per HYG-03/04/05. Constructed via the struct literal with non-default
+    /// values for each — compile-time evidence the fields are reachable.
+    #[test]
+    fn scan_request_carries_hygiene_option_fields() {
+        use chrono::TimeZone;
+        let start = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2026, 2, 1, 0, 0, 0).unwrap();
+        let req = ScanRequest {
+            scan_id: "stats.autocorr.ljung_box".into(),
+            version: 1,
+            instruments: vec![InstrumentSpec {
+                symbol: "EURUSD".into(),
+                side: Side::Bid,
+            }],
+            timeframe: Timeframe::Tf15m,
+            window: ClosedRangeUtc { start, end },
+            sub_range: TimeRange {
+                start_utc: start,
+                end_utc: end,
+            },
+            gap_policy: GapPolicyKind::ContinuousOnly,
+            resolved_params: serde_json::json!({"lags": 5}),
+            param_hash: blake3_hex_zero(),
+            dry_run: false,
+            master_seed: Some(0xDEAD),
+            job_seed: Some(0xBEEF),
+            bootstrap_method: Some(BootstrapMethod::Stationary),
+            bootstrap_n: Some(500),
+            null_method: Some(NullMethod::CircularShift),
+            null_n: Some(250),
+            #[cfg(any(test, feature = "test-internal"))]
+            sleep_after_first_finding_ms: None,
+        };
+        assert_eq!(req.master_seed, Some(0xDEAD));
+        assert_eq!(req.job_seed, Some(0xBEEF));
+        assert_eq!(req.bootstrap_method, Some(BootstrapMethod::Stationary));
+        assert_eq!(req.bootstrap_n, Some(500));
+        assert_eq!(req.null_method, Some(NullMethod::CircularShift));
+        assert_eq!(req.null_n, Some(250));
+    }
+
+    /// Plan 05-03 Task 1 Test 2 — `scan_request_hygiene_fields_round_trip`:
+    /// `ScanRequest` with all six hygiene fields populated round-trips
+    /// through `serde_json`; with all six None it also round-trips and the
+    /// JSON contains `"master_seed": null` etc. (NOT omitted — OUT-03
+    /// discipline applies via `#[serde(default)]` without
+    /// `skip_serializing_if`).
+    #[test]
+    fn scan_request_hygiene_fields_round_trip() {
+        use chrono::TimeZone;
+        let start = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2026, 2, 1, 0, 0, 0).unwrap();
+        let req_some = ScanRequest {
+            scan_id: "stats.autocorr.ljung_box".into(),
+            version: 1,
+            instruments: vec![InstrumentSpec {
+                symbol: "EURUSD".into(),
+                side: Side::Bid,
+            }],
+            timeframe: Timeframe::Tf15m,
+            window: ClosedRangeUtc { start, end },
+            sub_range: TimeRange {
+                start_utc: start,
+                end_utc: end,
+            },
+            gap_policy: GapPolicyKind::ContinuousOnly,
+            resolved_params: serde_json::json!({}),
+            param_hash: blake3_hex_zero(),
+            dry_run: false,
+            master_seed: Some(42),
+            job_seed: Some(99),
+            bootstrap_method: Some(BootstrapMethod::Block),
+            bootstrap_n: Some(1000),
+            null_method: Some(NullMethod::PhaseScramble),
+            null_n: Some(2000),
+            #[cfg(any(test, feature = "test-internal"))]
+            sleep_after_first_finding_ms: None,
+        };
+        let json = serde_json::to_string(&req_some).expect("serialise");
+        let parsed: ScanRequest = serde_json::from_str(&json).expect("deserialise");
+        assert_eq!(parsed.master_seed, req_some.master_seed);
+        assert_eq!(parsed.job_seed, req_some.job_seed);
+        assert_eq!(parsed.bootstrap_method, req_some.bootstrap_method);
+        assert_eq!(parsed.bootstrap_n, req_some.bootstrap_n);
+        assert_eq!(parsed.null_method, req_some.null_method);
+        assert_eq!(parsed.null_n, req_some.null_n);
+
+        // None case must round-trip and serialise the keys as literal null.
+        let req_none = sample_scan_request(false);
+        let json_none = serde_json::to_string(&req_none).expect("serialise none");
+        assert!(
+            json_none.contains("\"master_seed\":null"),
+            "master_seed must serialise as literal null when None; got: {json_none}"
+        );
+        assert!(
+            json_none.contains("\"job_seed\":null"),
+            "job_seed must serialise as literal null when None; got: {json_none}"
+        );
+        assert!(
+            json_none.contains("\"bootstrap_method\":null"),
+            "bootstrap_method must serialise as literal null when None"
+        );
+        assert!(
+            json_none.contains("\"null_method\":null"),
+            "null_method must serialise as literal null when None"
+        );
+        // Backward-compat: a JSON object missing all six new fields still
+        // deserialises (defaults to None via #[serde(default)]).
+        let legacy_json = serde_json::json!({
+            "scan_id": "stats.autocorr.ljung_box",
+            "version": 1,
+            "instruments": [{"symbol": "EURUSD", "side": "bid"}],
+            "timeframe": "15m",
+            "window": {"start_utc": "2026-01-01T00:00:00Z", "end_utc": "2026-02-01T00:00:00Z"},
+            "sub_range": {"start_utc": "2026-01-01T00:00:00Z", "end_utc": "2026-02-01T00:00:00Z"},
+            "gap_policy": "continuous_only",
+            "resolved_params": {},
+            "param_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        });
+        let legacy_s = serde_json::to_string(&legacy_json).expect("serialise");
+        let legacy: ScanRequest = serde_json::from_str(&legacy_s).expect("legacy must deserialise");
+        assert!(legacy.master_seed.is_none());
+        assert!(legacy.job_seed.is_none());
+        assert!(legacy.bootstrap_method.is_none());
+        assert!(legacy.bootstrap_n.is_none());
+        assert!(legacy.null_method.is_none());
+        assert!(legacy.null_n.is_none());
+    }
+
+    /// Plan 05-03 Task 1 Test 4 — `anom_supports_matrix`: every ANOM scan
+    /// returns the `supports_bootstrap` / `supports_null_method` values from the
+    /// D5-04 per-scan matrix.
+    #[test]
+    #[allow(clippy::type_complexity)]
+    fn anom_supports_matrix() {
+        use crate::scan::anom::{
+            AdfScan, ArchLmScan, DrawdownProfileScan, JarqueBeraScan, KpssScan, LjungBoxSqScan,
+            OutliersZAndMadScan, SummaryWelfordScan, VarianceRatioScan, VolRollingScan,
+        };
+        // (scan, supports_bootstrap, supports_phase_scramble, supports_circular_shift)
+        let ljb: Box<dyn Scan> = Box::new(crate::scan::ljung_box::LjungBoxScan);
+        assert!(ljb.supports_bootstrap(), "ljung_box: bootstrap");
+        assert!(
+            ljb.supports_null_method(NullMethod::PhaseScramble),
+            "ljung_box: phase_scramble"
+        );
+        assert!(
+            ljb.supports_null_method(NullMethod::CircularShift),
+            "ljung_box: circular_shift"
+        );
+
+        let cases: &[(Box<dyn Scan>, bool, bool, bool, &str)] = &[
+            (Box::new(SummaryWelfordScan), true, false, false, "welford"),
+            (Box::new(VolRollingScan), true, false, false, "vol_rolling"),
+            (Box::new(LjungBoxSqScan), true, true, true, "ljung_box_sq"),
+            (Box::new(AdfScan), true, true, true, "adf"),
+            (Box::new(KpssScan), true, true, true, "kpss"),
+            (Box::new(VarianceRatioScan), true, true, true, "vr"),
+            (Box::new(ArchLmScan), true, true, true, "arch_lm"),
+            (Box::new(JarqueBeraScan), true, false, false, "jb"),
+            (Box::new(OutliersZAndMadScan), false, false, false, "outliers"),
+            (Box::new(DrawdownProfileScan), false, false, false, "dd"),
+        ];
+        for (scan, sb, sp, sc, name) in cases {
+            assert_eq!(scan.supports_bootstrap(), *sb, "{name}: bootstrap");
+            assert_eq!(
+                scan.supports_null_method(NullMethod::PhaseScramble),
+                *sp,
+                "{name}: phase_scramble"
+            );
+            assert_eq!(
+                scan.supports_null_method(NullMethod::CircularShift),
+                *sc,
+                "{name}: circular_shift"
+            );
+        }
+    }
+
+    /// Plan 05-03 Task 1 Test 4 — `cross_supports_matrix`: every CROSS scan
+    /// returns the supports values from the D5-04 per-scan matrix.
+    #[test]
+    #[allow(clippy::type_complexity)]
+    fn cross_supports_matrix() {
+        use crate::scan::cross::{
+            EngleGrangerScan, LeadLagCcfScan, OlsRollingScan, PearsonRollingScan,
+            SpearmanRollingScan,
+        };
+        let cases: &[(Box<dyn Scan>, bool, bool, bool, &str)] = &[
+            (Box::new(PearsonRollingScan), true, false, true, "pearson"),
+            (
+                Box::new(SpearmanRollingScan),
+                true,
+                false,
+                true,
+                "spearman",
+            ),
+            (Box::new(OlsRollingScan), true, false, true, "ols"),
+            (Box::new(LeadLagCcfScan), true, true, true, "lead_lag"),
+            (Box::new(EngleGrangerScan), true, true, true, "engle_granger"),
+        ];
+        for (scan, sb, sp, sc, name) in cases {
+            assert_eq!(scan.supports_bootstrap(), *sb, "{name}: bootstrap");
+            assert_eq!(
+                scan.supports_null_method(NullMethod::PhaseScramble),
+                *sp,
+                "{name}: phase_scramble"
+            );
+            assert_eq!(
+                scan.supports_null_method(NullMethod::CircularShift),
+                *sc,
+                "{name}: circular_shift"
+            );
+        }
+    }
+
+    /// Plan 05-03 Task 1 Test 4 — `seas_supports_matrix`: every SEAS scan
+    /// returns the supports values from the D5-04 per-scan matrix.
+    #[test]
+    #[allow(clippy::type_complexity)]
+    fn seas_supports_matrix() {
+        use crate::scan::seas::{
+            AnovaKruskalScan, DayOfWeekScan, EomSomScan, EventWindowScan, HourOfDayScan,
+            SessionScan,
+        };
+        let cases: &[(Box<dyn Scan>, bool, bool, bool, &str)] = &[
+            (Box::new(HourOfDayScan), true, false, false, "hod"),
+            (Box::new(DayOfWeekScan), true, false, false, "dow"),
+            (Box::new(SessionScan), true, false, false, "session"),
+            (Box::new(EomSomScan), true, false, false, "eom_som"),
+            (Box::new(AnovaKruskalScan), false, false, false, "anova"),
+            (Box::new(EventWindowScan), true, false, false, "event"),
+        ];
+        for (scan, sb, sp, sc, name) in cases {
+            assert_eq!(scan.supports_bootstrap(), *sb, "{name}: bootstrap");
+            assert_eq!(
+                scan.supports_null_method(NullMethod::PhaseScramble),
+                *sp,
+                "{name}: phase_scramble"
+            );
+            assert_eq!(
+                scan.supports_null_method(NullMethod::CircularShift),
+                *sc,
+                "{name}: circular_shift"
+            );
+        }
+    }
+
     /// Plan 05-01 Task 3 — `null_method_round_trip`: `NullMethod` mirrors
     /// `ScanArity::as_str` (D5-04). `PhaseScramble` serialises as
     /// `"phase_scramble"` and `CircularShift` as `"circular_shift"`. Both
@@ -612,15 +979,22 @@ mod tests {
     /// (D5-04). Every Scan impl gets `supports_bootstrap()` and
     /// `supports_null_method(_)` returning `false` by default; the default
     /// methods are dyn-safe (no generics, no `where Self: Sized`). This test
-    /// constructs a real Scan impl (`LjungBoxScan`) through a `dyn Scan`
-    /// reference and asserts the defaults; the `scan_trait_object_safe`
-    /// compile-time gate proves dyn-safety.
+    /// constructs a real Scan impl that has NOT opted into hygiene per the
+    /// Plan 05-03 per-scan matrix (`OutliersZAndMadScan` — both supports are
+    /// `false`) through a `dyn Scan` reference and asserts the defaults;
+    /// the `scan_trait_object_safe` compile-time gate proves dyn-safety.
+    ///
+    /// Plan 05-03 update: the original Plan 05-01 test used `LjungBoxScan`,
+    /// but Plan 05-03 opts `LjungBox` into both bootstrap + null methods per
+    /// the D5-04 matrix. The default-false assertion still applies to
+    /// scans whose per-scan matrix row is (false, false, false) — namely
+    /// `OutliersZAndMadScan`, `DrawdownProfileScan`, `AnovaKruskalScan`.
     #[test]
     fn scan_supports_bootstrap_and_null_method_default_false() {
-        let scan: Box<dyn Scan> = Box::new(crate::scan::ljung_box::LjungBoxScan);
+        let scan: Box<dyn Scan> = Box::new(crate::scan::anom::OutliersZAndMadScan);
         assert!(
             !scan.supports_bootstrap(),
-            "default supports_bootstrap() must be false"
+            "OutliersZAndMadScan default supports_bootstrap() must be false"
         );
         assert!(
             !scan.supports_null_method(NullMethod::PhaseScramble),
@@ -861,6 +1235,12 @@ mod tests {
             resolved_params: serde_json::json!({"lags": 20}),
             param_hash: blake3_hex_zero(),
             dry_run,
+            master_seed: None,
+            job_seed: None,
+            bootstrap_method: None,
+            bootstrap_n: None,
+            null_method: None,
+            null_n: None,
             #[cfg(any(test, feature = "test-internal"))]
             sleep_after_first_finding_ms: None,
         }

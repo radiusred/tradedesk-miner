@@ -23,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "cohens_d_vs_zero",
+      "value": 0.027731298886435645
+    },
     "extra": {
       "excess_kurtosis": {
         "data": "e60wbh9r4r8=",

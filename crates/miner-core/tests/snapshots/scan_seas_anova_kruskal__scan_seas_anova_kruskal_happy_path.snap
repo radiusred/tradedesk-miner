@@ -1,6 +1,5 @@
 ---
 source: crates/miner-core/tests/scan_seas_anova_kruskal.rs
-assertion_line: 98
 expression: masked
 ---
 {
@@ -24,7 +23,10 @@ expression: masked
   "dsr": null,
   "effect": {
     "ci95": null,
-    "effect_size": null,
+    "effect_size": {
+      "kind": "omega_squared",
+      "value": -0.02934028960961874
+    },
     "extra": {
       "anova_p_value": {
         "data": "mClEEfr/7z8=",
