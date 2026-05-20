@@ -952,42 +952,49 @@ pub enum Finding {
 
 **If this table feels long:** it's a side-effect of Phase 5 layering hygiene on top of a tested Phase 4 stack — most assumptions are *constants pins* rather than architectural choices, and the locked decisions in CONTEXT.md cover the architectural risk surface.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Per-scan default for `supports_null_method(NullMethod)` — IAAFT vs circular-shift for SEAS bucket scans.**
    - What we know: SEAS bucket-effect findings test "is the mean of bucket B different from zero?" — that's not a phase-scrambled hypothesis. Circular shift might still apply (shift the whole series; recompute bucket means; build null distribution).
    - What's unclear: Whether circular-shift adds value on top of the existing analytic per-bucket t-stat (SEAS-01) and ANOVA/Kruskal-Wallis (SEAS-05) p-values.
    - Recommendation: SEAS bucket scans → `supports_null_method(NullMethod) -> false` for both methods in v1. Bootstrap CIs DO apply (per-bucket mean over the bucket's observations — see CROSS-05 ANOVA + bootstrap CIs in scipy.stats reference). Plan-phase pins.
+   - **RESOLVED:** `false` for both methods on SEAS scans; analytic ANOVA/t-stat p-values cover the hypothesis space → pinned in **Plan 05-03** per-scan opt-in matrix.
 
 2. **Block-length default constant for `bootstrap = "block"` (FIXED-length variant).**
    - What we know: Politis-Romano stationary uses an *expected* block length. Plain block bootstrap uses a *fixed* length. Common defaults are `ceil(n^(1/3))` (Hall-Horowitz-Jing 1995) or the Politis-White selector applied as a *target* length (round to nearest integer).
    - What's unclear: Whether to expose the block length as a CLI flag (`--bootstrap-block-length N`) or always auto-select.
    - Recommendation: Always auto-select via Politis-White-Patton-Politis-White-2009 (PWPpW); compute the float `b_star` and use `max(3, ceil(b_star))` as both the fixed-length and the mean for stationary. Plan-phase pins; expose `--bootstrap-block-length` only in v2 if a use case demands it.
+   - **RESOLVED:** Auto-select via Politis-White (2004) + Patton-Politis-White (2009) correction; pinned in **Plan 05-02 Task 2** (`scan/hygiene/bootstrap.rs`).
 
 3. **`SweepSummary` envelope ordering relative to `RunEnd`.**
    - What we know: D5-02 says "between the last Result and `RunEnd`." Phase 3's D-09 framing is RunStart at the top, RunEnd at the bottom.
    - What's unclear: Whether `SweepSummary` is itself a framing-like record (no locked envelope fields) or a content-like record (locked fields present).
    - Recommendation: Framing-like — `SweepSummaryFinding` carries `run_id` + `produced_at_utc` only, no `schema_version` / `scan_id_at_version` / `param_hash` / `code_revision` / `data_slice`. The sweep summary is run-level, not scan-level. Plan-phase pins.
+   - **RESOLVED:** Framing-like (no locked envelope fields beyond the BH q-value table); pinned in **Plan 05-01** (`SweepSummaryFinding` + `FdrFamilySummary` types) and emitted in **Plan 05-04**.
 
 4. **Per-job `param_hash` derivation when the manifest's `params` field carries arrays.**
    - What we know: `param_hash` is computed over canonicalised (post-defaults) params (D3-13). In a sweep, each `ResolvedJob` corresponds to ONE param-point, not a param-array.
    - What's unclear: Whether the canonical `params` for a job is `{lags: 10}` (scalar) or `{lags: [10]}` (array-of-one).
    - Recommendation: Scalar. The job-graph expansion already iterates over the cartesian product, so by the time `ResolvedJob` is built, every param is a scalar. The `param_hash` is computed over the scalar form. Pins the byte-identical-rerun invariant.
+   - **RESOLVED:** Scalar (post-expansion); each expanded `ResolvedJob` carries its own scalar `param_hash`; pinned in **Plan 05-04 Task 1** (`sweep::job_graph`).
 
 5. **Master seed derivation when omitted from manifest.**
    - What we know: D5-05 says `master_seed` defaults to `blake3(manifest_hash || run_id)` when omitted. Echoed in `ReproEnvelope.master_seed`.
    - What's unclear: Whether `manifest_hash` is `blake3(file_bytes)` or `blake3(canonical_serialised_manifest)`. The former is stable to byte-identical re-input; the latter is stable to semantic re-input but breaks on whitespace/comment changes.
    - Recommendation: `blake3(file_bytes)`. Simpler, no canonicalisation step required, breaks only on actual file edits. Plan-phase pins.
+   - **RESOLVED:** `blake3(file_bytes)` of the raw TOML; pinned in **Plan 05-04 Task 1**.
 
 6. **Whether `Finding::SweepSummary` increments any counter in `RunSummary`.**
    - What we know: Phase 3 Pitfall 3 / Warning 9 enforces `RunSummary` having exactly four fields (`results_emitted`, `scan_errors`, `gap_aborted`, `per_scan`) — `DryRun` was deliberately NOT given a counter.
    - What's unclear: Whether `SweepSummary` should be counted similarly.
    - Recommendation: NO new counter. `SweepSummary` is run-level metadata, not a scan output. Pin via the Phase 3 Warning 9 regression test pattern (`run_summary_has_no_dry_run_emitted_field`-style exhaustive-destructure test for the four fields).
+   - **RESOLVED:** NO new counter (matches Phase 3 Warning 9 pattern); pinned implicitly by absence in **Plan 05-04**.
 
 7. **CI level exposure — pin 95% or expose `--ci-level 0.99`?**
    - What we know: `Effect.ci95: Option<[f64; 2]>` field name pins 95% in v1.
    - What's unclear: Whether v1 should ship `--ci-level` as a CLI flag.
    - Recommendation: Pin 95%. If a use case demands 99%, plan-phase can add `--ci-level` later (the field can stay `ci95` for back-compat; or v2 introduces `ci: Option<{level: f64, low: f64, high: f64}>`). Phase 5 does NOT expose `--ci-level`.
+   - **RESOLVED:** Pin 95% in v1; defer the flag to v2; pinned in **Plan 05-01** (BootstrapSpec.ci_level default 0.95) and **Plan 05-05** (no `--ci-level` flag).
 
 ## Environment Availability
 

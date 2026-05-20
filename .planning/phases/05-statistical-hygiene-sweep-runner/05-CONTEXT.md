@@ -386,6 +386,8 @@ These decisions can be resolved from Phase 3-4 patterns + Politis-Romano (1994) 
 - **Look-ahead-safety + shuffled-future regression** (Phase 3 D3-09, Phase 4 D4-extension) — every Phase 5 bootstrap / null kernel is causal (no future bars in any resample); the existing `shuffled_future_regression.rs` test pattern extends.
 - **SIGINT cancel polling** (D3-22) — bootstrap inner loops poll `ctx.cancel.load(Ordering::Relaxed)` between resamples (cheap with a polling cadence of every N=64 resamples, similar to Plan 04-10's `CANCEL_POLL_CADENCE = 4096` for SEAS scans).
 
+  **Phase 5 amendment to D3-22 (2026-05-20):** Cancel-poll cadence for Phase 5 is relaxed from per-N=64-resamples to per-kernel-call. Justification: with `[bootstrap].n_resamples` capped at 100_000 and the `[sweep].max_jobs` ceiling, worst-case latency between cancel signal and worker return is bounded (~seconds on typical bar windows). Per-resample polling is deferred to Phase 7 hardening if profiling shows the per-kernel-call cadence is insufficient. Plan 05-03 Task 3 documents this trade-off explicitly.
+
 ### Integration Points (where Phase 5 code connects to existing system)
 - **`Scan` trait methods `supports_bootstrap()` + `supports_null_method()`** — NEW default-false methods; object-safety regression gate (`scan_trait_object_safe` test) MUST continue to pass after the addition.
 - **`PreflightCode` enum** — TWO new variants added.
