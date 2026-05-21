@@ -27,7 +27,7 @@ proc = subprocess.Popen(
         "--instrument", "EURUSD:bid",
         "--timeframe", "15m",
         "--window", "2024-06-12:2024-06-13",
-        "--param", "lags=5",
+        "--params", "lags=5",
     ],
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
@@ -47,7 +47,7 @@ Notes:
 - `text=True` decodes stdout as UTF-8; miner only ever emits valid UTF-8 NDJSON.
 - For low-latency streaming, set `bufsize=1` to force line buffering on stdout.
 - `stderr=subprocess.PIPE` is recommended so log lines and any preflight `WireError` do not pollute the agent's own stderr; read them in a separate thread if you want real-time log surfacing.
-- The `--param` flag may be repeated; each pair is `key=value`. The full canonical invocation form is documented in the README's Quickstart.
+- The `--params` flag may be repeated; each pair is `key=value`. The full canonical invocation form is documented in the README's Quickstart.
 
 ## Parsing the JSONL stream
 
@@ -81,25 +81,23 @@ Stream order is contractual: exactly one `run_start` opens the stream, zero or m
 
 ## Decoding raw arrays
 
-Every `Result` envelope may carry a `raw.series` block of base64-encoded little-endian arrays alongside `effect.extra` (which uses the same `RawArray` shape). The canonical one-liner is `np.frombuffer(base64.b64decode(raw["data"]), dtype="<f8").reshape(raw["shape"])` — wrapped in a small helper:
+Every `Result` envelope may carry a `raw.series` block of base64-encoded little-endian arrays alongside `effect.extra` (which uses the same `RawArray` shape). The wire-form `dtype` string is NOT a NumPy dtype literal — pass it through a small lookup table to the NumPy little-endian shorthand before calling `np.dtype`:
 
 ```python
 import base64
 import numpy as np
 
+# v1 emits exactly one variant; the lookup table keeps additive future
+# variants from silently breaking this decoder.
+_WIRE_TO_NUMPY = {"f64": "<f8"}
+
 def decode_raw_array(raw_array):
     """Decode one RawArray dict {dtype, shape, data} into a numpy ndarray."""
-    return np.frombuffer(base64.b64decode(raw_array["data"]), dtype=raw_array["dtype"]).reshape(tuple(raw_array["shape"]))
+    np_dtype = np.dtype(_WIRE_TO_NUMPY[raw_array["dtype"]])
+    return np.frombuffer(base64.b64decode(raw_array["data"]), dtype=np_dtype).reshape(tuple(raw_array["shape"]))
 ```
 
-The `dtype` strings match NumPy's standard little-endian shorthand:
-
-- `"f64"` ⟷ `np.dtype("<f8")` (8-byte IEEE-754 double).
-- `"f32"` ⟷ `np.dtype("<f4")`.
-- `"i64"` ⟷ `np.dtype("<i8")`.
-- `"i32"` ⟷ `np.dtype("<i4")`.
-- `"u64"` ⟷ `np.dtype("<u8")`.
-- `"u32"` ⟷ `np.dtype("<u4")`.
+v1 `dtype` values: `"f64"` ⟷ `np.dtype("<f8")` (8-byte IEEE-754 double). The `Dtype` enum (`crates/miner-core/src/findings/base64_bytes.rs`) is intentionally a single-variant enum in v1 — every `RawArray` carries `dtype: "f64"`, INCLUDING `timestamps_ms` (timestamps are packed as f64 ms-since-epoch, not i64). Future schema versions may additively introduce `"f32"` / `"i64"` / ... — the wire form is an open string for forward-compat, so consumers should route through a lookup table rather than passing the wire-form dtype directly to `np.dtype()` (NumPy does NOT recognise `"f64"` and will raise `TypeError: data type 'f64' not understood`).
 
 `shape` is a JSON array of unsigned integers — `[95]` for a flat 95-element series, `[1024, 4]` for a 2-D array. Every `Raw` block carries a `timestamps_ms` array parallel to the other entries (D-03; enforced at construction by `Raw::new` in `crates/miner-core/src/findings/mod.rs`).
 
@@ -107,11 +105,11 @@ A runnable end-to-end decoder lives at [examples/decode_finding.py](examples/dec
 
 ## Exit codes
 
-miner follows the four-tier exit-code routing locked by D3-24:
+miner follows the four-tier exit-code routing locked by D3-24 (canonical source: `compute_exit_code` in `crates/miner-cli/src/main.rs`):
 
 - `0` — clean run; the stream closed with `RunEnd`; the agent should process every envelope received.
-- `1` — preflight or kernel error. A `WireError` envelope was emitted on stderr (preflight rejection, before any `RunStart`) OR one or more `Finding::ScanError` envelopes appeared mid-stream. The agent MUST inspect the envelope's `error_code` (mid-stream) or `code` (preflight) field rather than treating exit 1 as opaque. `RunEnd` may still be present if the failure was mid-stream.
-- `2` — invalid CLI usage. clap-derive rejected the argument list; stderr carries the usage banner. No envelopes are emitted; the agent should treat this as an integration bug, not a data-error.
+- `1` — preflight rejection. A `WireError` was emitted on stderr; no `RunStart` ever reached stdout. Inspect the `code` field on the stderr envelope to route by `PreflightCode`. Mid-stream `ScanError` envelopes do NOT exit 1 — they exit 2.
+- `2` — at least one mid-stream `Finding::ScanError` was emitted (the run continued for other jobs but at least one failed). The agent MUST inspect each `ScanError` envelope's `error_code` field rather than treating exit 2 as opaque. `RunEnd` may still be present. Exit 2 is ALSO clap's default code when argv parsing fails — in that case stdout is empty and stderr carries clap's usage banner (no `RunStart`, no `ScanError` envelopes); discriminate by whether stdout is empty.
 - `130` — SIGINT (POSIX convention `128 + 2`). The user (or the parent agent) sent Ctrl-C. Every `Result` envelope already streamed to stdout was flushed at emission time and is valid; the run terminates between envelopes; `RunEnd` may be present for `miner scan`, is suppressed for `miner sweep` (a partial sweep cannot run BH-FDR aggregation — see [findings_envelope.md](findings_envelope.md#sweepsummary-fields)).
 
 A defensive routing pattern:
@@ -121,9 +119,16 @@ rc = proc.wait()
 if rc == 0:
     finalise_clean(envelopes)
 elif rc == 1:
-    inspect_error_envelope(envelopes, stderr_text)
+    # Preflight rejection. Look for a WireError JSON line on stderr.
+    inspect_preflight_error(stderr_text)
 elif rc == 2:
-    report_integration_bug(proc.args, stderr_text)
+    # Either mid-stream ScanError(s) ran (stdout non-empty, contains
+    # ScanError envelopes) OR clap rejected the argv (stdout empty,
+    # stderr carries the usage banner).
+    if envelopes:
+        inspect_scan_error_envelopes(envelopes)
+    else:
+        report_integration_bug(proc.args, stderr_text)
 elif rc == 130:
     finalise_partial(envelopes)
 else:
@@ -169,7 +174,7 @@ The recommended discovery flow for an agent that wants to call a previously-unkn
 
 1. Run `miner scans`; cache the JSONL output (it is stable for a given miner binary build).
 2. For the target `scan_id`, read `param_schema` to know which parameters are required and what types they accept.
-3. Spawn `miner scan <scan_id@version>` with `--param key=value` flags matching the schema.
+3. Spawn `miner scan <scan_id@version>` with `--params key=value` flags matching the schema.
 4. If preflight rejects with `unknown_scan` or `invalid_parameter`, your cached catalogue is stale relative to the binary — re-run `miner scans`.
 
 ## Reproducibility

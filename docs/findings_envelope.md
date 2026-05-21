@@ -48,8 +48,6 @@ Additionally every `Result` envelope carries:
 - `run_id` — the parent `RunStart`'s ULID, echoed verbatim so all findings in one run share an identifier.
 - `produced_at_utc` — RFC 3339 UTC timestamp.
 - `params` — the resolved parameter map (post-defaults). `serde_json::Value` shape — typically `{"key": value, ...}`.
-- `instruments` — leg-labelled instrument vector inherited from `ScanRequest.instruments`. Length 1 for ANOM / SEAS Single-arity scans, length 2 for CROSS Pair-arity scans. Each entry is an `InstrumentSpec { symbol, side }` (Phase 4 / D4-01).
-- `timeframe` — the bar-resolution string (e.g. `"15m"`, `"1h"`, `"1d"`). Always present alongside `instruments`.
 - `effect` — the test statistic + p-value + optional CI + optional effect-size + per-scan extras (see "Effect block" below).
 - `raw` — optional inputs the scan consumed (base64-encoded little-endian raw bytes; see "Raw arrays" below).
 - `repro` — optional reproducibility envelope (populated when bootstrap / null resampling produced the finding's p-value or CI; see "Reproducibility envelope" below).
@@ -70,7 +68,7 @@ A representative `Result` envelope (abridged):
   "produced_at_utc": "2024-06-13T00:00:01Z",
   "params": { "lags": 5 },
   "effect": { "metric": "ljung_box_q", "value": 12.34, "p_value": 0.0123, "n": 96, "ci95": null, "effect_size": null, "extra": { "...": "..." } },
-  "raw": { "series": { "returns": { "data": "...base64...", "shape": [95], "dtype": "f64" }, "timestamps_ms": { "data": "...", "shape": [95], "dtype": "i64" } } },
+  "raw": { "series": { "returns": { "data": "...base64...", "shape": [95], "dtype": "f64" }, "timestamps_ms": { "data": "...", "shape": [95], "dtype": "f64" } } },
   "repro": null
 }
 ```
@@ -130,9 +128,9 @@ Optional inputs the scan consumed live in `raw.series` (`crates/miner-core/src/f
 - `RawArray { data: Base64Bytes, shape: Vec<u64>, dtype: Dtype }`:
   - `data` — standard base64 (RFC 4648) over the raw little-endian bytes.
   - `shape` — JSON array of unsigned ints, e.g. `[95]` or `[1024, 4]`.
-  - `dtype` — one of `"f64"`, `"f32"`, `"i64"`, `"i32"`, `"u64"`, `"u32"` (the `Dtype` enum is open-additive — see `findings/base64_bytes.rs`).
+  - `dtype` — v1 emits exactly one value: `"f64"` ⟷ `np.dtype("<f8")` (8-byte IEEE-754 double). The `Dtype` enum in `crates/miner-core/src/findings/base64_bytes.rs` is intentionally a single-variant enum in v1; the JSON Schema treats `dtype` as an open-string field so additive variants (`"f32"`, `"i64"`, future `"json"`) can land without a schema break.
 
-Every `Raw` block MUST carry a `timestamps_ms` key (D-03; enforced at construction by `Raw::new`). The `timestamps_ms` array is i64 little-endian milliseconds-since-Unix-epoch and is parallel to the other arrays in the block.
+Every `Raw` block MUST carry a `timestamps_ms` key (D-03; enforced at construction by `Raw::new`). The `timestamps_ms` array is f64 little-endian milliseconds-since-Unix-epoch (v1 carries every array including timestamps as f64; consumers cast back to integer ms in user code) and is parallel to the other arrays in the block.
 
 Canonical Python decode one-liner:
 
@@ -152,12 +150,13 @@ assert line["kind"] == "result"
 arr = line["raw"]["series"]["returns"]
 returns = np.frombuffer(base64.b64decode(arr["data"]), dtype="<f8").reshape(arr["shape"])
 ts_arr = line["raw"]["series"]["timestamps_ms"]
-timestamps_ms = np.frombuffer(base64.b64decode(ts_arr["data"]), dtype="<i8").reshape(ts_arr["shape"])
+# v1 packs timestamps_ms as f64 (NOT i64); cast to int64 ms in user code.
+timestamps_ms = np.frombuffer(base64.b64decode(ts_arr["data"]), dtype="<f8").reshape(ts_arr["shape"]).astype(np.int64)
 assert returns.shape == timestamps_ms.shape
 #returns[i] is the log-return at timestamps_ms[i]; reconstruct any per-scan invariant from this pair.
 ```
 
-The dtype string (`"<f8"` for f64, `"<i8"` for i64, etc.) follows NumPy's standard little-endian shorthand. The shape array is the multi-dimensional shape; flat 1-D arrays appear as `[N]`.
+The dtype string `"<f8"` is NumPy's standard little-endian shorthand for the v1 sole `Dtype::F64` variant. The shape array is the multi-dimensional shape; flat 1-D arrays appear as `[N]`.
 
 ## Reproducibility envelope
 
@@ -195,10 +194,10 @@ The envelope on stdout is one half of miner's contract; stderr is the other.
 
 - **Stdout** carries NDJSON `Finding` envelopes only — one per line, no leading whitespace, no padding, terminated by `\n`. The single sanctioned writer is `FindingSink` (production impls: `StdoutSink` and `FileSink`). Scans never call `println!` or any other stdout writer; `clippy::disallowed_macros` rejects this at build time outside the sink module (D-15, D-19).
 - **Stderr** carries structured `tracing` events (instrument / scan / job spans) plus the single `WireError` envelope emitted on preflight rejection. Consumers parse stderr as line-delimited JSON when invoked via subprocess and treat any non-JSON line as a free-form log message.
-- **Exit codes** follow the four-tier mapping (D3-24):
-  - `0` — run completed (zero or more `Result` / `ScanError` envelopes emitted, `RunEnd` closed the stream).
+- **Exit codes** follow the four-tier mapping (D3-24; canonical source `compute_exit_code` in `crates/miner-cli/src/main.rs`):
+  - `0` — clean run; `RunEnd` closed the stream.
   - `1` — preflight rejection (a single `WireError` on stderr, no `RunStart` on stdout). Examples: `unknown_scan`, `invalid_parameter`, `sweep_too_large`.
-  - `2` — fatal mid-run error (catastrophic engine failure; no further structured envelopes guaranteed).
+  - `2` — at least one mid-stream `Finding::ScanError` was emitted (the run continued for other jobs but at least one failed). Exit 2 is also clap's default code when argv parsing fails — in that case stdout is empty and stderr carries clap's usage banner.
   - `130` — SIGINT (Ctrl-C). Already-streamed envelopes persist; the run is interrupted between envelopes.
 
 The locked envelope discipline is what makes subprocess invocation work: a consumer reading stdout line-by-line as JSON can correctly classify every line by `"kind"` without out-of-band coordination.
