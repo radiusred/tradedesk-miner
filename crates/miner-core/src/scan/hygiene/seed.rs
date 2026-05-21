@@ -6,18 +6,40 @@
 //! collapses the 32-byte blake3 hash to a `u64` via little-endian read of the
 //! first 8 bytes — the right shape for `Xoshiro256PlusPlus::seed_from_u64`.
 //!
-//! ## Canonicalisation rules (HYG-05 / 05-PATTERNS lines 378-386)
+//! ## Canonicalisation rules (HYG-05 / 05-PATTERNS lines 378-386; WR-07 revision)
 //!
-//! The hash input is the byte concatenation of, in this order:
+//! The hash input uses LENGTH-PREFIXED encoding for every variable-length
+//! field so byte-boundary collisions are mathematically impossible. Each
+//! variable-length string is preceded by its `u64::to_le_bytes()` length,
+//! and instrument specs are written as `(symbol_len, symbol, side_str)`
+//! tuples to prevent `:` characters in symbols from colliding with a
+//! different `(symbol, side)` pair.
+//!
+//! Hash input, in order:
 //!
 //! 1. `master_seed.to_le_bytes()` — little-endian (matches the `u64` wire
 //!    convention used everywhere else in `miner-core`).
-//! 2. `scan_id_at_version.as_bytes()` — raw `"scan_id@version"` ASCII.
-//! 3. For each `InstrumentSpec`, in vector order:
-//!    `format!("{}:{}", spec.symbol, spec.side.as_str()).as_bytes()`.
-//! 4. `timeframe.as_str().as_bytes()` — `"15m"` / `"1h"` / `"1d"`.
-//! 5. `format!("{}/{}", window.start.to_rfc3339(), window.end.to_rfc3339()).as_bytes()`.
-//! 6. `param_hash.as_bytes()` — the existing Phase 2 `Blake3Hex` hex string.
+//! 2. `scan_id_at_version.len() as u64` (LE) + `scan_id_at_version.as_bytes()`.
+//! 3. `instruments.len() as u64` (LE) — number of instrument specs.
+//! 4. For each `InstrumentSpec`, in vector order:
+//!    - `symbol.len() as u64` (LE) + `symbol.as_bytes()`,
+//!    - `side_str.len() as u64` (LE) + `side_str.as_bytes()`.
+//! 5. `timeframe.len() as u64` (LE) + `timeframe.as_bytes()`.
+//! 6. `window_str.len() as u64` (LE) + `window_str.as_bytes()` (rfc3339
+//!    start/end joined by `/`).
+//! 7. `param_hash.len() as u64` (LE) + `param_hash.as_bytes()`.
+//!
+//! ## WR-07: collision-resistance discipline
+//!
+//! Pre-WR-07 the hash concatenated raw ASCII bytes with `:` as the
+//! intra-field separator (`format!("{}:{}", symbol, side.as_str())`).
+//! A symbol containing a literal `:` could collide with a different
+//! `(symbol, side)` pair, AND no inter-instrument delimiter meant two
+//! adjacent specs `(s1, side1)` and `(s2, side2)` could collide with a
+//! single spec `(s1:side1s2, side2)` for crafted symbols. The
+//! length-prefix discipline eliminates both collision paths at the
+//! cost of one `MINER_CODE_REVISION` bump (changing the canonical bytes
+//! changes every previously-pinned reference seed).
 //!
 //! These rules MUST match the byte-identical-rerun invariant: any change to
 //! the canonical-bytes formatting requires a `Cargo.toml` major-version bump
@@ -36,6 +58,15 @@
 use crate::aggregator::Timeframe;
 use crate::reader::{ClosedRangeUtc, InstrumentSpec};
 use blake3::Hasher;
+
+/// WR-07 helper: write a length-prefixed byte slice into a blake3 hasher.
+/// The prefix is `bytes.len() as u64` in little-endian; on 64-bit
+/// platforms the `as u64` cast is lossless.
+#[inline]
+fn update_len_prefixed(hasher: &mut Hasher, bytes: &[u8]) {
+    hasher.update(&(bytes.len() as u64).to_le_bytes());
+    hasher.update(bytes);
+}
 
 /// Derive a per-job 64-bit seed from the master seed + the job's canonical
 /// identity tuple (HYG-05 / D5-05).
@@ -65,15 +96,22 @@ pub fn derive_job_seed(
     window: &ClosedRangeUtc,
     param_hash: &str,
 ) -> u64 {
+    // WR-07: length-prefix every variable-length field so a `:`-bearing
+    // symbol (or boundary-bleed between adjacent specs) cannot collide
+    // with a different canonical input.
     let mut hasher = Hasher::new();
     hasher.update(&master_seed.to_le_bytes());
-    hasher.update(scan_id_at_version.as_bytes());
+    update_len_prefixed(&mut hasher, scan_id_at_version.as_bytes());
+    // Inter-instrument delimiter: count of specs as a fixed-width u64.
+    hasher.update(&(instruments.len() as u64).to_le_bytes());
     for spec in instruments {
-        hasher.update(format!("{}:{}", spec.symbol, spec.side.as_str()).as_bytes());
+        update_len_prefixed(&mut hasher, spec.symbol.as_bytes());
+        update_len_prefixed(&mut hasher, spec.side.as_str().as_bytes());
     }
-    hasher.update(timeframe.as_str().as_bytes());
-    hasher.update(format!("{}/{}", window.start.to_rfc3339(), window.end.to_rfc3339()).as_bytes());
-    hasher.update(param_hash.as_bytes());
+    update_len_prefixed(&mut hasher, timeframe.as_str().as_bytes());
+    let window_str = format!("{}/{}", window.start.to_rfc3339(), window.end.to_rfc3339());
+    update_len_prefixed(&mut hasher, window_str.as_bytes());
+    update_len_prefixed(&mut hasher, param_hash.as_bytes());
     let bytes = hasher.finalize();
     let head: [u8; 8] = bytes
         .as_bytes()
@@ -263,6 +301,104 @@ mod tests {
         assert_ne!(
             s_ab, s_ba,
             "instrument vector order must change the derived seed (leg ordering is load-bearing)"
+        );
+    }
+
+    /// WR-07 regression: symbols containing `:` MUST NOT collide with a
+    /// different `(symbol, side)` pair on the canonical-bytes wire.
+    ///
+    /// Pre-WR-07 the encoding was `format!("{}:{}", symbol, side.as_str())`
+    /// which produced byte-identical canonical input for the two pairs
+    /// below. Post-WR-07 the length-prefix discipline pulls them apart
+    /// with overwhelming probability.
+    #[test]
+    fn derive_job_seed_symbol_with_colon_does_not_collide() {
+        let window = sample_window();
+        // Pair A: symbol "FOO:bid", side Ask → pre-fix bytes: "FOO:bid:ask"
+        let a = vec![InstrumentSpec {
+            symbol: "FOO:bid".into(),
+            side: Side::Ask,
+        }];
+        // Pair B: symbol "FOO", side Bid + suffix "ask" — pre-fix bytes
+        // for the concatenation `"FOO:bid" + "ask"` would equal pair A's
+        // canonical input. With length-prefixing this is impossible.
+        let b = vec![
+            InstrumentSpec {
+                symbol: "FOO".into(),
+                side: Side::Bid,
+            },
+            // Crafted second spec whose symbol bytes "fall into" pair A's
+            // separator region under the pre-WR-07 encoding.
+            InstrumentSpec {
+                symbol: "ask".into(),
+                side: Side::Bid,
+            },
+        ];
+        let s_a = derive_job_seed(
+            0xDEAD,
+            "cross.corr.pearson_rolling@1",
+            &a,
+            Timeframe::Tf15m,
+            &window,
+            "abc",
+        );
+        let s_b = derive_job_seed(
+            0xDEAD,
+            "cross.corr.pearson_rolling@1",
+            &b,
+            Timeframe::Tf15m,
+            &window,
+            "abc",
+        );
+        assert_ne!(
+            s_a, s_b,
+            "length-prefix encoding must isolate symbol bytes from side bytes (WR-07)"
+        );
+    }
+
+    /// WR-07: inter-instrument boundary collisions. Two pairs of specs
+    /// whose concatenations match pre-WR-07 but separate under length-
+    /// prefixing.
+    #[test]
+    fn derive_job_seed_adjacent_specs_do_not_collide_via_concatenation() {
+        let window = sample_window();
+        // Pair A: two specs "AB", "CD" both Bid.
+        let a = vec![
+            InstrumentSpec {
+                symbol: "AB".into(),
+                side: Side::Bid,
+            },
+            InstrumentSpec {
+                symbol: "CD".into(),
+                side: Side::Bid,
+            },
+        ];
+        // Pair B: single spec "AB:bidCD" Bid — pre-WR-07 this had the
+        // same concatenated ASCII as pair A's two specs joined together
+        // (no inter-spec delimiter). Length-prefixing separates them.
+        let b = vec![InstrumentSpec {
+            symbol: "AB:bidCD".into(),
+            side: Side::Bid,
+        }];
+        let s_a = derive_job_seed(
+            0xDEAD,
+            "scan@1",
+            &a,
+            Timeframe::Tf15m,
+            &window,
+            "abc",
+        );
+        let s_b = derive_job_seed(
+            0xDEAD,
+            "scan@1",
+            &b,
+            Timeframe::Tf15m,
+            &window,
+            "abc",
+        );
+        assert_ne!(
+            s_a, s_b,
+            "adjacent specs must not collide with a single spec containing the joined bytes (WR-07)"
         );
     }
 }
