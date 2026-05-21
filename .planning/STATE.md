@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: verifying
 stopped_at: Plan 06-01 complete — docs-only Phase 6 scope locked; ARCHITECTURE.md + license-footer published
-last_updated: "2026-05-21T18:36:49.775Z"
+last_updated: "2026-05-21T18:54:08.923Z"
 last_activity: 2026-05-21
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 41
-  completed_plans: 40
-  percent: 98
+  completed_plans: 41
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 
 Phase: 06 (mcp-http-wrappers) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-21
 
-Progress: [██████████] 98%
+Progress: [██████████] 100%
 
 Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, phase-scramble nulls, BH-FDR, sweep manifest. Begin with `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
 
@@ -65,6 +65,7 @@ Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, 
 | Phase 04 P04-12 | ~40min | 3 tasks | 9 files |
 | Phase 06 P01 | ~8min | 2 tasks | 6 files |
 | Phase 6 P2 | 12min | 3 tasks | 3 files |
+| Phase 06 P03 | 25min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Plan 06-01: ARCHITECTURE.md uses plain-text section labels (Overview / Data Flow (high level) / Sync core + async edges / Key design decisions) — NOT H2 headings — per the tradedesk sibling-repo pattern. Only the trailing License heading is H2. Replaces tradedesk's 'Live vs Backtest paths' section with miner's 'Sync core + async edges' (FOUND-04 / D-15 / D-19).
 - [Phase ?]: D6-02-FOOTER: docs/.license-footer.md paste-verbatim is the single load-bearing constraint for v1 docs; diff-verified byte-identity is the acceptance gate
 - [Phase ?]: D6-02-CATALOGUE: per-scan H3 block layout (5-10 lines each) over wide-table for scan_catalogue.md; matches indicator_guide.md depth without ballooning
+- [Phase ?]: [Phase 6 Plan 03] Phase 6 docs-only deliverable complete: docs/agent_integration.md + docs/future_mcp_http.md + docs/examples/* + README ## Documentation section + D6-08 placeholder-main retargeting. Zero new deps; cargo tree -p miner-core still zero async-deps; rustfmt expanded both mains to 14 lines vs the plan's 12-line target.
+- [Phase ?]: [Phase 6 Plan 03] 12 Open Questions dispositioned: #1 per-doc line counts hit; #2 per-scan compact-block applied (06-02); #3 + #4 example CI smoke-tests DEFERRED to Phase 7; #5 Pattern A applied (06-01); #6 bare URL footer (06-01); #7 success-criteria rewrite applied (06-01); #8 + #10 CONTRIBUTING.md DEFERRED; #9 doc-lint CI gate DEFERRED to Phase 7; #11 placeholder mains updated (D6-08); #12 SPDX one-liner applied.
 
 ### Pending Todos
 
@@ -126,7 +129,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-21T18:36:33.321Z
+Last session: 2026-05-21T18:53:55.759Z
 Stopped at: Plan 06-01 complete — docs-only Phase 6 scope locked; ARCHITECTURE.md + license-footer published
 Resume file: None
 Next action: Begin Phase 5 (Statistical Hygiene & Sweep Runner) via `/gsd-discuss-phase 5`. The Phase 5 plan in ROADMAP.md owns OP-04 (TOML sweep manifest fanout) + HYG-01..05 (effect sizes, BH-FDR, block bootstrap, phase-scrambled nulls, bit-for-bit reproducible RNG).

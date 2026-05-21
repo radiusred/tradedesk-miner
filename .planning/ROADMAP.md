@@ -151,7 +151,7 @@ Plans:
 Plans:
 - [x] 06-01-PLAN.md — Scope amendments (PROJECT/REQUIREMENTS/ROADMAP/STATE per D6-05/06/07) + root ARCHITECTURE.md + docs/.license-footer.md helper
 - [x] 06-02-PLAN.md — Reference docs triad: findings_envelope.md, scan_catalogue.md, sweep_manifest.md
-- [ ] 06-03-PLAN.md — docs/agent_integration.md + docs/future_mcp_http.md + docs/examples/ + README ## Documentation + placeholder-binary message updates + Phase 6 sign-off
+- [x] 06-03-PLAN.md — docs/agent_integration.md + docs/future_mcp_http.md + docs/examples/ + README ## Documentation + placeholder-binary message updates + Phase 6 sign-off
 **UI hint**: No
 
 ### Phase 7: Hardening, Benchmarks & Reproducibility
