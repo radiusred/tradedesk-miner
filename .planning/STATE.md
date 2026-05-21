@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 6 context gathered (docs-only scope)
-last_updated: "2026-05-21T17:08:50.145Z"
-last_activity: 2026-05-21 -- Phase 06 planning complete
+last_updated: "2026-05-21T18:01:32.825Z"
+last_activity: 2026-05-21 -- Phase 06 execution started
 progress:
   total_phases: 7
   completed_phases: 5
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-15)
 
 **Core value:** Surface raw statistical candidates from years of OHLCV data fast enough that a quant agent can run wide sweeps and targeted queries interactively, without waiting on Python data pipelines.
-**Current focus:** Phase 05 — statistical-hygiene-sweep-runner
+**Current focus:** Phase 06 — mcp-http-wrappers
 
 ## Current Position
 
-Phase: 6
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-21 -- Phase 06 planning complete
+Phase: 06 (mcp-http-wrappers) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 06
+Last activity: 2026-05-21 -- Phase 06 execution started
 
 Progress: [██████████] 100%
 
@@ -101,7 +101,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- **Phase 6 (MCP & HTTP wrappers):** `rmcp` is the highest-risk dependency in the stack. Plan-phase must re-run `gsd-research` on rmcp (crate name, version, stdio + streamable-HTTP transport, streaming tool-result chunks, tokio compatibility) before kickoff. Fallback is a hand-rolled JSON-RPC-over-stdio (~500 LOC against `serde_json`) which does not affect the HTTP wrapper.
+- **Phase 6 deferred (now docs-only):** design documented in docs/future_mcp_http.md; v2 owns the rmcp re-research + implementation (tracked as PLAT-v2-07 + PLAT-v2-08).
 - **Phase 4 implementation risk:** ADF, KPSS, Engle-Granger, block bootstrap, BH-FDR, and DSR are not covered by any comprehensive Rust stats crate. Plan time for hand-rolled implementations validated against scipy/statsmodels golden outputs.
 
 Resolved this phase:
@@ -114,7 +114,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| Operator surface | OP-02 (MCP) + OP-03 (HTTP) | Design documented v1 (docs/future_mcp_http.md); implementation deferred to v2 (PLAT-v2-07, PLAT-v2-08) | Phase 6 |
 
 ## Session Continuity
 

@@ -29,8 +29,6 @@ Requirements for initial release. Each maps to a roadmap phase.
 ### Operator Surface (OP)
 
 - [ ] **OP-01**: User can run a single scan by name with parameters from the CLI (`miner scan <name@version> --instrument ... --timeframe ... --window ...`)
-- [ ] **OP-02**: User can call any scan through the MCP server with the same parameter shape and identical findings output
-- [ ] **OP-03**: User can call any scan through an HTTP API with the same parameter shape and identical findings output
 - [ ] **OP-04**: User can submit a TOML sweep manifest (scans × instruments × timeframes × windows × parameter grids) and have miner fan it out in parallel
 - [ ] **OP-05**: User can dry-run a sweep manifest and see the planned job graph + estimated job count before committing
 - [ ] **OP-06**: User can interrupt an in-progress sweep (SIGINT) and keep every finding already streamed to stdout
@@ -112,6 +110,8 @@ Deferred to a future release. Tracked but not in the v1 roadmap.
 - **PLAT-v2-04**: GARCH / EGARCH model fitting as a scan
 - **PLAT-v2-05**: Bayesian online change-point detection
 - **PLAT-v2-06**: Wavelet / spectral seasonality decomposition
+- **PLAT-v2-07**: MCP server wrapping miner-core via tokio::task::spawn_blocking (see docs/future_mcp_http.md)
+- **PLAT-v2-08**: HTTP server wrapping miner-core via tokio::task::spawn_blocking (see docs/future_mcp_http.md)
 
 ## Out of Scope
 
@@ -151,8 +151,8 @@ Every v1 requirement maps to exactly one phase.
 | CACHE-07 | Phase 2 | Pending |
 | CACHE-08 | Phase 2 | Pending |
 | OP-01 | Phase 3 | Pending |
-| OP-02 | Phase 6 | Pending |
-| OP-03 | Phase 6 | Pending |
+| OP-02 | v2 (PLAT-v2-07) | Reclassified — design in docs/future_mcp_http.md |
+| OP-03 | v2 (PLAT-v2-08) | Reclassified — design in docs/future_mcp_http.md |
 | OP-04 | Phase 5 | Pending |
 | OP-05 | Phase 3 | Pending |
 | OP-06 | Phase 3 | Pending |
@@ -193,8 +193,8 @@ Every v1 requirement maps to exactly one phase.
 **Phase 7 (Hardening, Benchmarks & Reproducibility)** carries no new v1 REQ-IDs; it closes verification debt for FOUND-02, FOUND-03, FOUND-04, CACHE-04, OUT-03, HYG-02, and HYG-05 via golden-file regression tests, noise-replay sweep test, flamegraph profiling, the `miner-bench` + hyperfine bench harness, `cargo audit` / `cargo deny` clean runs, and the README data-source caveats section.
 
 **Coverage:**
-- v1 requirements: 52 total
-- Mapped to phases: 52 ✓
+- v1 requirements: 50 total
+- Mapped to phases: 50 ✓
 - Unmapped: 0
 
 ---

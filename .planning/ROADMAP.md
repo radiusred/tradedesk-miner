@@ -2,7 +2,7 @@
 
 ## Overview
 
-`tradedesk-miner` is built strictly layer-by-layer because every downstream phase consumes the correctness contracts established earlier. Phase 1 locks the workspace shape, the `Finding` envelope JSON schema, the stdout/findings vs stderr/logs discipline, and the config precedence model — none of these can be safely retrofitted. Phase 2 lands the reader, aggregator, derived-bar cache, and gap manifest, which together are the correctness foundation for every finding. Phase 3 brings the scan engine, facade, look-ahead-safe windowing, gap-policy enforcement, and the CLI wrapper that validates the facade before MCP/HTTP commit to it. Phase 4 rolls out the v1 scan catalogue (ANOM, CROSS, SEAS) against the locked facade. Phase 5 adds the statistical-hygiene layer (effect sizes, bootstrap, phase-scrambled nulls, BH-FDR) and the sweep-manifest runner. Phase 6 ships the MCP and HTTP wrappers in parallel — flagged for `rmcp` re-research at phase start. Phase 7 hardens the system with golden-file regression tests, the noise-replay sweep test, flamegraph profiling, the bench harness, and the README + data-source caveats.
+`tradedesk-miner` is built strictly layer-by-layer because every downstream phase consumes the correctness contracts established earlier. Phase 1 locks the workspace shape, the `Finding` envelope JSON schema, the stdout/findings vs stderr/logs discipline, and the config precedence model — none of these can be safely retrofitted. Phase 2 lands the reader, aggregator, derived-bar cache, and gap manifest, which together are the correctness foundation for every finding. Phase 3 brings the scan engine, facade, look-ahead-safe windowing, gap-policy enforcement, and the CLI wrapper that validates the facade before MCP/HTTP commit to it. Phase 4 rolls out the v1 scan catalogue (ANOM, CROSS, SEAS) against the locked facade. Phase 5 adds the statistical-hygiene layer (effect sizes, bootstrap, phase-scrambled nulls, BH-FDR) and the sweep-manifest runner. Phase 6 publishes the design contract and `docs/` folder describing the locked envelope, scan catalogue, sweep manifest, agent-integration guide, and the deferred MCP+HTTP wrapper design; the wrapper implementations move to v2. Phase 7 hardens the system with golden-file regression tests, the noise-replay sweep test, flamegraph profiling, the bench harness, and the README + data-source caveats.
 
 ## Phases
 
@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Scan Engine, Facade & CLI** - Scan trait/registry, facade, look-ahead-safe windowing, gap-policy enforcement, CLI wrapper
 - [x] **Phase 4: Scan Catalogue (ANOM, CROSS, SEAS)** - All v1 statistical, cross-instrument, and seasonality scans (completed 2026-05-20)
 - [ ] **Phase 5: Statistical Hygiene & Sweep Runner** - Effect sizes, bootstrap, phase-scramble nulls, BH-FDR, sweep manifest
-- [ ] **Phase 6: MCP & HTTP Wrappers** - rmcp-based MCP server and axum-based HTTP server with parity to CLI
+- [ ] **Phase 6: MCP & HTTP Wrappers (Docs-Only)** — design contract + docs/ folder; implementation deferred to v2
 - [ ] **Phase 7: Hardening, Benchmarks & Reproducibility** - Golden-file tests, noise-replay, flamegraph, bench harness, README caveats
 
 ## Phase Details
@@ -136,25 +136,23 @@ Plans:
 - [x] 05-05-PLAN.md — CLI binding: SweepArgs clap-derive struct + miner sweep <manifest> subcommand wiring + universal --bootstrap/--bootstrap-n/--null/--null-n/--seed flags on miner scan + cargo xtask gen-schema extension producing schemas/sweep-manifest-v1.schema.json + tests/sigint_mid_sweep.rs (CLI binary spawn-kill-assert test) + tests/sweep_subcommand_smoke.rs + README Quickstart for miner sweep + tests/REFERENCE-VERSIONS.md R 4.x pinning (OP-04)
 **UI hint**: No
 
-### Phase 6: MCP & HTTP Wrappers
-**Goal**: User can invoke every scan and meta-tool (`list_scans`, `list_symbols`, `probe`) through both the MCP server and the HTTP API with the same parameter shape and byte-identical findings JSON as the CLI.
+### Phase 6: MCP & HTTP Wrappers (Docs-Only)
+**Goal**: User can read `./ARCHITECTURE.md` plus the `./docs/` folder and understand miner's system map, locked Finding envelope, 22-scan catalogue, TOML sweep manifest grammar, and the deferred MCP+HTTP design — without needing to read source. The MCP and HTTP server implementations are deferred to v2 (tracked as PLAT-v2-07 + PLAT-v2-08 in REQUIREMENTS.md).
 **Depends on**: Phase 5
-**Requirements**: OP-02, OP-03
+**Requirements**: (none; this phase reclassifies OP-02 + OP-03 to v2 — see PLAT-v2-07, PLAT-v2-08)
 **Success Criteria** (what must be TRUE):
-  1. User can connect an MCP client over stdio to `miner-mcp` and invoke every scan as a typed MCP tool (one tool per scan, parameter schema derived from the registry) plus `list_scans` / `list_symbols` / `probe` meta-tools; the JSON-bytes-per-finding match CLI output exactly.
-  2. User can POST to `/v1/scan` or `/v1/sweep` on `miner-http` and receive findings as content-negotiated NDJSON or SSE, with `/v1/scans` and `/v1/symbols` returning the same catalogue the CLI and MCP expose.
-  3. User can verify both wrappers route logs to stderr exclusively (no stdout / response-body pollution outside the protocol payload) and rejected requests return structured machine-parseable errors (`invalid_parameter`, `coverage_gap`, `sweep_too_large`).
-  4. User can confirm both wrappers bridge to `miner-core` via `tokio::task::spawn_blocking` and that `cargo tree -p miner-core` still shows zero async dependencies.
-  5. User can interrupt an HTTP sweep (client disconnect) or MCP sweep (client cancellation) and miner keeps every finding already streamed without leaking worker threads.
+  1. User can read `./ARCHITECTURE.md` and `./docs/` and understand miner's system map, locked Finding envelope, and 22-scan catalogue without needing to read source code.
+  2. User can read `docs/sweep_manifest.md` and find the v1 TOML sweep manifest format documented end-to-end, including effect-size and statistical-hygiene knobs.
+  3. User can read `docs/future_mcp_http.md` and find the planned MCP + HTTP wrapper design with pointers into `.planning/research/` for deep design rationale.
+  4. User can run `docs/examples/decode_finding.py` against any Finding envelope JSON line and decode the base64 raw arrays to re-test the underlying statistic.
+  5. User can verify every new doc carries the Apache-2.0 license footer matching the `tradedesk/docs/` convention.
 **Plans**: 3 plans
 
 Plans:
 - [ ] 06-01-PLAN.md — Scope amendments (PROJECT/REQUIREMENTS/ROADMAP/STATE per D6-05/06/07) + root ARCHITECTURE.md + docs/.license-footer.md helper
 - [ ] 06-02-PLAN.md — Reference docs triad: findings_envelope.md, scan_catalogue.md, sweep_manifest.md
-- [ ] 06-03-PLAN.md — agent_integration.md + future_mcp_http.md + docs/examples/ + README ## Documentation + placeholder-binary message updates + Phase 6 sign-off
+- [ ] 06-03-PLAN.md — docs/agent_integration.md + docs/future_mcp_http.md + docs/examples/ + README ## Documentation + placeholder-binary message updates + Phase 6 sign-off
 **UI hint**: No
-
-> **Research flag:** Before planning this phase, re-run `gsd-research` on the `rmcp` crate (verify crate name, version, stdio + streamable-HTTP transport, streaming tool-result chunk support, tokio version compatibility). If any check fails, commit to the hand-rolled JSON-RPC-over-stdio fallback before plan-phase begins.
 
 ### Phase 7: Hardening, Benchmarks & Reproducibility
 **Goal**: User can run golden-file regression tests, the noise-replay sweep test, the bench harness, and `cargo audit` / `cargo deny` against a clean v1 with documented data-source caveats and a README quickstart that works on a fresh checkout.
@@ -166,12 +164,9 @@ Plans:
   3. User can run `miner-bench` and `hyperfine` recipes against the dev sample (28 instruments × 3 timeframes × 6 years) and obtain reproducible wall-clock numbers documented in the README; flamegraph / samply profiling shows allocations below 5% of hot path.
   4. User can clone the repo, follow the README quickstart against the checked-in fixture cache, and produce at least one finding without any external download or hardcoded path.
   5. User can read README sections covering Dukascopy data-source caveats (00-indexed months, tick-count volume, bid/ask independence, weekend gaps, data licensing implications) and `cargo audit` / `cargo deny` runs clean in CI.
-**Plans**: 3 plans
+**Plans**: TBD pending Phase 7 plan-phase
 
-Plans:
-- [ ] 06-01-PLAN.md — Scope amendments (PROJECT/REQUIREMENTS/ROADMAP/STATE per D6-05/06/07) + root ARCHITECTURE.md + docs/.license-footer.md helper
-- [ ] 06-02-PLAN.md — Reference docs triad: findings_envelope.md, scan_catalogue.md, sweep_manifest.md
-- [ ] 06-03-PLAN.md — agent_integration.md + future_mcp_http.md + docs/examples/ + README ## Documentation + placeholder-binary message updates + Phase 6 sign-off
+Plans: TBD pending Phase 7 plan-phase
 **UI hint**: No
 
 ## Progress
@@ -186,5 +181,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 3. Scan Engine, Facade & CLI | 0/6 | Planned | - |
 | 4. Scan Catalogue (ANOM, CROSS, SEAS) | 7/11 | In Progress|  |
 | 5. Statistical Hygiene & Sweep Runner | 0/TBD | Not started | - |
-| 6. MCP & HTTP Wrappers | 0/TBD | Not started | - |
+| 6. MCP & HTTP Wrappers (Docs-Only) | 0/3 | Planned | - |
 | 7. Hardening, Benchmarks & Reproducibility | 0/TBD | Not started | - |

@@ -39,8 +39,8 @@ Surface raw statistical candidates from years of OHLCV data fast enough that a q
 - [ ] Findings stream to stdout in a stable, structured format (JSON / JSONL); miner does not persist results
 - [ ] Both interactive query mode (single scan, one set of parameters) and batch sweep mode (broad pre-defined scan set)
 - [ ] CLI binary as a thin wrapper over the library
-- [ ] MCP server as a thin wrapper for agent use
-- [ ] HTTP API as a thin wrapper for remote agent use (the RadiusRed Quant agent runs as a remote Paperclip agent)
+- [x] MCP server interface — designed; implementation deferred to v2 (see docs/future_mcp_http.md)
+- [x] HTTP API interface — designed; implementation deferred to v2 (see docs/future_mcp_http.md)
 - [ ] Open-source friendly defaults: no hardcoded paths, cache root configurable, reader pluggability documented
 
 ### Out of Scope
