@@ -14,7 +14,7 @@
 //! emit `effect.p_value: Some(_)` so both populate BH-FDR families.
 
 #![allow(clippy::doc_lazy_continuation, clippy::doc_markdown)]
-
+#[allow(clippy::too_many_lines)]
 mod common;
 
 use std::sync::Arc;
