@@ -77,6 +77,16 @@
           "$ref": "#/$defs/DataSlice",
           "description": "The `data_slice` the scan WOULD have consumed had the run executed\n(post-window-parse, pre-gap-partition)."
         },
+        "planned_job_count": {
+          "default": null,
+          "description": "**Phase 5 (Plan 05-04 / OP-04 / RESEARCH Pattern 5).** When the dry-run\noriginates from a sweep, the number of jobs the sweep would have\nexecuted. Single-shot `miner scan --dry-run` leaves this as `None`;\n`miner sweep --dry-run` populates it with the cartesian-expanded job\ncount. `#[serde(default)]` keeps the field additive (single-shot dry-run\nenvelopes round-trip unchanged) per RESEARCH Pattern 5 — explicitly NOT\na new `Finding::SweepDryRun` variant.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "produced_at_utc": {
           "format": "date-time",
           "type": "string"

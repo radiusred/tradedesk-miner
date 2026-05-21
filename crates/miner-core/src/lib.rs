@@ -48,6 +48,10 @@ pub mod findings;
 pub mod gap;
 pub mod reader;
 pub mod scan;
+// Phase 5 (Plan 05-04 / OP-04): sweep runner — TOML manifest fanout +
+// rayon-parallel job execution + deterministic-order drain + BH-FDR
+// aggregation + Finding::SweepSummary emission.
+pub mod sweep;
 
 /// Git SHA of the source revision that produced this build; `dirty-<sha>` when the tree
 /// had uncommitted changes; `"unknown"` when git was unavailable (e.g., tarball builds).
