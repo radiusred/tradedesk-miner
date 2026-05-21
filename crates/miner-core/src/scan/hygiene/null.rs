@@ -28,8 +28,20 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 /// offset in `[1, n)` (offset 0 rejected — it is the identity transform).
 /// For each surrogate, computes `stat(&shifted)` and tallies the count of
 /// surrogates whose absolute statistic equals or exceeds the absolute
-/// observed statistic. Returns the two-sided empirical p-value
-/// `more_extreme / n_resamples`.
+/// observed statistic. Returns the two-sided empirical p-value using the
+/// textbook `(1 + more_extreme) / (1 + n_resamples)` surrogate-data
+/// correction (Davison & Hinkley 1997 §4.2; Theiler & Prichard 1996).
+///
+/// ## Empirical-p convention — `(1 + B) / (1 + N)` (CR-02)
+///
+/// The conventional surrogate-data empirical p-value floors `p` at
+/// `1 / (n_resamples + 1)` and avoids the mathematically untenable
+/// singularity `p == 0.0`. The naive `B / N` form (which the original
+/// implementation used) allowed `p == 0.0` when zero surrogates exceeded
+/// the observed statistic — that value implies infinite log-odds against
+/// the null and propagates as `q == 0.0` through BH-FDR, severely
+/// understating multiple-testing inflation. The `(1 + B) / (1 + N)`
+/// floor is the published correction.
 ///
 /// `seed` propagates from `derive_job_seed` (HYG-05). The kernel uses
 /// `Xoshiro256PlusPlus::seed_from_u64(seed)` — byte-identical re-runs are
@@ -73,7 +85,10 @@ where
             more_extreme += 1;
         }
     }
-    f64::from(more_extreme) / f64::from(n_resamples)
+    // CR-02 (1+B)/(1+N) — Davison & Hinkley 1997 §4.2 convention. Floors
+    // p at 1/(n_resamples+1) so the empirical p-value is never exactly
+    // zero. Do NOT "fix" this back to the naive B/N form.
+    (f64::from(more_extreme) + 1.0) / (f64::from(n_resamples) + 1.0)
 }
 
 // ---------------------------------------------------------------------------

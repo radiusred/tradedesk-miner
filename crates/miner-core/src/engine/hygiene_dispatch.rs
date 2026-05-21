@@ -421,6 +421,11 @@ where
 /// while preserving each leg's marginal distribution — the canonical
 /// null for cross-correlation / cross-regression statistics
 /// (Theiler 1992 surrogate-data convention; RESEARCH §1.5).
+///
+/// Empirical p-value uses the `(1 + B) / (1 + N)` convention (CR-02 —
+/// see [`crate::scan::hygiene::null::circular_shift_null_p`] for the
+/// rationale; the floor avoids `p == 0.0` propagating as `q == 0.0`
+/// through BH-FDR).
 #[must_use]
 #[allow(
     clippy::cast_precision_loss,
@@ -456,7 +461,8 @@ where
             more_extreme += 1;
         }
     }
-    f64::from(more_extreme) / f64::from(n_resamples)
+    // CR-02 (1+B)/(1+N) — same convention as the Single-arity kernel.
+    (f64::from(more_extreme) + 1.0) / (f64::from(n_resamples) + 1.0)
 }
 
 // ---------------------------------------------------------------------------
