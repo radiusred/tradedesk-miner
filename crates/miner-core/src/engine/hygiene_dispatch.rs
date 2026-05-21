@@ -278,6 +278,44 @@ pub(crate) fn pair_stat_closure_for(
     }
 }
 
+/// Per-scan tail-direction dispatch (WR-01).
+///
+/// Returns the [`Tail`] direction appropriate for the scan's statistic
+/// under the surrogate-data null. Two-sided is the default (symmetric
+/// statistics: mean, variance ratio, correlation, OLS β, lead-lag).
+/// One-sided-positive covers chi-square-like statistics whose rejection
+/// region is the upper tail (Ljung-Box Q, KPSS, ARCH-LM, Jarque-Bera).
+/// One-sided-negative covers signed statistics whose rejection region
+/// is the lower tail (ADF τ).
+///
+/// Scans not wired into the hygiene-dispatch table return
+/// [`Tail::TwoSided`] — the value is harmless when the scan is not
+/// hygiene-eligible (the kernel is never called for it).
+///
+/// Cointegration (`engle_granger`) uses [`Tail::TwoSided`] for the
+/// hedge-ratio β statistic the closure surfaces — β has no canonical
+/// asymmetric rejection direction; the unit-root residual test that
+/// produces the cointegration p-value is run inside the scan body and
+/// is NOT what the surrogate-null kernel re-samples here.
+#[must_use]
+pub(crate) fn tail_for(scan_id_at_version: &str) -> crate::scan::hygiene::null::Tail {
+    use crate::scan::hygiene::null::Tail;
+    match scan_id_at_version {
+        // One-sided positive: chi-square-like statistics, large positive
+        // is the rejection direction.
+        "stats.autocorr.ljung_box@1"
+        | "stats.autocorr.ljung_box_sq@1"
+        | "stats.heteroskedasticity.arch_lm@1"
+        | "stats.normality.jarque_bera@1"
+        | "stats.stationarity.kpss@1" => Tail::OneSidedPos,
+        // One-sided negative: ADF τ. Large-negative is the rejection
+        // direction (stationary alternative).
+        "stats.stationarity.adf@1" => Tail::OneSidedNeg,
+        // Two-sided (symmetric). Default fallback.
+        _ => Tail::TwoSided,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Joint resample helpers (Pair-arity bootstrap + null)
 //
@@ -438,10 +476,12 @@ pub(crate) fn pair_circular_shift_null_p<F>(
     stat: F,
     n_resamples: u32,
     seed: u64,
+    tail: crate::scan::hygiene::null::Tail,
 ) -> f64
 where
     F: Fn(&[f64], &[f64]) -> f64,
 {
+    use crate::scan::hygiene::null::Tail;
     debug_assert_eq!(values_a.len(), values_b.len(), "pair_circular_shift_null_p: pair length mismatch");
     let n = values_a.len();
     if n < 2 || n_resamples == 0 {
@@ -457,7 +497,12 @@ where
             *slot = values_b[(i + offset) % n];
         }
         let surr_stat = stat(values_a, &surrogate_b);
-        if surr_stat.abs() >= obs_abs {
+        let is_more_extreme = match tail {
+            Tail::TwoSided => surr_stat.abs() >= obs_abs,
+            Tail::OneSidedPos => surr_stat >= observed_stat,
+            Tail::OneSidedNeg => surr_stat <= observed_stat,
+        };
+        if is_more_extreme {
             more_extreme += 1;
         }
     }
@@ -1197,8 +1242,24 @@ mod tests {
             xa.iter().zip(xb.iter()).map(|(x, y)| x * y).sum::<f64>() / nf
         };
         let observed = stat(&a, &b);
-        let p1 = pair_circular_shift_null_p(&a, &b, observed, stat, 100, 0xCAFE);
-        let p2 = pair_circular_shift_null_p(&a, &b, observed, stat, 100, 0xCAFE);
+        let p1 = pair_circular_shift_null_p(
+            &a,
+            &b,
+            observed,
+            stat,
+            100,
+            0xCAFE,
+            crate::scan::hygiene::null::Tail::TwoSided,
+        );
+        let p2 = pair_circular_shift_null_p(
+            &a,
+            &b,
+            observed,
+            stat,
+            100,
+            0xCAFE,
+            crate::scan::hygiene::null::Tail::TwoSided,
+        );
         assert_eq!(p1.to_bits(), p2.to_bits());
         assert!((0.0..=1.0).contains(&p1));
     }

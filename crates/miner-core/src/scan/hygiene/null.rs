@@ -22,6 +22,27 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
 
+/// Tail-direction selector for surrogate-data null tests (WR-01).
+///
+/// Different test statistics have different rejection regions under the
+/// null. Using a one-size-fits-all two-sided `|x| >= |obs|` comparison
+/// (the pre-WR-01 behaviour) biases the empirical p-value downward for
+/// statistics whose null distribution is asymmetric (chi-square-like).
+///
+/// - [`Tail::TwoSided`] — `|surr| >= |obs|`. Default for symmetric
+///   statistics (variance ratio, mean, correlation, OLS β).
+/// - [`Tail::OneSidedPos`] — `surr >= obs`. Use for chi-square-like
+///   one-sided statistics: KPSS, ARCH-LM, Jarque-Bera, Ljung-Box Q.
+///   Large positive surrogate values exceed the observed value.
+/// - [`Tail::OneSidedNeg`] — `surr <= obs`. Use for signed statistics
+///   where large-negative is the rejection direction: ADF τ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tail {
+    TwoSided,
+    OneSidedPos,
+    OneSidedNeg,
+}
+
 /// Circular-shift surrogate-data null distribution p-value.
 ///
 /// Builds `n_resamples` surrogate series by rotating `values` by a uniform
@@ -63,6 +84,7 @@ pub fn circular_shift_null_p<F>(
     stat: F,
     n_resamples: u32,
     seed: u64,
+    tail: Tail,
 ) -> f64
 where
     F: Fn(&[f64]) -> f64,
@@ -74,6 +96,9 @@ where
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
     let mut surrogate: Vec<f64> = vec![0.0; n];
     let mut more_extreme: u32 = 0;
+    // WR-01: tail-dependent more-extreme test. Pre-WR-01 used `|surr| >= |obs|`
+    // unconditionally; for one-sided test statistics this biases the
+    // empirical p-value downward.
     let obs_abs = observed_stat.abs();
     for _ in 0..n_resamples {
         let offset = rng.gen_range(1..n); // 1..n excludes the identity (offset 0)
@@ -81,7 +106,12 @@ where
             *slot = values[(i + offset) % n];
         }
         let surr_stat = stat(&surrogate);
-        if surr_stat.abs() >= obs_abs {
+        let is_more_extreme = match tail {
+            Tail::TwoSided => surr_stat.abs() >= obs_abs,
+            Tail::OneSidedPos => surr_stat >= observed_stat,
+            Tail::OneSidedNeg => surr_stat <= observed_stat,
+        };
+        if is_more_extreme {
             more_extreme += 1;
         }
     }
@@ -138,6 +168,7 @@ mod tests {
                 mean,
                 200,
                 0x200 + u64::from(trial),
+                Tail::TwoSided,
             );
             assert!(
                 (0.0..=1.0).contains(&p),
@@ -157,8 +188,8 @@ mod tests {
     fn circular_shift_null_p_deterministic_for_seed() {
         let values = lcg_iid(50, 0xDEAD);
         let observed = mean(&values);
-        let p_a = circular_shift_null_p(&values, observed, mean, 100, 0xBEEF);
-        let p_b = circular_shift_null_p(&values, observed, mean, 100, 0xBEEF);
+        let p_a = circular_shift_null_p(&values, observed, mean, 100, 0xBEEF, Tail::TwoSided);
+        let p_b = circular_shift_null_p(&values, observed, mean, 100, 0xBEEF, Tail::TwoSided);
         assert_eq!(p_a.to_bits(), p_b.to_bits(), "p-value bit-identity");
     }
 
@@ -166,11 +197,11 @@ mod tests {
     #[test]
     fn circular_shift_null_p_short_input_nan() {
         let one = [1.0_f64];
-        assert!(circular_shift_null_p(&one, 1.0, mean, 100, 0).is_nan());
+        assert!(circular_shift_null_p(&one, 1.0, mean, 100, 0, Tail::TwoSided).is_nan());
         let empty: [f64; 0] = [];
-        assert!(circular_shift_null_p(&empty, 0.0, mean, 100, 0).is_nan());
+        assert!(circular_shift_null_p(&empty, 0.0, mean, 100, 0, Tail::TwoSided).is_nan());
         let two = [1.0_f64, 2.0];
-        assert!(circular_shift_null_p(&two, 1.5, mean, 0, 0).is_nan());
+        assert!(circular_shift_null_p(&two, 1.5, mean, 0, 0, Tail::TwoSided).is_nan());
     }
 
     /// CR-02 regression: empirical p MUST floor at `1 / (n_resamples + 1)`
@@ -193,7 +224,7 @@ mod tests {
         // can exceed it, more_extreme stays 0.
         let observed = 1000.0;
         let n_resamples = 99_u32;
-        let p = circular_shift_null_p(&values, observed, mean, n_resamples, 0xCAFE);
+        let p = circular_shift_null_p(&values, observed, mean, n_resamples, 0xCAFE, Tail::TwoSided);
 
         // (1 + 0) / (1 + 99) = 0.01 exactly.
         let expected = 1.0_f64 / (f64::from(n_resamples) + 1.0);

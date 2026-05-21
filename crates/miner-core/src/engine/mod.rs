@@ -1225,7 +1225,20 @@ fn apply_hygiene_mutations(
             let observed_stat = result.effect.value;
             let p = match method {
                 NullMethod::CircularShift => {
-                    hygiene_null::circular_shift_null_p(&values, observed_stat, stat_fn, n, job_seed)
+                    // WR-01: per-scan tail-direction dispatch. One-sided
+                    // statistics (chi-square-like or signed) use the
+                    // appropriate tail comparison so the surrogate-null
+                    // p-value is not biased downward by an irrelevant
+                    // `abs()` comparison.
+                    let tail = hygiene_dispatch::tail_for(&scan_id_at_version);
+                    hygiene_null::circular_shift_null_p(
+                        &values,
+                        observed_stat,
+                        stat_fn,
+                        n,
+                        job_seed,
+                        tail,
+                    )
                 }
                 NullMethod::PhaseScramble => {
                     // IAAFT phase-scramble defers to Phase 7 per Plan
@@ -1358,14 +1371,24 @@ fn apply_pair_hygiene(
         let n = clamp_resample_n(req.null_n);
         let observed_stat = result.effect.value;
         let p = match method {
-            NullMethod::CircularShift => hygiene_dispatch::pair_circular_shift_null_p(
-                values_a,
-                values_b,
-                observed_stat,
-                pair_stat,
-                n,
-                job_seed,
-            ),
+            NullMethod::CircularShift => {
+                // WR-01: same tail-direction dispatch as the Single-arity
+                // branch. Pair-arity scans surfaced today are symmetric
+                // (correlation / OLS β / lead-lag / hedge-ratio β), so
+                // `tail_for` returns the two-sided default — but routing
+                // through the helper future-proofs the dispatch for any
+                // one-sided Pair-arity scan added in Phase 7+.
+                let tail = hygiene_dispatch::tail_for(&result.scan_id_at_version);
+                hygiene_dispatch::pair_circular_shift_null_p(
+                    values_a,
+                    values_b,
+                    observed_stat,
+                    pair_stat,
+                    n,
+                    job_seed,
+                    tail,
+                )
+            }
             NullMethod::PhaseScramble => {
                 // IAAFT phase-scramble defers to Phase 7. Preflight
                 // rejects PhaseScramble on every Pair-arity scan whose
