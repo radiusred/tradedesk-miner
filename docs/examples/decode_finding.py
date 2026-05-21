@@ -18,7 +18,7 @@ Usage:
     --instrument EURUSD:bid \\
     --timeframe 15m \\
     --window 2024-06-12:2024-06-13 \\
-    --param lags=5 \\
+    --params lags=5 \\
   | python docs/examples/decode_finding.py
 
 Requires: numpy >= 1.20
@@ -31,9 +31,27 @@ import sys
 import numpy as np
 
 
+# Wire-form `dtype` string -> NumPy little-endian shorthand. v1 emits exactly
+# one variant (`"f64"` -> `"<f8"`) on every RawArray, including `timestamps_ms`
+# (timestamps are packed as f64 ms-since-epoch, NOT i64; see
+# crates/miner-core/src/findings/base64_bytes.rs). The mapping is kept as a
+# lookup table so additive `Dtype` variants in future schema versions do not
+# silently break this decoder.
+_WIRE_TO_NUMPY = {
+    "f64": "<f8",
+    # v2-reserved (NOT emitted in v1; included so future additive variants
+    # land without code changes here):
+    # "f32": "<f4",
+    # "i64": "<i8",
+    # "i32": "<i4",
+    # "u64": "<u8",
+    # "u32": "<u4",
+}
+
+
 def decode_raw_array(raw_array):
     """Decode one RawArray dict {dtype, shape, data} into a numpy ndarray."""
-    dtype = np.dtype(raw_array["dtype"])
+    dtype = np.dtype(_WIRE_TO_NUMPY[raw_array["dtype"]])
     shape = tuple(raw_array["shape"])
     payload = base64.b64decode(raw_array["data"])
     return np.frombuffer(payload, dtype=dtype).reshape(shape)
@@ -49,13 +67,24 @@ def main():
         # "result" carries data_slice + effect + raw payloads.
         if envelope.get("kind") != "result":
             continue
+        # Instrument(s) + timeframe live inside data_slice.sources[] on the
+        # ResultFinding (crates/miner-core/src/findings/mod.rs DataSlice).
+        # Single-arity scans carry one entry; Pair-arity (CROSS) scans
+        # carry two entries in leg order.
+        sources = envelope["data_slice"]["sources"]
+        instruments = [f"{s['symbol']}:{s['side']}" for s in sources]
+        timeframe = sources[0]["timeframe"] if sources else None
         print(f"scan_id       = {envelope['scan_id@version']}")
-        print(f"instruments   = {envelope['instruments']}")
-        print(f"timeframe     = {envelope['timeframe']}")
+        print(f"instruments   = {instruments}")
+        print(f"timeframe     = {timeframe}")
         print(f"effect.metric = {envelope['effect']['metric']}")
         print(f"effect.value  = {envelope['effect']['value']}")
 
-        raw = envelope.get("raw", {}).get("series", {})
+        # `raw` may be present-but-null on Result envelopes that do not
+        # carry an inputs block (Option<Raw> serialises as JSON `null`,
+        # NOT an omitted field). Guard with `or {}` so .get(...) does not
+        # AttributeError on `None`.
+        raw = (envelope.get("raw") or {}).get("series", {})
         for key, raw_array in raw.items():
             arr = decode_raw_array(raw_array)
             preview = arr.flat[:5].tolist() if arr.size > 0 else []
