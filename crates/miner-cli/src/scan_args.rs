@@ -45,7 +45,7 @@ use miner_core::engine::preflight;
 use miner_core::error::{PreflightCode, WireError};
 use miner_core::findings::TimeRange;
 use miner_core::reader::{ClosedRangeUtc, InstrumentSpec, Side};
-use miner_core::scan::ScanRequest;
+use miner_core::scan::{BootstrapMethod, NullMethod, ScanRequest};
 
 /// `miner scan` subcommand arguments.
 ///
@@ -92,6 +92,49 @@ pub struct ScanArgs {
     /// `lags=20` resolves to `{"lags": 20}` without quoting).
     #[arg(long = "params", action = clap::ArgAction::Append)]
     pub params: Vec<String>,
+
+    /// **Phase 5 (D5-04 / HYG-03).** Universal bootstrap-method flag — accepted
+    /// values: `"stationary"` (Politis-Romano 1994) / `"block"` (fixed-block).
+    /// `ScanArgs::to_scan_request` populates `ScanRequest.bootstrap_method`;
+    /// the engine invokes the matching hygiene kernel post-scan-body and
+    /// fills `Effect.ci95`. Caller-requested method on a scan whose
+    /// `Scan::supports_bootstrap()` returns `false` is rejected with
+    /// `PreflightCode::HygieneNotSupported`. Unknown strings rejected with
+    /// `PreflightCode::InvalidParameter`.
+    #[arg(long)]
+    pub bootstrap: Option<String>,
+
+    /// **Phase 5 (D5-04 / HYG-03).** Bootstrap resample count `B`. `0` (the
+    /// default) leaves `ScanRequest.bootstrap_n` as `None`; positive overrides.
+    /// Engine caps at `100_000` per `T-05-03-V5` mitigation.
+    #[arg(long, default_value_t = 0)]
+    pub bootstrap_n: u32,
+
+    /// **Phase 5 (D5-04 / HYG-04).** Universal null-method flag — accepted
+    /// values: `"phase_scramble"` (Theiler et al. 1992 FFT) / `"circular_shift"`
+    /// (canonical fallback). `ScanArgs::to_scan_request` populates
+    /// `ScanRequest.null_method`; the engine invokes the matching null kernel
+    /// post-scan-body and REPLACES `Effect.p_value`. Caller-requested method
+    /// on a scan whose `Scan::supports_null_method(method)` returns `false`
+    /// is rejected with `PreflightCode::HygieneNotSupported`. Unknown strings
+    /// rejected with `PreflightCode::InvalidParameter`.
+    #[arg(long)]
+    pub null: Option<String>,
+
+    /// **Phase 5 (D5-04 / HYG-04).** Null-draw count `N_null`. `0` (the default)
+    /// leaves `ScanRequest.null_n` as `None`; positive overrides. Engine caps
+    /// at `100_000`.
+    #[arg(long, default_value_t = 0)]
+    pub null_n: u32,
+
+    /// **Phase 5 (D5-05 / HYG-05).** Master seed for the hygiene pipeline.
+    /// Echoed into `ReproEnvelope.master_seed`; the engine derives a per-job
+    /// seed via `hygiene::seed::derive_job_seed` when the request reaches the
+    /// kernel. `ScanArgs::to_scan_request` populates `ScanRequest.master_seed`;
+    /// `None` (flag absent) leaves the engine to apply its default
+    /// (`unwrap_or(0)`).
+    #[arg(long)]
+    pub seed: Option<u64>,
 
     /// **Test-only Pitfall 8 hook** (Blocker 1 — Plan 03-06 SIGINT integration
     /// test ingress). When `Some(ms)`, `LjungBoxScan::run` performs a
@@ -185,7 +228,7 @@ impl ScanArgs {
         // `parse_instrument_spec` value-parser. Engine preflight
         // (`validate_arity`) rejects mismatched arity post-CLI.
         let instruments = self.instruments.clone();
-        let req = ScanRequest::new(
+        let mut req = ScanRequest::new(
             scan_id,
             version,
             instruments,
@@ -198,6 +241,26 @@ impl ScanArgs {
             param_hash,
         );
 
+        // 5b. Phase 5 (Plan 05-05) — universal hygiene flag plumbing. Each
+        // optional string flag parses into the typed BootstrapMethod /
+        // NullMethod enum at the boundary; unknown strings surface as
+        // `PreflightCode::InvalidParameter` per T-05-05-V5 mitigation.
+        if let Some(ref bootstrap_str) = self.bootstrap {
+            req.bootstrap_method = Some(parse_bootstrap_method(bootstrap_str)?);
+        }
+        if self.bootstrap_n > 0 {
+            req.bootstrap_n = Some(self.bootstrap_n);
+        }
+        if let Some(ref null_str) = self.null {
+            req.null_method = Some(parse_null_method(null_str)?);
+        }
+        if self.null_n > 0 {
+            req.null_n = Some(self.null_n);
+        }
+        if let Some(seed) = self.seed {
+            req.master_seed = Some(seed);
+        }
+
         // 6. Forward the cfg-gated --sleep-after-first-finding-ms hook into
         // ScanRequest.sleep_after_first_finding_ms (Blocker 1 — Pitfall 8
         // ingress wiring). The chained method is cfg-gated to match the field
@@ -206,6 +269,47 @@ impl ScanArgs {
         let req = req.with_sleep_after_first_finding_ms(self.sleep_after_first_finding_ms);
 
         Ok(req)
+    }
+}
+
+/// Parse a wire-form bootstrap method string. Mirrors
+/// `miner_core::sweep::manifest::parse_bootstrap_method` so the CLI flag and
+/// the TOML manifest share a single accepted-value table.
+///
+/// # Errors
+/// Returns a `PreflightCode::InvalidParameter` `WireError` when the input is
+/// not one of `"stationary"` / `"block"`.
+fn parse_bootstrap_method(s: &str) -> Result<BootstrapMethod, WireError> {
+    match s {
+        "stationary" => Ok(BootstrapMethod::Stationary),
+        "block" => Ok(BootstrapMethod::Block),
+        other => Err(WireError::preflight(
+            PreflightCode::InvalidParameter,
+            format!(
+                "--bootstrap must be one of \"stationary\" / \"block\"; got {other:?}"
+            ),
+        )
+        .with_context("bootstrap", serde_json::Value::String(other.to_string()))),
+    }
+}
+
+/// Parse a wire-form null method string. Mirrors
+/// `miner_core::sweep::manifest::parse_null_method`.
+///
+/// # Errors
+/// Returns a `PreflightCode::InvalidParameter` `WireError` when the input is
+/// not one of `"phase_scramble"` / `"circular_shift"`.
+fn parse_null_method(s: &str) -> Result<NullMethod, WireError> {
+    match s {
+        "phase_scramble" => Ok(NullMethod::PhaseScramble),
+        "circular_shift" => Ok(NullMethod::CircularShift),
+        other => Err(WireError::preflight(
+            PreflightCode::InvalidParameter,
+            format!(
+                "--null must be one of \"phase_scramble\" / \"circular_shift\"; got {other:?}"
+            ),
+        )
+        .with_context("null", serde_json::Value::String(other.to_string()))),
     }
 }
 
@@ -564,5 +668,109 @@ mod tests {
         assert!(args.sleep_after_first_finding_ms.is_none());
         let req = args.to_scan_request("rev").expect("conversion ok");
         assert!(req.sleep_after_first_finding_ms.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Plan 05-05 — universal hygiene flag tests (T-05-05-V5 mitigation).
+    // -----------------------------------------------------------------------
+
+    /// Hygiene-flag defaults: every new field defaults to None/0 when the
+    /// flag is absent. `ScanRequest` Option fields stay `None`.
+    #[test]
+    fn scan_args_hygiene_flags_default_to_none() {
+        let cli = parse_argv(&[]);
+        let args = unwrap_scan_args(&cli);
+        assert!(args.bootstrap.is_none());
+        assert_eq!(args.bootstrap_n, 0);
+        assert!(args.null.is_none());
+        assert_eq!(args.null_n, 0);
+        assert!(args.seed.is_none());
+        let req = args.to_scan_request("rev").expect("conversion ok");
+        assert!(req.bootstrap_method.is_none());
+        assert!(req.bootstrap_n.is_none());
+        assert!(req.null_method.is_none());
+        assert!(req.null_n.is_none());
+        assert!(req.master_seed.is_none());
+    }
+
+    /// Plan 05-05 Task 1 Test 4 — `ScanArgs` hygiene flags parse and
+    /// populate the new `ScanRequest` Option fields.
+    #[test]
+    fn scan_args_hygiene_flags_populate_scan_request() {
+        let cli = parse_argv(&[
+            "--bootstrap",
+            "stationary",
+            "--bootstrap-n",
+            "100",
+            "--null",
+            "phase_scramble",
+            "--null-n",
+            "100",
+            "--seed",
+            "42",
+        ]);
+        let args = unwrap_scan_args(&cli);
+        assert_eq!(args.bootstrap.as_deref(), Some("stationary"));
+        assert_eq!(args.bootstrap_n, 100);
+        assert_eq!(args.null.as_deref(), Some("phase_scramble"));
+        assert_eq!(args.null_n, 100);
+        assert_eq!(args.seed, Some(42));
+
+        let req = args.to_scan_request("rev").expect("conversion ok");
+        assert!(matches!(
+            req.bootstrap_method,
+            Some(miner_core::scan::BootstrapMethod::Stationary)
+        ));
+        assert_eq!(req.bootstrap_n, Some(100));
+        assert!(matches!(
+            req.null_method,
+            Some(miner_core::scan::NullMethod::PhaseScramble)
+        ));
+        assert_eq!(req.null_n, Some(100));
+        assert_eq!(req.master_seed, Some(42));
+    }
+
+    /// Plan 05-05 — unknown bootstrap method rejected with `InvalidParameter`.
+    #[test]
+    fn scan_args_unknown_bootstrap_method_rejected() {
+        let cli = parse_argv(&["--bootstrap", "nope"]);
+        let args = unwrap_scan_args(&cli);
+        let err = args.to_scan_request("rev").expect_err("must reject");
+        assert_eq!(err.code, "invalid_parameter");
+        assert!(
+            err.message.contains("bootstrap"),
+            "message must name --bootstrap; got {:?}",
+            err.message
+        );
+    }
+
+    /// Plan 05-05 — unknown null method rejected with `InvalidParameter`.
+    #[test]
+    fn scan_args_unknown_null_method_rejected() {
+        let cli = parse_argv(&["--null", "wat"]);
+        let args = unwrap_scan_args(&cli);
+        let err = args.to_scan_request("rev").expect_err("must reject");
+        assert_eq!(err.code, "invalid_parameter");
+        assert!(
+            err.message.contains("null"),
+            "message must name --null; got {:?}",
+            err.message
+        );
+    }
+
+    /// Plan 05-05 — block bootstrap + `circular_shift` null round-trip.
+    #[test]
+    fn scan_args_block_and_circular_shift_round_trip() {
+        let cli = parse_argv(&["--bootstrap", "block", "--null", "circular_shift"]);
+        let args = unwrap_scan_args(&cli);
+        let req = args.to_scan_request("rev").expect("conversion ok");
+        assert!(matches!(
+            req.bootstrap_method,
+            Some(miner_core::scan::BootstrapMethod::Block)
+        ));
+        assert!(matches!(
+            req.null_method,
+            Some(miner_core::scan::NullMethod::CircularShift)
+        ));
     }
 }

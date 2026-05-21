@@ -25,6 +25,7 @@ use clap::{Parser, Subcommand};
 use miner_core::config::{CliOverrides, OutputDest};
 
 use crate::scan_args::ScanArgs;
+use crate::sweep_args::SweepArgs;
 
 /// tradedesk-miner CLI.
 #[derive(Debug, Parser)]
@@ -72,6 +73,15 @@ pub enum Command {
     /// Question 8 resolution). Used by MCP / HTTP wrappers (Phase 6) to render
     /// per-agent catalogues without running scans.
     Scans,
+
+    /// Execute a TOML sweep manifest end-to-end (Phase 5 / OP-04 / D5-04).
+    ///
+    /// Streams `RunStart` → per-job `Result` / `ScanError` / `GapAborted`
+    /// envelopes → `SweepSummary` → `RunEnd` as JSONL on stdout. Exit-code
+    /// routing identical to `Scan`: `0` clean, `1` preflight rejection,
+    /// `2` mid-stream `ScanError`, `130` SIGINT. With `--dry-run`, emits one
+    /// `DryRunFinding` with `planned_job_count` and exits 0.
+    Sweep(SweepArgs),
 }
 
 impl Cli {
