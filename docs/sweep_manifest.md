@@ -110,7 +110,7 @@ Only scans whose `Scan::supports_bootstrap()` returns true accept `bootstrap`; s
 
 The optional global `[fdr]` block (`FdrConfig` at line 105):
 
-- `family: String` — FDR-scope discriminator. Default `"scan_id"` (one BH family per `scan_id@version`). v1 also accepts `"scan_family"` (one BH family per scan family) per the per_scan_id default of D5-02.
+- `family: String` — FDR-scope discriminator. Default `"scan_id"` (one BH family per `scan_id@version`); v1 also accepts `"scan_family"` (one BH family per scan-family prefix) and `"none"` (suppress per-family BH; emit empty `fdr_by_family`).
 - `alpha: f64` — FDR control level. Default `0.05`. Rejected at preflight if outside `[0, 1]` or NaN.
 
 The `[fdr].family` enum is intentionally open-string (NOT a sealed enum) so v2 can add new families (e.g. `"scan_family_and_timeframe"`) additively without a schema break.
