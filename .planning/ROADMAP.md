@@ -150,7 +150,7 @@ Plans:
 
 Plans:
 - [x] 06-01-PLAN.md — Scope amendments (PROJECT/REQUIREMENTS/ROADMAP/STATE per D6-05/06/07) + root ARCHITECTURE.md + docs/.license-footer.md helper
-- [ ] 06-02-PLAN.md — Reference docs triad: findings_envelope.md, scan_catalogue.md, sweep_manifest.md
+- [x] 06-02-PLAN.md — Reference docs triad: findings_envelope.md, scan_catalogue.md, sweep_manifest.md
 - [ ] 06-03-PLAN.md — docs/agent_integration.md + docs/future_mcp_http.md + docs/examples/ + README ## Documentation + placeholder-binary message updates + Phase 6 sign-off
 **UI hint**: No
 
@@ -181,5 +181,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 3. Scan Engine, Facade & CLI | 0/6 | Planned | - |
 | 4. Scan Catalogue (ANOM, CROSS, SEAS) | 7/11 | In Progress|  |
 | 5. Statistical Hygiene & Sweep Runner | 0/TBD | Not started | - |
-| 6. MCP & HTTP Wrappers (Docs-Only) | 0/3 | Planned | - |
+| 6. MCP & HTTP Wrappers (Docs-Only) | 2/3 | In Progress|  |
 | 7. Hardening, Benchmarks & Reproducibility | 0/TBD | Not started | - |

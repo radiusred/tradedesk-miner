@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Plan 06-01 complete — docs-only Phase 6 scope locked; ARCHITECTURE.md + license-footer published
-last_updated: "2026-05-21T18:11:41.455Z"
+last_updated: "2026-05-21T18:36:49.775Z"
 last_activity: 2026-05-21
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 41
-  completed_plans: 39
-  percent: 95
+  completed_plans: 40
+  percent: 98
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 ## Current Position
 
 Phase: 06 (mcp-http-wrappers) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-21
 
-Progress: [██████████] 95%
+Progress: [██████████] 98%
 
 Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, phase-scramble nulls, BH-FDR, sweep manifest. Begin with `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
 
@@ -64,6 +64,7 @@ Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, 
 | Phase 04 P11 | ~45 min | 2 tasks | 14 files |
 | Phase 04 P04-12 | ~40min | 3 tasks | 9 files |
 | Phase 06 P01 | ~8min | 2 tasks | 6 files |
+| Phase 6 P2 | 12min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Plan 06-01: ROADMAP Phase 6 reshaped from CODE to DOCS per D6-01 + Open Question #7 — Goal + 5 Success Criteria rewritten to describe the docs deliverable; rmcp Research-flag blockquote removed; Phase 7 plan-list pollution (3 orphan 06-0?-PLAN.md bullets) cleaned to TBD placeholder.
 - [Phase ?]: Plan 06-01: License-footer URL form locked to bare URL (no markdown autolink) per D6-04 + Open Question #6 default (4-of-5 tradedesk sibling-repo majority). docs/.license-footer.md is the single source of truth (8 lines, byte-identical to ARCHITECTURE.md tail); Plans 06-02 + 06-03 paste it verbatim.
 - [Phase ?]: Plan 06-01: ARCHITECTURE.md uses plain-text section labels (Overview / Data Flow (high level) / Sync core + async edges / Key design decisions) — NOT H2 headings — per the tradedesk sibling-repo pattern. Only the trailing License heading is H2. Replaces tradedesk's 'Live vs Backtest paths' section with miner's 'Sync core + async edges' (FOUND-04 / D-15 / D-19).
+- [Phase ?]: D6-02-FOOTER: docs/.license-footer.md paste-verbatim is the single load-bearing constraint for v1 docs; diff-verified byte-identity is the acceptance gate
+- [Phase ?]: D6-02-CATALOGUE: per-scan H3 block layout (5-10 lines each) over wide-table for scan_catalogue.md; matches indicator_guide.md depth without ballooning
 
 ### Pending Todos
 
@@ -123,7 +126,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-21T18:11:41.446Z
+Last session: 2026-05-21T18:36:33.321Z
 Stopped at: Plan 06-01 complete — docs-only Phase 6 scope locked; ARCHITECTURE.md + license-footer published
-Resume file: .planning/phases/06-mcp-http-wrappers/06-02-PLAN.md
+Resume file: None
 Next action: Begin Phase 5 (Statistical Hygiene & Sweep Runner) via `/gsd-discuss-phase 5`. The Phase 5 plan in ROADMAP.md owns OP-04 (TOML sweep manifest fanout) + HYG-01..05 (effect sizes, BH-FDR, block bootstrap, phase-scrambled nulls, bit-for-bit reproducible RNG).
