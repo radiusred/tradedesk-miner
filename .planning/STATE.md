@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 5 context gathered
-last_updated: "2026-05-20T20:26:20.170Z"
-last_activity: 2026-05-20 -- Phase 05 execution started
+status: planning
+stopped_at: Phase 6 context gathered (docs-only scope)
+last_updated: "2026-05-21T16:33:03.193Z"
+last_activity: 2026-05-21
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 38
-  completed_plans: 33
-  percent: 71
+  completed_plans: 38
+  percent: 100
 ---
 
 # Project State
@@ -118,7 +118,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-20T19:04:24.506Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-statistical-hygiene-sweep-runner/05-CONTEXT.md
+Last session: 2026-05-21T16:33:03.185Z
+Stopped at: Phase 6 context gathered (docs-only scope)
+Resume file: .planning/phases/06-mcp-http-wrappers/06-CONTEXT.md
 Next action: Begin Phase 5 (Statistical Hygiene & Sweep Runner) via `/gsd-discuss-phase 5`. The Phase 5 plan in ROADMAP.md owns OP-04 (TOML sweep manifest fanout) + HYG-01..05 (effect sizes, BH-FDR, block bootstrap, phase-scrambled nulls, bit-for-bit reproducible RNG).
