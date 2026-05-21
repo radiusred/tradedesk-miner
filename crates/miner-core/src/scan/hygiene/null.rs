@@ -18,9 +18,13 @@
 //! `false` until Phase 7; user requests for phase-scramble are rejected
 //! with `PreflightCode::HygieneNotSupported`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use rand::Rng;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
+
+use super::bootstrap::BOOTSTRAP_CANCEL_POLL_CADENCE;
 
 /// Tail-direction selector for surrogate-data null tests (WR-01).
 ///
@@ -78,6 +82,10 @@ pub enum Tail {
     clippy::cast_precision_loss,
     reason = "n_resamples and more_extreme are u32 counts; the f64 conversion is exact for inputs < 2^53 (n_resamples << 2^31)"
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "WR-04 cancel parameter; positional contract retained for byte-identical-rerun parity"
+)]
 pub fn circular_shift_null_p<F>(
     values: &[f64],
     observed_stat: f64,
@@ -85,6 +93,7 @@ pub fn circular_shift_null_p<F>(
     n_resamples: u32,
     seed: u64,
     tail: Tail,
+    cancel: &AtomicBool,
 ) -> f64
 where
     F: Fn(&[f64]) -> f64,
@@ -93,6 +102,9 @@ where
     if n < 2 || n_resamples == 0 {
         return f64::NAN;
     }
+    // WR-06 (defence-in-depth): clamp n_resamples at the kernel boundary
+    // against HYGIENE_RESAMPLE_CEILING.
+    let n_resamples = n_resamples.min(crate::engine::HYGIENE_RESAMPLE_CEILING);
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
     let mut surrogate: Vec<f64> = vec![0.0; n];
     let mut more_extreme: u32 = 0;
@@ -100,7 +112,11 @@ where
     // unconditionally; for one-sided test statistics this biases the
     // empirical p-value downward.
     let obs_abs = observed_stat.abs();
-    for _ in 0..n_resamples {
+    for resample in 0..n_resamples {
+        // WR-04: sparse cancel poll. Same cadence as the bootstrap kernels.
+        if resample % BOOTSTRAP_CANCEL_POLL_CADENCE == 0 && cancel.load(Ordering::Relaxed) {
+            return f64::NAN;
+        }
         let offset = rng.gen_range(1..n); // 1..n excludes the identity (offset 0)
         for (i, slot) in surrogate.iter_mut().enumerate().take(n) {
             *slot = values[(i + offset) % n];
@@ -134,6 +150,15 @@ where
 )]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    /// Helper: a never-cancelled flag for tests that exercise the kernel
+    /// completion path. The kernel polls this every
+    /// [`BOOTSTRAP_CANCEL_POLL_CADENCE`] resamples; tests pass a
+    /// fresh-`false` flag so the cancel branch is never taken.
+    fn no_cancel() -> AtomicBool {
+        AtomicBool::new(false)
+    }
 
     fn lcg_iid(n: usize, seed: u64) -> Vec<f64> {
         let mut s = seed as u32;
@@ -169,6 +194,7 @@ mod tests {
                 200,
                 0x200 + u64::from(trial),
                 Tail::TwoSided,
+                &no_cancel(),
             );
             assert!(
                 (0.0..=1.0).contains(&p),
@@ -188,8 +214,8 @@ mod tests {
     fn circular_shift_null_p_deterministic_for_seed() {
         let values = lcg_iid(50, 0xDEAD);
         let observed = mean(&values);
-        let p_a = circular_shift_null_p(&values, observed, mean, 100, 0xBEEF, Tail::TwoSided);
-        let p_b = circular_shift_null_p(&values, observed, mean, 100, 0xBEEF, Tail::TwoSided);
+        let p_a = circular_shift_null_p(&values, observed, mean, 100, 0xBEEF, Tail::TwoSided, &no_cancel());
+        let p_b = circular_shift_null_p(&values, observed, mean, 100, 0xBEEF, Tail::TwoSided, &no_cancel());
         assert_eq!(p_a.to_bits(), p_b.to_bits(), "p-value bit-identity");
     }
 
@@ -197,11 +223,11 @@ mod tests {
     #[test]
     fn circular_shift_null_p_short_input_nan() {
         let one = [1.0_f64];
-        assert!(circular_shift_null_p(&one, 1.0, mean, 100, 0, Tail::TwoSided).is_nan());
+        assert!(circular_shift_null_p(&one, 1.0, mean, 100, 0, Tail::TwoSided, &no_cancel()).is_nan());
         let empty: [f64; 0] = [];
-        assert!(circular_shift_null_p(&empty, 0.0, mean, 100, 0, Tail::TwoSided).is_nan());
+        assert!(circular_shift_null_p(&empty, 0.0, mean, 100, 0, Tail::TwoSided, &no_cancel()).is_nan());
         let two = [1.0_f64, 2.0];
-        assert!(circular_shift_null_p(&two, 1.5, mean, 0, 0, Tail::TwoSided).is_nan());
+        assert!(circular_shift_null_p(&two, 1.5, mean, 0, 0, Tail::TwoSided, &no_cancel()).is_nan());
     }
 
     /// CR-02 regression: empirical p MUST floor at `1 / (n_resamples + 1)`
@@ -224,7 +250,7 @@ mod tests {
         // can exceed it, more_extreme stays 0.
         let observed = 1000.0;
         let n_resamples = 99_u32;
-        let p = circular_shift_null_p(&values, observed, mean, n_resamples, 0xCAFE, Tail::TwoSided);
+        let p = circular_shift_null_p(&values, observed, mean, n_resamples, 0xCAFE, Tail::TwoSided, &no_cancel());
 
         // (1 + 0) / (1 + 99) = 0.01 exactly.
         let expected = 1.0_f64 / (f64::from(n_resamples) + 1.0);

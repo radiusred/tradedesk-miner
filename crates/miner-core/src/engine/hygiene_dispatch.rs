@@ -85,7 +85,7 @@
 //! `apply_hygiene_mutations` in `engine/mod.rs`.
 
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rand::Rng;
 use rand::SeedableRng;
@@ -341,6 +341,10 @@ pub(crate) fn tail_for(scan_id_at_version: &str) -> crate::scan::hygiene::null::
     clippy::cast_sign_loss,
     reason = "n_resamples is u32; floor/ceil casts bounded by n_resamples << 2^31"
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "WR-04 cancel parameter; mirrors Single-arity kernel positional contract"
+)]
 pub(crate) fn pair_stationary_bootstrap_ci<F>(
     values_a: &[f64],
     values_b: &[f64],
@@ -349,15 +353,19 @@ pub(crate) fn pair_stationary_bootstrap_ci<F>(
     mean_block_len: f64,
     seed: u64,
     ci_level: f64,
+    cancel: &AtomicBool,
 ) -> [f64; 2]
 where
     F: Fn(&[f64], &[f64]) -> f64,
 {
+    use crate::scan::hygiene::bootstrap::BOOTSTRAP_CANCEL_POLL_CADENCE;
     debug_assert_eq!(values_a.len(), values_b.len(), "pair_stationary_bootstrap_ci: pair length mismatch");
     let n = values_a.len();
     if n < 2 || n_resamples == 0 {
         return [f64::NAN, f64::NAN];
     }
+    // WR-06 (defence-in-depth): clamp n_resamples at the kernel boundary.
+    let n_resamples = n_resamples.min(crate::engine::HYGIENE_RESAMPLE_CEILING);
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
     let p_continue = if mean_block_len > 1.0 { 1.0 / mean_block_len } else { 1.0 };
 
@@ -365,7 +373,11 @@ where
     let mut buf_a: Vec<f64> = Vec::with_capacity(n);
     let mut buf_b: Vec<f64> = Vec::with_capacity(n);
 
-    for _ in 0..n_resamples {
+    for resample in 0..n_resamples {
+        // WR-04: sparse cancel poll.
+        if resample % BOOTSTRAP_CANCEL_POLL_CADENCE == 0 && cancel.load(Ordering::Relaxed) {
+            return [f64::NAN, f64::NAN];
+        }
         buf_a.clear();
         buf_b.clear();
         let mut idx = rng.gen_range(0..n);
@@ -401,6 +413,10 @@ where
     clippy::cast_sign_loss,
     reason = "n_resamples is u32; floor/ceil casts bounded by n_resamples << 2^31"
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "WR-04 cancel parameter; mirrors Single-arity kernel positional contract"
+)]
 pub(crate) fn pair_block_bootstrap_ci<F>(
     values_a: &[f64],
     values_b: &[f64],
@@ -409,21 +425,31 @@ pub(crate) fn pair_block_bootstrap_ci<F>(
     block_len: usize,
     seed: u64,
     ci_level: f64,
+    cancel: &AtomicBool,
 ) -> [f64; 2]
 where
     F: Fn(&[f64], &[f64]) -> f64,
 {
+    use crate::scan::hygiene::bootstrap::BOOTSTRAP_CANCEL_POLL_CADENCE;
     debug_assert_eq!(values_a.len(), values_b.len(), "pair_block_bootstrap_ci: pair length mismatch");
     let n = values_a.len();
     if n < 2 || n_resamples == 0 || block_len == 0 {
         return [f64::NAN, f64::NAN];
     }
+    // WR-05: clamp block_len against n (mirrors the Single-arity kernel).
+    let block_len = block_len.min(n);
+    // WR-06 (defence-in-depth).
+    let n_resamples = n_resamples.min(crate::engine::HYGIENE_RESAMPLE_CEILING);
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
     let mut boot_stats: Vec<f64> = Vec::with_capacity(n_resamples as usize);
     let mut buf_a: Vec<f64> = Vec::with_capacity(n);
     let mut buf_b: Vec<f64> = Vec::with_capacity(n);
 
-    for _ in 0..n_resamples {
+    for resample in 0..n_resamples {
+        // WR-04: sparse cancel poll.
+        if resample % BOOTSTRAP_CANCEL_POLL_CADENCE == 0 && cancel.load(Ordering::Relaxed) {
+            return [f64::NAN, f64::NAN];
+        }
         buf_a.clear();
         buf_b.clear();
         let mut idx = rng.gen_range(0..n);
@@ -469,6 +495,10 @@ where
     clippy::cast_precision_loss,
     reason = "n_resamples and more_extreme are u32 counts; f64 conversion exact for inputs < 2^53"
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "WR-04 cancel parameter; mirrors Single-arity kernel positional contract"
+)]
 pub(crate) fn pair_circular_shift_null_p<F>(
     values_a: &[f64],
     values_b: &[f64],
@@ -477,21 +507,29 @@ pub(crate) fn pair_circular_shift_null_p<F>(
     n_resamples: u32,
     seed: u64,
     tail: crate::scan::hygiene::null::Tail,
+    cancel: &AtomicBool,
 ) -> f64
 where
     F: Fn(&[f64], &[f64]) -> f64,
 {
+    use crate::scan::hygiene::bootstrap::BOOTSTRAP_CANCEL_POLL_CADENCE;
     use crate::scan::hygiene::null::Tail;
     debug_assert_eq!(values_a.len(), values_b.len(), "pair_circular_shift_null_p: pair length mismatch");
     let n = values_a.len();
     if n < 2 || n_resamples == 0 {
         return f64::NAN;
     }
+    // WR-06 (defence-in-depth).
+    let n_resamples = n_resamples.min(crate::engine::HYGIENE_RESAMPLE_CEILING);
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
     let mut surrogate_b: Vec<f64> = vec![0.0; n];
     let mut more_extreme: u32 = 0;
     let obs_abs = observed_stat.abs();
-    for _ in 0..n_resamples {
+    for resample in 0..n_resamples {
+        // WR-04: sparse cancel poll.
+        if resample % BOOTSTRAP_CANCEL_POLL_CADENCE == 0 && cancel.load(Ordering::Relaxed) {
+            return f64::NAN;
+        }
         let offset = rng.gen_range(1..n);
         for (i, slot) in surrogate_b.iter_mut().enumerate().take(n) {
             *slot = values_b[(i + offset) % n];
@@ -1222,8 +1260,9 @@ mod tests {
             if da == 0.0 || db == 0.0 { return 0.0; }
             num / (da.sqrt() * db.sqrt())
         };
-        let ci_a = pair_stationary_bootstrap_ci(&a, &b, stat, 100, 5.0, 0xBEEF, 0.95);
-        let ci_b = pair_stationary_bootstrap_ci(&a, &b, stat, 100, 5.0, 0xBEEF, 0.95);
+        let no_cancel = AtomicBool::new(false);
+        let ci_a = pair_stationary_bootstrap_ci(&a, &b, stat, 100, 5.0, 0xBEEF, 0.95, &no_cancel);
+        let ci_b = pair_stationary_bootstrap_ci(&a, &b, stat, 100, 5.0, 0xBEEF, 0.95, &no_cancel);
         assert_eq!(ci_a[0].to_bits(), ci_b[0].to_bits());
         assert_eq!(ci_a[1].to_bits(), ci_b[1].to_bits());
         assert!(ci_a[0] <= ci_a[1]);
@@ -1242,6 +1281,7 @@ mod tests {
             xa.iter().zip(xb.iter()).map(|(x, y)| x * y).sum::<f64>() / nf
         };
         let observed = stat(&a, &b);
+        let no_cancel = AtomicBool::new(false);
         let p1 = pair_circular_shift_null_p(
             &a,
             &b,
@@ -1250,6 +1290,7 @@ mod tests {
             100,
             0xCAFE,
             crate::scan::hygiene::null::Tail::TwoSided,
+            &no_cancel,
         );
         let p2 = pair_circular_shift_null_p(
             &a,
@@ -1259,6 +1300,7 @@ mod tests {
             100,
             0xCAFE,
             crate::scan::hygiene::null::Tail::TwoSided,
+            &no_cancel,
         );
         assert_eq!(p1.to_bits(), p2.to_bits());
         assert!((0.0..=1.0).contains(&p1));

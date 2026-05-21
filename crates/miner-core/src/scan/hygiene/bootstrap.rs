@@ -8,16 +8,24 @@
 //! `SeedableRng::seed_from_u64`; `SmallRng` / `StdRng` are explicitly NOT
 //! used (RESEARCH §1.5 — non-portable across rand versions).
 //!
-//! ## Cancel-poll discipline
+//! ## Cancel-poll discipline (WR-04 revision)
 //!
-//! The kernels in this module do NOT poll for cancellation. Cancel polling
-//! happens between successive kernel calls in the engine (RESEARCH Pitfall 7
-//! — cadence N=64); Plan 05-03 implements the engine-side polling around the
-//! kernel call site. Adding `&AtomicBool` to the kernel signature would
-//! either tax every resample iteration (10^5+ atomic loads per kernel call)
-//! or require the caller to construct a no-op flag for pure-math test use
-//! cases. Neither is justifiable for a kernel that always finishes in
-//! milliseconds; the engine's outer loop is the right cancel-poll surface.
+//! The kernels in this module accept `cancel: &AtomicBool` and poll it
+//! sparsely (every [`BOOTSTRAP_CANCEL_POLL_CADENCE`] resamples). The
+//! original Plan-05-02 design did NOT poll inside the kernel — under the
+//! assumption that kernels always finished in milliseconds. WR-04 surfaced
+//! that the documented [`crate::engine::HYGIENE_RESAMPLE_CEILING`] (100k)
+//! combined with realistic input sizes (`n` of order 10^4 bars) means a
+//! single kernel call can run multi-second uninterruptibly — defeating
+//! the cooperative-cancel contract. The sparse poll cadence (every 64
+//! resamples) keeps per-iteration overhead near zero (~0.02% of a
+//! resample) while bounding the worst-case cancel-response latency to
+//! ~10ms on a realistic kernel.
+//!
+//! When cancel fires mid-kernel, the kernel returns `[NaN, NaN]` (CI) or
+//! `NaN` (p-value); the engine treats NaN as "no CI / p-value" and
+//! propagates the cancel via the outer-loop poll cadence (RESEARCH
+//! Pitfall 7).
 //!
 //! ## Memory-amplification discipline (RESEARCH Pitfall 2)
 //!
@@ -26,9 +34,18 @@
 //! `buf.clear()`-ed per resample. The naïve `Vec::with_capacity(n)` per
 //! resample pattern would allocate `n_resamples * n` floats over the run.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use rand::Rng;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
+
+/// Sparse cancel-poll cadence inside the bootstrap / null kernels (WR-04).
+///
+/// Polling every 64 resamples bounds the worst-case mid-kernel cancel
+/// response to roughly `64 * cost_per_resample`, which is ~10ms on a
+/// 10^4-bar input even at the documented [`crate::engine::HYGIENE_RESAMPLE_CEILING`].
+pub const BOOTSTRAP_CANCEL_POLL_CADENCE: u32 = 64;
 
 /// Politis-Romano (1994) stationary bootstrap CI for a scalar statistic of
 /// an autocorrelated series.
@@ -55,6 +72,10 @@ use rand_xoshiro::Xoshiro256PlusPlus;
     clippy::cast_sign_loss,
     reason = "n_resamples is a u32 user input; the floor/ceil cast to usize is bounded by n_resamples and cannot overflow on practical inputs (n_resamples << 2^31)"
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "WR-04 adds `cancel: &AtomicBool`; the resampling kernel's positional contract is part of the documented byte-identical-rerun invariant — wrapping into a context struct would obscure the call-site discipline"
+)]
 pub fn stationary_bootstrap_ci<F>(
     values: &[f64],
     stat: F,
@@ -62,6 +83,7 @@ pub fn stationary_bootstrap_ci<F>(
     mean_block_len: f64,
     seed: u64,
     ci_level: f64,
+    cancel: &AtomicBool,
 ) -> [f64; 2]
 where
     F: Fn(&[f64]) -> f64,
@@ -70,6 +92,12 @@ where
     if n < 2 || n_resamples == 0 {
         return [f64::NAN, f64::NAN];
     }
+    // WR-06 (defence-in-depth): clamp n_resamples at the kernel boundary
+    // against HYGIENE_RESAMPLE_CEILING. The engine clamps at the call
+    // site, but the kernel is `pub` and could be invoked externally;
+    // accepting an unbounded u32 would allow `n_resamples = u32::MAX` to
+    // attempt a ~32GB `boot_stats` allocation.
+    let n_resamples = n_resamples.min(crate::engine::HYGIENE_RESAMPLE_CEILING);
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
     let p_continue = if mean_block_len > 1.0 {
         1.0 / mean_block_len
@@ -81,7 +109,13 @@ where
     let mut boot_stats: Vec<f64> = Vec::with_capacity(n_resamples_usize);
     let mut buf: Vec<f64> = Vec::with_capacity(n);
 
-    for _resample in 0..n_resamples {
+    for resample in 0..n_resamples {
+        // WR-04: sparse cancel poll. Acquire ordering is not needed —
+        // this is a cooperative-cancel signal, not a synchronisation
+        // primitive. Relaxed keeps the per-iteration overhead minimal.
+        if resample % BOOTSTRAP_CANCEL_POLL_CADENCE == 0 && cancel.load(Ordering::Relaxed) {
+            return [f64::NAN, f64::NAN];
+        }
         buf.clear();
         let mut idx = rng.gen_range(0..n);
         while buf.len() < n {
@@ -116,12 +150,23 @@ where
 /// - `values.len() < 2` → `[NaN, NaN]`.
 /// - `n_resamples == 0` → `[NaN, NaN]`.
 /// - `block_len == 0` → `[NaN, NaN]` (block-size zero is undefined).
+/// - `block_len > n` → clamped to `n` (WR-05). Without the clamp, the
+///   loop body would draw a single block start per resample and read
+///   wraparound until `buf.len() == n` — every resample becomes a
+///   deterministic circular window of the input, undermining the
+///   bootstrap variance estimate. Clamping to `n` keeps the resample
+///   semantics meaningful (each resample is the whole series rotated
+///   to a uniform random offset).
 #[must_use]
 #[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "n_resamples is a u32 user input; the floor/ceil cast to usize is bounded by n_resamples and cannot overflow on practical inputs (n_resamples << 2^31)"
+)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "WR-04 adds `cancel: &AtomicBool`; positional contract retained for byte-identical-rerun parity with stationary kernel"
 )]
 pub fn block_bootstrap_ci<F>(
     values: &[f64],
@@ -130,6 +175,7 @@ pub fn block_bootstrap_ci<F>(
     block_len: usize,
     seed: u64,
     ci_level: f64,
+    cancel: &AtomicBool,
 ) -> [f64; 2]
 where
     F: Fn(&[f64]) -> f64,
@@ -138,12 +184,24 @@ where
     if n < 2 || n_resamples == 0 || block_len == 0 {
         return [f64::NAN, f64::NAN];
     }
+    // WR-05: clamp block_len against n. When block_len > n, the inner
+    // loop never re-draws an index before buf fills, so every resample
+    // becomes a deterministic circular slice — destroying the variance
+    // estimate. Clamping to n preserves the bootstrap semantics.
+    let block_len = block_len.min(n);
+    // WR-06 (defence-in-depth): same n_resamples ceiling clamp as the
+    // stationary kernel.
+    let n_resamples = n_resamples.min(crate::engine::HYGIENE_RESAMPLE_CEILING);
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
     let n_resamples_usize = n_resamples as usize;
     let mut boot_stats: Vec<f64> = Vec::with_capacity(n_resamples_usize);
     let mut buf: Vec<f64> = Vec::with_capacity(n);
 
-    for _resample in 0..n_resamples {
+    for resample in 0..n_resamples {
+        // WR-04: sparse cancel poll (see stationary kernel docs).
+        if resample % BOOTSTRAP_CANCEL_POLL_CADENCE == 0 && cancel.load(Ordering::Relaxed) {
+            return [f64::NAN, f64::NAN];
+        }
         buf.clear();
         let mut idx = rng.gen_range(0..n);
         let mut steps_in_block: usize = 0;
@@ -295,6 +353,12 @@ pub fn block_length_pwppw(values: &[f64]) -> f64 {
 mod tests {
     use super::*;
 
+    /// Helper: a never-cancelled flag for tests that exercise the kernel
+    /// completion path.
+    fn no_cancel() -> AtomicBool {
+        AtomicBool::new(false)
+    }
+
     /// Test fixture: deterministic LCG-derived iid samples in (-1, 1].
     /// Pattern: Pattern S6 in 05-PATTERNS lines 1366-1376.
     fn lcg_iid(n: usize, seed: u64) -> Vec<f64> {
@@ -319,8 +383,8 @@ mod tests {
     #[test]
     fn stationary_bootstrap_ci_deterministic_for_seed() {
         let values = lcg_iid(50, 0xDEAD);
-        let ci_a = stationary_bootstrap_ci(&values, mean, 100, 5.0, 0xBEEF, 0.95);
-        let ci_b = stationary_bootstrap_ci(&values, mean, 100, 5.0, 0xBEEF, 0.95);
+        let ci_a = stationary_bootstrap_ci(&values, mean, 100, 5.0, 0xBEEF, 0.95, &no_cancel());
+        let ci_b = stationary_bootstrap_ci(&values, mean, 100, 5.0, 0xBEEF, 0.95, &no_cancel());
         assert_eq!(ci_a[0].to_bits(), ci_b[0].to_bits());
         assert_eq!(ci_a[1].to_bits(), ci_b[1].to_bits());
         assert!(ci_a[0].is_finite() && ci_a[1].is_finite());
@@ -371,6 +435,7 @@ mod tests {
                 6.0,
                 0xCAFE + u64::from(trial),
                 0.95,
+                &no_cancel(),
             );
             if ci[0] <= true_mean && true_mean <= ci[1] {
                 covered += 1;
@@ -384,13 +449,13 @@ mod tests {
     #[test]
     fn stationary_bootstrap_ci_returns_nan_on_short() {
         let one = [1.0_f64];
-        let ci = stationary_bootstrap_ci(&one, mean, 100, 3.0, 0, 0.95);
+        let ci = stationary_bootstrap_ci(&one, mean, 100, 3.0, 0, 0.95, &no_cancel());
         assert!(ci[0].is_nan() && ci[1].is_nan());
         let empty: [f64; 0] = [];
-        let ci_empty = stationary_bootstrap_ci(&empty, mean, 100, 3.0, 0, 0.95);
+        let ci_empty = stationary_bootstrap_ci(&empty, mean, 100, 3.0, 0, 0.95, &no_cancel());
         assert!(ci_empty[0].is_nan() && ci_empty[1].is_nan());
         let two = [1.0_f64, 2.0];
-        let ci_n0 = stationary_bootstrap_ci(&two, mean, 0, 3.0, 0, 0.95);
+        let ci_n0 = stationary_bootstrap_ci(&two, mean, 0, 3.0, 0, 0.95, &no_cancel());
         assert!(ci_n0[0].is_nan() && ci_n0[1].is_nan());
     }
 
@@ -398,8 +463,8 @@ mod tests {
     #[test]
     fn block_bootstrap_ci_deterministic_for_seed() {
         let values = lcg_iid(50, 0xDEAD);
-        let ci_a = block_bootstrap_ci(&values, mean, 100, 5, 0xBEEF, 0.95);
-        let ci_b = block_bootstrap_ci(&values, mean, 100, 5, 0xBEEF, 0.95);
+        let ci_a = block_bootstrap_ci(&values, mean, 100, 5, 0xBEEF, 0.95, &no_cancel());
+        let ci_b = block_bootstrap_ci(&values, mean, 100, 5, 0xBEEF, 0.95, &no_cancel());
         assert_eq!(ci_a[0].to_bits(), ci_b[0].to_bits());
         assert_eq!(ci_a[1].to_bits(), ci_b[1].to_bits());
         assert!(ci_a[0] <= ci_a[1]);
@@ -409,10 +474,38 @@ mod tests {
     #[test]
     fn block_bootstrap_ci_short_input_nan() {
         let one = [1.0_f64];
-        assert!(block_bootstrap_ci(&one, mean, 100, 5, 0, 0.95)[0].is_nan());
+        assert!(block_bootstrap_ci(&one, mean, 100, 5, 0, 0.95, &no_cancel())[0].is_nan());
         let two = [1.0_f64, 2.0];
-        assert!(block_bootstrap_ci(&two, mean, 100, 0, 0, 0.95)[0].is_nan());
-        assert!(block_bootstrap_ci(&two, mean, 0, 5, 0, 0.95)[0].is_nan());
+        assert!(block_bootstrap_ci(&two, mean, 100, 0, 0, 0.95, &no_cancel())[0].is_nan());
+        assert!(block_bootstrap_ci(&two, mean, 0, 5, 0, 0.95, &no_cancel())[0].is_nan());
+    }
+
+    /// WR-05 regression: `block_bootstrap_ci` with `block_len >= n` must
+    /// produce a deterministic, sensible CI (`lo <= hi`) and not loop
+    /// indefinitely / silently degenerate.
+    ///
+    /// Pre-fix the inner loop never re-drew an index before buf filled
+    /// — every resample became a deterministic circular window of the
+    /// input, destroying the variance estimate. Post-fix `block_len` is
+    /// clamped to `n` at the kernel boundary.
+    #[test]
+    fn block_bootstrap_ci_block_len_geq_n_is_deterministic_and_sensible() {
+        let values = lcg_iid(20, 0xABCD);
+        let ci_eq = block_bootstrap_ci(&values, mean, 200, 20, 0x42, 0.95, &no_cancel());
+        let ci_gt = block_bootstrap_ci(&values, mean, 200, 100, 0x42, 0.95, &no_cancel());
+
+        assert!(ci_eq[0].is_finite(), "block_len == n: lo finite");
+        assert!(ci_eq[1].is_finite(), "block_len == n: hi finite");
+        assert!(ci_eq[0] <= ci_eq[1], "block_len == n: lo <= hi");
+
+        assert!(ci_gt[0].is_finite(), "block_len > n: lo finite");
+        assert!(ci_gt[1].is_finite(), "block_len > n: hi finite");
+        assert!(ci_gt[0] <= ci_gt[1], "block_len > n: lo <= hi");
+
+        // Determinism: with block_len clamped to n, both calls share the
+        // same effective block_len, so the CIs MUST be byte-identical.
+        assert_eq!(ci_eq[0].to_bits(), ci_gt[0].to_bits());
+        assert_eq!(ci_eq[1].to_bits(), ci_gt[1].to_bits());
     }
 
     /// Test 5 (Plan 05-02): `block_length_pwppw` returns finite sane value.

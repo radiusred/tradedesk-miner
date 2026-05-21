@@ -1164,7 +1164,13 @@ fn apply_hygiene_mutations(
                         3.0
                     };
                     hygiene_bootstrap::stationary_bootstrap_ci(
-                        &values, stat_fn, n, block_len, job_seed, 0.95,
+                        &values,
+                        stat_fn,
+                        n,
+                        block_len,
+                        job_seed,
+                        0.95,
+                        cancel.as_ref(),
                     )
                 }
                 BootstrapMethod::Block => {
@@ -1187,6 +1193,7 @@ fn apply_hygiene_mutations(
                         block_len_usize,
                         job_seed,
                         0.95,
+                        cancel.as_ref(),
                     )
                 }
             };
@@ -1238,6 +1245,7 @@ fn apply_hygiene_mutations(
                         n,
                         job_seed,
                         tail,
+                        cancel.as_ref(),
                     )
                 }
                 NullMethod::PhaseScramble => {
@@ -1295,6 +1303,10 @@ fn apply_hygiene_mutations(
     clippy::too_many_arguments,
     reason = "linear hygiene walk parameterised on both legs + cancel + seeds — extracting a struct only to satisfy this lint hides the dataflow"
 )]
+#[allow(
+    clippy::too_many_lines,
+    reason = "WR-04 cancel-poll parameter widens kernel arg lists; the linear bootstrap → cancel → null walk inflates over the 100-line threshold but splitting would obscure the documented call-site cadence"
+)]
 fn apply_pair_hygiene(
     mut result: ResultFinding,
     req: &ScanRequest,
@@ -1317,7 +1329,14 @@ fn apply_pair_hygiene(
                     3.0
                 };
                 hygiene_dispatch::pair_stationary_bootstrap_ci(
-                    values_a, values_b, pair_stat, n, block_len, job_seed, 0.95,
+                    values_a,
+                    values_b,
+                    pair_stat,
+                    n,
+                    block_len,
+                    job_seed,
+                    0.95,
+                    cancel.as_ref(),
                 )
             }
             BootstrapMethod::Block => {
@@ -1341,6 +1360,7 @@ fn apply_pair_hygiene(
                     block_len_usize,
                     job_seed,
                     0.95,
+                    cancel.as_ref(),
                 )
             }
         };
@@ -1387,6 +1407,7 @@ fn apply_pair_hygiene(
                     n,
                     job_seed,
                     tail,
+                    cancel.as_ref(),
                 )
             }
             NullMethod::PhaseScramble => {
