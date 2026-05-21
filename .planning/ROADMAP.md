@@ -146,7 +146,12 @@ Plans:
   3. User can verify both wrappers route logs to stderr exclusively (no stdout / response-body pollution outside the protocol payload) and rejected requests return structured machine-parseable errors (`invalid_parameter`, `coverage_gap`, `sweep_too_large`).
   4. User can confirm both wrappers bridge to `miner-core` via `tokio::task::spawn_blocking` and that `cargo tree -p miner-core` still shows zero async dependencies.
   5. User can interrupt an HTTP sweep (client disconnect) or MCP sweep (client cancellation) and miner keeps every finding already streamed without leaking worker threads.
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Scope amendments (PROJECT/REQUIREMENTS/ROADMAP/STATE per D6-05/06/07) + root ARCHITECTURE.md + docs/.license-footer.md helper
+- [ ] 06-02-PLAN.md — Reference docs triad: findings_envelope.md, scan_catalogue.md, sweep_manifest.md
+- [ ] 06-03-PLAN.md — agent_integration.md + future_mcp_http.md + docs/examples/ + README ## Documentation + placeholder-binary message updates + Phase 6 sign-off
 **UI hint**: No
 
 > **Research flag:** Before planning this phase, re-run `gsd-research` on the `rmcp` crate (verify crate name, version, stdio + streamable-HTTP transport, streaming tool-result chunk support, tokio version compatibility). If any check fails, commit to the hand-rolled JSON-RPC-over-stdio fallback before plan-phase begins.
@@ -161,7 +166,12 @@ Plans:
   3. User can run `miner-bench` and `hyperfine` recipes against the dev sample (28 instruments × 3 timeframes × 6 years) and obtain reproducible wall-clock numbers documented in the README; flamegraph / samply profiling shows allocations below 5% of hot path.
   4. User can clone the repo, follow the README quickstart against the checked-in fixture cache, and produce at least one finding without any external download or hardcoded path.
   5. User can read README sections covering Dukascopy data-source caveats (00-indexed months, tick-count volume, bid/ask independence, weekend gaps, data licensing implications) and `cargo audit` / `cargo deny` runs clean in CI.
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Scope amendments (PROJECT/REQUIREMENTS/ROADMAP/STATE per D6-05/06/07) + root ARCHITECTURE.md + docs/.license-footer.md helper
+- [ ] 06-02-PLAN.md — Reference docs triad: findings_envelope.md, scan_catalogue.md, sweep_manifest.md
+- [ ] 06-03-PLAN.md — agent_integration.md + future_mcp_http.md + docs/examples/ + README ## Documentation + placeholder-binary message updates + Phase 6 sign-off
 **UI hint**: No
 
 ## Progress
