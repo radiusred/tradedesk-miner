@@ -3,16 +3,17 @@
 Overview
 - tradedesk-miner is a high-performance, agent-operable data-mining engine for historical financial OHLCV data.
 - It scans cached Dukascopy bid/ask CSVs and surfaces statistical candidates (anomalies, cross-instrument relationships, seasonality effects) for downstream consumers — primarily the RadiusRed Quant agent.
-- The codebase is organised into six crates with a strict one-way dependency direction:
+- The codebase is organised into seven Cargo crates with a strict one-way dependency direction (six runtime crates plus a dev-only `xtask` workspace member):
   - `miner-core` — the sync + rayon library.
-    - Owns the locked `Finding` envelope, the scan registry, the engine facade (`engine::run_one`), the sweep runner (`sweep::run_sweep`), the derived-bar cache, and the 22 v1 scans (ANOM / CROSS / SEAS).
+    - Owns the locked `Finding` envelope, the scan registry, the engine facade (`engine::run_one`), the sweep runner (`sweep::run_sweep`), the derived-bar cache, and the 23 v1 scans (ANOM / CROSS / SEAS).
     - Pure sync; no `tokio`, no `async fn`.
   - `miner-reader-dukascopy` — the reference implementation of the `Reader` trait against the existing tradedesk-dukascopy zstd-CSV cache layout.
   - `miner-cli` — the thin clap-derive wrapper exposing `miner scan` / `miner sweep` / `miner scans` / `miner emit-fixture`.
   - `miner-mcp` and `miner-http` — placeholder binaries.
     - MCP and HTTP server implementations are deferred to v2 — see `docs/future_mcp_http.md`.
     - The placeholder shells exist so the workspace graph (FOUND-01) is stable and v2 has anchor points.
-  - `miner-bench` + `xtask` — bench harness + workspace tooling (schema regen, etc.).
+  - `miner-bench` — the bench harness.
+  - `xtask` — dev-only workspace member hosting `cargo run -p xtask -- gen-schema` and similar developer tooling; not part of the runtime artefact set.
 - Dependency direction: `miner-cli | miner-mcp | miner-http -> miner-reader-dukascopy -> miner-core`.
 - CI gate 3 (`cargo tree -p miner-core --edges normal,build`) enforces this — `miner-core` must show zero `tokio` / `async` transitive dependencies.
 
