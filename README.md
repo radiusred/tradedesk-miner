@@ -215,6 +215,116 @@ family under `crates/miner-core/tests/goldens/`. The pinned reference
 versions live at `crates/miner-core/tests/goldens/REFERENCE-VERSIONS.md`
 and the regen recipe is bundled with each `generate_<scan>.py` script.
 
+## Quickstart — Sweep with Hygiene (Phase 5)
+
+Phase 5 lands the **sweep runner** and **statistical hygiene** layer (OP-04
++ HYG-01..05). One TOML manifest declares a cartesian grid of
+`scan × instruments × timeframes × windows × params` jobs; `miner sweep`
+fans those jobs out in parallel, applies per-job bootstrap CIs +
+null-distribution p-values, runs Benjamini-Hochberg FDR over the
+streamed p-values per `[fdr].family` scope, and emits one
+`Finding::SweepSummary` envelope between the last `Finding::Result` and
+`Finding::RunEnd`. Every run is byte-identical-reproducible from a
+single `[sweep].seed` (HYG-05).
+
+The canonical Quant-agent workflow:
+
+1. **Author a TOML manifest.** Save as `example.toml`:
+
+   ```toml
+   [sweep]
+   seed = 0xDEADBEEF
+   max_jobs = 100
+
+   [hygiene]
+   bootstrap = "stationary"
+   bootstrap_n = 500
+   null = "circular_shift"
+   null_n = 500
+
+   [fdr]
+   family = "scan_id"
+   alpha = 0.05
+
+   [[jobs]]
+   scan = "stats.autocorr.ljung_box@1"
+   instruments = ["EURUSD:bid", "GBPUSD:bid"]
+   timeframes = ["15m"]
+   windows = ["2024-01-01:2024-06-30"]
+   params = { lags = [10] }
+   ```
+
+2. **Run the sweep:**
+
+   ```sh
+   MINER_CACHE_ROOT=/path/to/cache \
+   MINER_BAR_CACHE_ROOT=/tmp/bar \
+   MINER_OUTPUT=stdout \
+   cargo run -p miner-cli -- sweep example.toml
+   ```
+
+   Expected stdout structure (newline-delimited JSON):
+
+   ```text
+   {"kind":"run_start", ...}
+   {"kind":"result", "scan_id_at_version":"stats.autocorr.ljung_box@1",
+    "effect":{"metric":"ljung_box_q_stat","value":...,"p_value":0.043,
+              "ci95":{"low":...,"high":...}},
+    "repro":{"master_seed":3735928559,"job_seed":...,
+             "bootstrap":{"method":"stationary","n":500},
+             "null":{"method":"circular_shift","n":500}}, ...}
+   {"kind":"result", "scan_id_at_version":"stats.autocorr.ljung_box@1", ...}
+   {"kind":"sweep_summary",
+    "fdr_by_family":{"stats.autocorr.ljung_box@1":{
+        "method":"benjamini_hochberg","alpha":0.05,
+        "per_finding":[{"finding_index":0,"raw_p":...,"q_value":...},
+                       {"finding_index":1,"raw_p":...,"q_value":...}]}},
+    "totals":{"jobs_run":2,"results_emitted":2,"scan_errors":0,"gap_aborted":0}}
+   {"kind":"run_end", ...}
+   ```
+
+3. **Dry-run** previews the cartesian-expanded job graph without
+   touching scan bodies:
+
+   ```sh
+   cargo run -p miner-cli -- sweep example.toml --dry-run
+   ```
+
+   Emits one `DryRunFinding` with `planned_job_count = 2`; no `Result`
+   or `SweepSummary` envelopes follow. Exit 0.
+
+4. **Single-shot equivalent** — `miner scan` accepts the same universal
+   `--bootstrap` / `--bootstrap-n` / `--null` / `--null-n` / `--seed`
+   hygiene flags as the sweep manifest, so the same statistical
+   hygiene contract is reachable interactively:
+
+   ```sh
+   cargo run -p miner-cli -- scan stats.autocorr.ljung_box@1 \
+       --instrument EURUSD:bid --timeframe 15m \
+       --window 2024-01-01:2024-06-30 \
+       --bootstrap stationary --bootstrap-n 500 \
+       --null circular_shift --null-n 500 \
+       --seed 0xDEADBEEF
+   ```
+
+5. **SIGINT during a sweep** preserves every already-streamed
+   `Result` envelope; the `SweepSummary` is intentionally suppressed
+   (the BH-FDR computation requires the full set of p-values).
+   Exit code 130 per D3-24.
+
+The committed `schemas/sweep-manifest-v1.schema.json` (regenerable via
+`cargo run -p xtask -- gen-schema`) documents the typed manifest grammar
+so MCP/HTTP wrappers in Phase 6 can validate manifests at the
+wire boundary without coupling to `miner-core`'s internal types.
+
+### References
+
+- Politis & Romano (1994), *The Stationary Bootstrap*. JASA 89(428).
+- Theiler, Eubank, Longtin, Galdrikian, Farmer (1992), *Testing for
+  nonlinearity in time series: the method of surrogate data*. Physica D 58.
+- Benjamini & Hochberg (1995), *Controlling the False Discovery Rate*.
+  JRSS-B 57(1).
+
 ## What Phase 1 Delivers
 
 - **Six-crate Cargo workspace** — `miner-core` library plus `miner-cli`,

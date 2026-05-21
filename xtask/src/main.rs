@@ -22,6 +22,7 @@
 use clap::{Parser, Subcommand};
 use miner_core::Finding;
 use miner_core::scan::ScanFindingShape;
+use miner_core::sweep::manifest::SweepManifest;
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -37,13 +38,17 @@ struct Cli {
 enum Cmd {
     /// Regenerate the committed JSON Schema artifacts from miner-core types.
     ///
-    /// Emits two files:
+    /// Emits three files:
     /// 1. `schemas/findings-v1.schema.json` — the locked envelope schema (root
     ///    type `miner_core::Finding`).
     /// 2. `schemas/scans-catalogue-v1.schema.json` — the sibling schema for
     ///    `miner scans` introspection lines (root type
     ///    `ScansCatalogueEntry`, an xtask-local shim wrapping the
     ///    `scan_id`/`version`/`params`/`finding_fields` shape per CONTEXT D3-20).
+    /// 3. `schemas/sweep-manifest-v1.schema.json` — Plan 05-05 / D5-04 — the
+    ///    JSON Schema for the Phase 5 sweep manifest (root type
+    ///    `miner_core::sweep::manifest::SweepManifest`). Documents the
+    ///    `[sweep]` / `[hygiene]` / `[fdr]` / `[[jobs]]` TOML grammar.
     GenSchema {
         /// Directory to write schema files into (default: schemas/).
         ///
@@ -126,6 +131,9 @@ fn gen_schema(out_dir: &Path) -> anyhow::Result<()> {
 
     write_schema::<Finding>(out_dir.join("findings-v1.schema.json").as_path())?;
     write_schema::<ScansCatalogueEntry>(out_dir.join("scans-catalogue-v1.schema.json").as_path())?;
+    // Plan 05-05 — emit the Phase 5 sweep manifest schema alongside the
+    // findings + catalogue schemas. Same determinism pipeline applies.
+    write_schema::<SweepManifest>(out_dir.join("sweep-manifest-v1.schema.json").as_path())?;
     Ok(())
 }
 
