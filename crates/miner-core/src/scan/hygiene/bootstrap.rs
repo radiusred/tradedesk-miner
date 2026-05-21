@@ -285,7 +285,9 @@ pub fn block_length_pwppw(values: &[f64]) -> f64 {
     let mut r = Vec::with_capacity(k_n + 1);
     r.push(r0);
     for k in 1..=k_n {
-        let s: f64 = (0..n.saturating_sub(k)).map(|i| cent[i] * cent[i + k]).sum();
+        let s: f64 = (0..n.saturating_sub(k))
+            .map(|i| cent[i] * cent[i + k])
+            .sum();
         r.push(s / n_f);
     }
 

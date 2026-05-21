@@ -256,7 +256,10 @@ mod tests {
             Some("stationary"),
             "CLI bootstrap overrides"
         );
-        assert_eq!(manifest.hygiene.bootstrap_n, 500, "CLI bootstrap_n overrides");
+        assert_eq!(
+            manifest.hygiene.bootstrap_n, 500,
+            "CLI bootstrap_n overrides"
+        );
         assert_eq!(
             manifest.hygiene.null.as_deref(),
             Some("circular_shift"),

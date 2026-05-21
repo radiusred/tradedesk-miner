@@ -59,10 +59,7 @@ pub fn bh_fdr(p_values: &[f64], alpha: f64) -> Vec<f64> {
     if n == 0 {
         return Vec::new();
     }
-    debug_assert!(
-        (0.0..=1.0).contains(&alpha),
-        "alpha out of [0, 1]: {alpha}"
-    );
+    debug_assert!((0.0..=1.0).contains(&alpha), "alpha out of [0, 1]: {alpha}");
 
     // Pre-fill output with NaN. Positions corresponding to NaN p-values
     // stay NaN; positions corresponding to finite p-values are overwritten
@@ -183,7 +180,11 @@ mod tests {
         let q = bh_fdr(&p, 0.05);
         // Build the index sort order on p.
         let mut idx: Vec<usize> = (0..p.len()).collect();
-        idx.sort_by(|a, b| p[*a].partial_cmp(&p[*b]).unwrap_or(std::cmp::Ordering::Equal));
+        idx.sort_by(|a, b| {
+            p[*a]
+                .partial_cmp(&p[*b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         // Walk the sorted indices; consecutive q-values must be non-decreasing.
         for w in idx.windows(2) {
             let (i, j) = (w[0], w[1]);
@@ -216,10 +217,7 @@ mod tests {
         let p = [0.001_f64, 0.01, 0.05, 0.1, 0.5, 0.9, 0.99];
         let q = bh_fdr(&p, 0.05);
         for (i, qi) in q.iter().enumerate() {
-            assert!(
-                (0.0..=1.0).contains(qi),
-                "q[{i}] = {qi} outside [0, 1]"
-            );
+            assert!((0.0..=1.0).contains(qi), "q[{i}] = {qi} outside [0, 1]");
         }
     }
 
@@ -238,15 +236,7 @@ mod tests {
         // Mix NaN among a known-good p-vector. The finite subset
         // [0.01, 0.02, 0.03, 0.04, 0.05] is the canonical 5-tuple from
         // `bh_fdr_canonical_5`; its q-values are all 0.05 within 1e-12.
-        let p = [
-            0.01_f64,
-            f64::NAN,
-            0.02,
-            0.03,
-            f64::NAN,
-            0.04,
-            0.05,
-        ];
+        let p = [0.01_f64, f64::NAN, 0.02, 0.03, f64::NAN, 0.04, 0.05];
         let q = bh_fdr(&p, 0.05);
         assert_eq!(q.len(), p.len(), "output length matches input length");
 

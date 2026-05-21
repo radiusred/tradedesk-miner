@@ -174,7 +174,10 @@ fn sigint_mid_sweep_preserves_streamed_findings() {
         }
         buf.clear();
     }
-    assert!(saw_result, "child must emit at least one Result before SIGINT");
+    assert!(
+        saw_result,
+        "child must emit at least one Result before SIGINT"
+    );
 
     // Step 4 — deliver SIGINT to the child.
     kill(Pid::from_raw(child_pid as i32), Signal::SIGINT).expect("kill SIGINT");

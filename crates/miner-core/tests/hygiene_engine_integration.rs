@@ -234,7 +234,12 @@ fn bootstrap_ci_populates_effect_ci95_on_ljung_box() {
         ci[0],
         ci[1]
     );
-    assert!(ci[0] <= ci[1], "ci lo must be <= hi; got [{}, {}]", ci[0], ci[1]);
+    assert!(
+        ci[0] <= ci[1],
+        "ci lo must be <= hi; got [{}, {}]",
+        ci[0],
+        ci[1]
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -324,7 +329,10 @@ fn repro_envelope_populated_with_bootstrap_and_null() {
         .expect("bootstrap requested — repro.bootstrap must be Some");
     assert_eq!(bs.method, "stationary");
     assert_eq!(bs.n, 100);
-    let nl = repro.null.as_ref().expect("null requested — repro.null must be Some");
+    let nl = repro
+        .null
+        .as_ref()
+        .expect("null requested — repro.null must be Some");
     assert_eq!(nl.method, "circular_shift");
     assert_eq!(nl.n, 100);
 }
@@ -388,7 +396,10 @@ fn byte_identical_rerun_under_hygiene_on_ljung_box() {
     let repro_a = result_a.repro.expect("repro Some");
     let repro_b = result_b.repro.expect("repro Some");
     assert_eq!(repro_a.job_seed, repro_b.job_seed, "job_seed identity");
-    assert_eq!(repro_a.master_seed, repro_b.master_seed, "master_seed identity");
+    assert_eq!(
+        repro_a.master_seed, repro_b.master_seed,
+        "master_seed identity"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -416,7 +427,9 @@ fn bootstrap_and_null_n_clamped_to_ceiling() {
     let bytes = run_engine(&req, day, |r| r.register(Box::new(LjungBoxScan)));
     let result = first_result(&bytes);
     let repro = result.repro.expect("hygiene ran — repro Some");
-    let bs = repro.bootstrap.expect("bootstrap ran — repro.bootstrap Some");
+    let bs = repro
+        .bootstrap
+        .expect("bootstrap ran — repro.bootstrap Some");
     assert_eq!(
         bs.n, 100_000,
         "bootstrap_n must be clamped at 100_000 (T-05-03-V5); got {}",
@@ -446,7 +459,10 @@ fn bootstrap_ci_populates_on_welford_with_null_none() {
         make_welford_request(Some(BootstrapMethod::Stationary), Some(100), Some(0xCAFE));
     let bytes = run_engine(&req, day, |r| r.register(Box::new(SummaryWelfordScan)));
     let result = first_result(&bytes);
-    let ci = result.effect.ci95.expect("Welford bootstrap — ci95 must be Some");
+    let ci = result
+        .effect
+        .ci95
+        .expect("Welford bootstrap — ci95 must be Some");
     assert!(ci[0].is_finite() && ci[1].is_finite());
     assert!(ci[0] <= ci[1]);
     let repro = result.repro.expect("hygiene ran — repro Some");
@@ -483,5 +499,8 @@ fn preflight_rejects_bootstrap_on_unsupported_scan() {
         }
         other => panic!("expected MinerError::Preflight(hygiene_not_supported); got {other:?}"),
     }
-    assert!(sink.0.is_empty(), "stdout must stay empty on preflight rejection");
+    assert!(
+        sink.0.is_empty(),
+        "stdout must stay empty on preflight rejection"
+    );
 }

@@ -221,10 +221,7 @@ pub fn validate(manifest: &SweepManifest, registry: &Registry) -> Result<u64, Mi
         return Err(MinerError::Preflight(
             WireError::preflight(
                 PreflightCode::InvalidParameter,
-                format!(
-                    "[fdr].alpha must be in [0, 1]; got {}",
-                    manifest.fdr.alpha
-                ),
+                format!("[fdr].alpha must be in [0, 1]; got {}", manifest.fdr.alpha),
             )
             .with_context(
                 "fdr_alpha",
@@ -250,9 +247,7 @@ pub fn validate(manifest: &SweepManifest, registry: &Registry) -> Result<u64, Mi
             )
             .with_context(
                 "bootstrap_n",
-                serde_json::Value::Number(serde_json::Number::from(
-                    manifest.hygiene.bootstrap_n,
-                )),
+                serde_json::Value::Number(serde_json::Number::from(manifest.hygiene.bootstrap_n)),
             )
             .with_context(
                 "ceiling",
@@ -271,9 +266,7 @@ pub fn validate(manifest: &SweepManifest, registry: &Registry) -> Result<u64, Mi
             )
             .with_context(
                 "null_n",
-                serde_json::Value::Number(serde_json::Number::from(
-                    manifest.hygiene.null_n,
-                )),
+                serde_json::Value::Number(serde_json::Number::from(manifest.hygiene.null_n)),
             )
             .with_context(
                 "ceiling",
@@ -323,10 +316,7 @@ pub fn validate(manifest: &SweepManifest, registry: &Registry) -> Result<u64, Mi
                         "block_index",
                         serde_json::Value::Number(serde_json::Number::from(block_idx)),
                     )
-                    .with_context(
-                        "scan_id",
-                        serde_json::Value::String(block.scan.clone()),
-                    ),
+                    .with_context("scan_id", serde_json::Value::String(block.scan.clone())),
                 )
             },
         )?;
@@ -390,10 +380,7 @@ pub fn validate(manifest: &SweepManifest, registry: &Registry) -> Result<u64, Mi
                         "requested_method",
                         serde_json::Value::String("bootstrap".to_string()),
                     )
-                    .with_context(
-                        "method",
-                        serde_json::Value::String(bm.as_str().to_string()),
-                    ),
+                    .with_context("method", serde_json::Value::String(bm.as_str().to_string())),
                 ));
             }
         }
@@ -419,10 +406,7 @@ pub fn validate(manifest: &SweepManifest, registry: &Registry) -> Result<u64, Mi
                         "requested_method",
                         serde_json::Value::String("null".to_string()),
                     )
-                    .with_context(
-                        "method",
-                        serde_json::Value::String(nm.as_str().to_string()),
-                    ),
+                    .with_context("method", serde_json::Value::String(nm.as_str().to_string())),
                 ));
             }
         }
@@ -676,8 +660,8 @@ mod tests {
         let per_block = HygieneBlock {
             bootstrap: Some("block".to_string()),
             bootstrap_n: 0, // 0 → inherits global 100
-            null: None, // inherits global
-            null_n: 200, // overrides global
+            null: None,     // inherits global
+            null_n: 200,    // overrides global
         };
         let merged = merge_hygiene(&global, Some(&per_block));
         assert_eq!(merged.bootstrap.as_deref(), Some("block"));
@@ -746,7 +730,11 @@ mod tests {
                     timeframes = ["15m"]
                     windows = ["2024-01-01:2024-01-02"]
                 "#,
-                bad = if bad.is_nan() { "nan".to_string() } else { format!("{bad}") },
+                bad = if bad.is_nan() {
+                    "nan".to_string()
+                } else {
+                    format!("{bad}")
+                },
             );
             // NaN is the awkward case: TOML doesn't have a NaN literal.
             // Skip the NaN literal path; the runtime NaN check is

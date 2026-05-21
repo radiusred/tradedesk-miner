@@ -193,10 +193,7 @@ pub fn validate_hygiene_support(
                 "requested_method",
                 serde_json::Value::String("bootstrap".to_string()),
             )
-            .with_context(
-                "method",
-                serde_json::Value::String(bm.as_str().to_string()),
-            ));
+            .with_context("method", serde_json::Value::String(bm.as_str().to_string())));
         }
     }
     if let Some(nm) = null_method {
@@ -214,10 +211,7 @@ pub fn validate_hygiene_support(
                 "requested_method",
                 serde_json::Value::String("null".to_string()),
             )
-            .with_context(
-                "method",
-                serde_json::Value::String(nm.as_str().to_string()),
-            ));
+            .with_context("method", serde_json::Value::String(nm.as_str().to_string())));
         }
     }
     Ok(())

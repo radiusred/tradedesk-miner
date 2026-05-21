@@ -868,7 +868,13 @@ mod tests {
             (Box::new(VarianceRatioScan), true, true, true, "vr"),
             (Box::new(ArchLmScan), true, true, true, "arch_lm"),
             (Box::new(JarqueBeraScan), true, false, false, "jb"),
-            (Box::new(OutliersZAndMadScan), false, false, false, "outliers"),
+            (
+                Box::new(OutliersZAndMadScan),
+                false,
+                false,
+                false,
+                "outliers",
+            ),
             (Box::new(DrawdownProfileScan), false, false, false, "dd"),
         ];
         for (scan, sb, sp, sc, name) in cases {
@@ -897,16 +903,16 @@ mod tests {
         };
         let cases: &[(Box<dyn Scan>, bool, bool, bool, &str)] = &[
             (Box::new(PearsonRollingScan), true, false, true, "pearson"),
-            (
-                Box::new(SpearmanRollingScan),
-                true,
-                false,
-                true,
-                "spearman",
-            ),
+            (Box::new(SpearmanRollingScan), true, false, true, "spearman"),
             (Box::new(OlsRollingScan), true, false, true, "ols"),
             (Box::new(LeadLagCcfScan), true, true, true, "lead_lag"),
-            (Box::new(EngleGrangerScan), true, true, true, "engle_granger"),
+            (
+                Box::new(EngleGrangerScan),
+                true,
+                true,
+                true,
+                "engle_granger",
+            ),
         ];
         for (scan, sb, sp, sc, name) in cases {
             assert_eq!(scan.supports_bootstrap(), *sb, "{name}: bootstrap");

@@ -149,7 +149,9 @@ pub(crate) fn input_series_for(scan_id_at_version: &str, bars: &BarFrame) -> Opt
                 return None;
             }
             let returns = log_returns(close);
-            Some(crate::scan::anom::ljung_box_sq::kernel::square_returns(&returns))
+            Some(crate::scan::anom::ljung_box_sq::kernel::square_returns(
+                &returns,
+            ))
         }
         // LEVELS series (unit-root tests). ADF/KPSS need a few observations.
         "stats.stationarity.adf@1" | "stats.stationarity.kpss@1" => {
@@ -359,7 +361,11 @@ where
     F: Fn(&[f64], &[f64]) -> f64,
 {
     use crate::scan::hygiene::bootstrap::BOOTSTRAP_CANCEL_POLL_CADENCE;
-    debug_assert_eq!(values_a.len(), values_b.len(), "pair_stationary_bootstrap_ci: pair length mismatch");
+    debug_assert_eq!(
+        values_a.len(),
+        values_b.len(),
+        "pair_stationary_bootstrap_ci: pair length mismatch"
+    );
     let n = values_a.len();
     if n < 2 || n_resamples == 0 {
         return [f64::NAN, f64::NAN];
@@ -367,7 +373,11 @@ where
     // WR-06 (defence-in-depth): clamp n_resamples at the kernel boundary.
     let n_resamples = n_resamples.min(crate::engine::HYGIENE_RESAMPLE_CEILING);
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
-    let p_continue = if mean_block_len > 1.0 { 1.0 / mean_block_len } else { 1.0 };
+    let p_continue = if mean_block_len > 1.0 {
+        1.0 / mean_block_len
+    } else {
+        1.0
+    };
 
     let mut boot_stats: Vec<f64> = Vec::with_capacity(n_resamples as usize);
     let mut buf_a: Vec<f64> = Vec::with_capacity(n);
@@ -431,7 +441,11 @@ where
     F: Fn(&[f64], &[f64]) -> f64,
 {
     use crate::scan::hygiene::bootstrap::BOOTSTRAP_CANCEL_POLL_CADENCE;
-    debug_assert_eq!(values_a.len(), values_b.len(), "pair_block_bootstrap_ci: pair length mismatch");
+    debug_assert_eq!(
+        values_a.len(),
+        values_b.len(),
+        "pair_block_bootstrap_ci: pair length mismatch"
+    );
     let n = values_a.len();
     if n < 2 || n_resamples == 0 || block_len == 0 {
         return [f64::NAN, f64::NAN];
@@ -514,7 +528,11 @@ where
 {
     use crate::scan::hygiene::bootstrap::BOOTSTRAP_CANCEL_POLL_CADENCE;
     use crate::scan::hygiene::null::Tail;
-    debug_assert_eq!(values_a.len(), values_b.len(), "pair_circular_shift_null_p: pair length mismatch");
+    debug_assert_eq!(
+        values_a.len(),
+        values_b.len(),
+        "pair_circular_shift_null_p: pair length mismatch"
+    );
     let n = values_a.len();
     if n < 2 || n_resamples == 0 {
         return f64::NAN;
@@ -604,7 +622,10 @@ fn make_welford_mean_closure() -> StatClosure {
 /// Returns `None` when the `window` parameter is missing or invalid (the scan
 /// body itself would error in that case, so the dispatch stays consistent).
 fn make_vol_rolling_closure(req: &ScanRequest) -> Option<StatClosure> {
-    let window_i64 = req.resolved_params.get("window").and_then(serde_json::Value::as_i64)?;
+    let window_i64 = req
+        .resolved_params
+        .get("window")
+        .and_then(serde_json::Value::as_i64)?;
     if window_i64 < 2 {
         return None;
     }
@@ -684,13 +705,21 @@ fn make_jarque_bera_closure() -> StatClosure {
 
 fn make_adf_closure(req: &ScanRequest) -> StatClosure {
     use crate::scan::anom::adf::kernel::{AutoLagVariant, RegressionVariant};
-    let regression = match req.resolved_params.get("regression").and_then(serde_json::Value::as_str) {
+    let regression = match req
+        .resolved_params
+        .get("regression")
+        .and_then(serde_json::Value::as_str)
+    {
         Some("nc") => RegressionVariant::Nc,
         Some("ct") => RegressionVariant::Ct,
         Some("ctt") => RegressionVariant::Ctt,
         _ => RegressionVariant::C,
     };
-    let autolag = match req.resolved_params.get("autolag").and_then(serde_json::Value::as_str) {
+    let autolag = match req
+        .resolved_params
+        .get("autolag")
+        .and_then(serde_json::Value::as_str)
+    {
         Some("BIC") => AutoLagVariant::Bic,
         Some("None") => AutoLagVariant::None,
         _ => AutoLagVariant::Aic,
@@ -731,7 +760,11 @@ fn make_adf_closure(req: &ScanRequest) -> StatClosure {
 
 fn make_kpss_closure(req: &ScanRequest) -> StatClosure {
     use crate::scan::anom::kpss::kernel::{KpssRegression, NlagsParam};
-    let regression = match req.resolved_params.get("regression").and_then(serde_json::Value::as_str) {
+    let regression = match req
+        .resolved_params
+        .get("regression")
+        .and_then(serde_json::Value::as_str)
+    {
         Some("ct") => KpssRegression::Ct,
         _ => KpssRegression::C,
     };
@@ -789,7 +822,12 @@ fn make_seas_hour_of_day_closure(req: &ScanRequest, bars: &BarFrame) -> Option<S
         if slice.len() != bucket_keys.len() {
             return 0.0;
         }
-        let r = crate::scan::seas::bucketing::bucket_stats(slice, &bucket_keys, NUM_HOUR_BUCKETS, min_obs);
+        let r = crate::scan::seas::bucketing::bucket_stats(
+            slice,
+            &bucket_keys,
+            NUM_HOUR_BUCKETS,
+            min_obs,
+        );
         crate::scan::seas::bucketing::max_abs_finite(&r.t_stats)
     }))
 }
@@ -805,7 +843,12 @@ fn make_seas_day_of_week_closure(req: &ScanRequest, bars: &BarFrame) -> Option<S
         if slice.len() != bucket_keys.len() {
             return 0.0;
         }
-        let r = crate::scan::seas::bucketing::bucket_stats(slice, &bucket_keys, NUM_DAY_BUCKETS, min_obs);
+        let r = crate::scan::seas::bucketing::bucket_stats(
+            slice,
+            &bucket_keys,
+            NUM_DAY_BUCKETS,
+            min_obs,
+        );
         crate::scan::seas::bucketing::max_abs_finite(&r.t_stats)
     }))
 }
@@ -832,7 +875,11 @@ fn make_seas_session_closure(req: &ScanRequest, bars: &BarFrame) -> Option<StatC
         let hour = ts.hour();
         let mut buckets = Vec::with_capacity(2);
         for (b, sess) in sessions.iter().enumerate() {
-            if crate::scan::seas::session::kernel::hour_in_session(hour, sess.start_utc_h, sess.end_utc_h) {
+            if crate::scan::seas::session::kernel::hour_in_session(
+                hour,
+                sess.start_utc_h,
+                sess.end_utc_h,
+            ) {
                 buckets.push(b);
             }
         }
@@ -872,7 +919,9 @@ fn make_seas_eom_som_closure(req: &ScanRequest, bars: &BarFrame) -> Option<StatC
     let mut filtered_indices: Vec<usize> = Vec::with_capacity(ts_for_returns.len());
     let mut bucket_keys: Vec<usize> = Vec::with_capacity(ts_for_returns.len());
     for (i, ts) in ts_for_returns.iter().enumerate() {
-        if let Some(b) = crate::scan::seas::eom_som::kernel::trading_day_of_month_bucket(*ts, cutoff_n, &calendar) {
+        if let Some(b) = crate::scan::seas::eom_som::kernel::trading_day_of_month_bucket(
+            *ts, cutoff_n, &calendar,
+        ) {
             if b < num_buckets {
                 filtered_indices.push(i);
                 bucket_keys.push(b);
@@ -886,7 +935,8 @@ fn make_seas_eom_som_closure(req: &ScanRequest, bars: &BarFrame) -> Option<StatC
         }
         // Gather only the returns whose timestamps land in an EOM/SOM bucket.
         let values: Vec<f64> = filtered_indices.iter().map(|&i| slice[i]).collect();
-        let r = crate::scan::seas::bucketing::bucket_stats(&values, &bucket_keys, num_buckets, min_obs);
+        let r =
+            crate::scan::seas::bucketing::bucket_stats(&values, &bucket_keys, num_buckets, min_obs);
         crate::scan::seas::bucketing::max_abs_finite(&r.t_stats)
     }))
 }
@@ -1028,7 +1078,8 @@ fn make_engle_granger_closure() -> PairStatClosure {
         if a.len() != b.len() || a.len() < 4 {
             return 0.0;
         }
-        let r = crate::scan::cross::engle_granger::kernel::engle_granger(a, b, AdfRegression::Constant);
+        let r =
+            crate::scan::cross::engle_granger::kernel::engle_granger(a, b, AdfRegression::Constant);
         if r.hedge_ratio_beta.is_finite() {
             r.hedge_ratio_beta
         } else {
@@ -1114,7 +1165,8 @@ mod tests {
         let ts_open: Vec<DateTime<Utc>> = (0..n)
             .map(|i| start + Duration::minutes(15 * i64::try_from(i).unwrap()))
             .collect();
-        let ts_close: Vec<DateTime<Utc>> = ts_open.iter().map(|t| *t + Duration::minutes(15)).collect();
+        let ts_close: Vec<DateTime<Utc>> =
+            ts_open.iter().map(|t| *t + Duration::minutes(15)).collect();
         BarFrame {
             source_id: "dukascopy".into(),
             symbol: "EURUSD".into(),
@@ -1214,7 +1266,8 @@ mod tests {
     fn pair_input_series_pearson_rolling_returns_aligned_returns() {
         let bars_a = lcg_bar_frame(10, 10, 0);
         let bars_b = lcg_bar_frame(10, 11, 0);
-        let (ra, rb) = pair_input_series_for("cross.corr.pearson_rolling@1", &bars_a, &bars_b).expect("Some");
+        let (ra, rb) =
+            pair_input_series_for("cross.corr.pearson_rolling@1", &bars_a, &bars_b).expect("Some");
         // n_a = n_b = 10 aligned → 9 returns per leg.
         assert_eq!(ra.len(), 9);
         assert_eq!(rb.len(), 9);
@@ -1225,7 +1278,9 @@ mod tests {
     fn pair_input_series_engle_granger_returns_aligned_levels() {
         let bars_a = lcg_bar_frame(10, 12, 0);
         let bars_b = lcg_bar_frame(10, 13, 0);
-        let (ca, cb) = pair_input_series_for("cross.cointegration.engle_granger@1", &bars_a, &bars_b).expect("Some");
+        let (ca, cb) =
+            pair_input_series_for("cross.cointegration.engle_granger@1", &bars_a, &bars_b)
+                .expect("Some");
         // 10 aligned closes → 10 entries per leg.
         assert_eq!(ca.len(), 10);
         assert_eq!(cb.len(), 10);
@@ -1242,7 +1297,9 @@ mod tests {
         // Joint stat: simple Pearson correlation between paired slices.
         let stat = |xa: &[f64], xb: &[f64]| -> f64 {
             let n = xa.len();
-            if n < 2 { return 0.0; }
+            if n < 2 {
+                return 0.0;
+            }
             #[allow(clippy::cast_precision_loss)]
             let nf = n as f64;
             let ma = xa.iter().sum::<f64>() / nf;
@@ -1257,7 +1314,9 @@ mod tests {
                 da += xx * xx;
                 db += yy * yy;
             }
-            if da == 0.0 || db == 0.0 { return 0.0; }
+            if da == 0.0 || db == 0.0 {
+                return 0.0;
+            }
             num / (da.sqrt() * db.sqrt())
         };
         let no_cancel = AtomicBool::new(false);
@@ -1275,7 +1334,9 @@ mod tests {
         let b: Vec<f64> = a.iter().rev().copied().collect();
         let stat = |xa: &[f64], xb: &[f64]| -> f64 {
             let n = xa.len();
-            if n < 2 { return 0.0; }
+            if n < 2 {
+                return 0.0;
+            }
             #[allow(clippy::cast_precision_loss)]
             let nf = n as f64;
             xa.iter().zip(xb.iter()).map(|(x, y)| x * y).sum::<f64>() / nf

@@ -73,8 +73,7 @@ pub fn cohens_d(a: &[f64], b: &[f64]) -> f64 {
     // Bessel-corrected sample variance: sum((x - mean)^2) / (n - 1).
     let var_a = a.iter().map(|v| (v - mean_a).powi(2)).sum::<f64>() / (n_a_f - 1.0);
     let var_b = b.iter().map(|v| (v - mean_b).powi(2)).sum::<f64>() / (n_b_f - 1.0);
-    let s_pooled_sq =
-        ((n_a_f - 1.0) * var_a + (n_b_f - 1.0) * var_b) / (n_a_f + n_b_f - 2.0);
+    let s_pooled_sq = ((n_a_f - 1.0) * var_a + (n_b_f - 1.0) * var_b) / (n_a_f + n_b_f - 2.0);
     if s_pooled_sq <= 0.0 {
         return f64::NAN;
     }
@@ -257,7 +256,10 @@ mod tests {
             "hedges_g = {g}, expected {expected} (= {d} * {j})"
         );
         // Spot-check the closed-form value too.
-        assert!(approx_eq(g, 2.4, TOL), "hedges_g must equal 2.4 on canonical fixture");
+        assert!(
+            approx_eq(g, 2.4, TOL),
+            "hedges_g must equal 2.4 on canonical fixture"
+        );
     }
 
     /// `hedges_g` propagates NaN from `cohens_d` on degenerate input.
@@ -291,7 +293,10 @@ mod tests {
             approx_eq(d, expected, TOL),
             "cliffs_delta = {d}, expected {expected}"
         );
-        assert!((-1.0..=1.0).contains(&d), "cliffs_delta must lie in [-1, 1]");
+        assert!(
+            (-1.0..=1.0).contains(&d),
+            "cliffs_delta must lie in [-1, 1]"
+        );
     }
 
     /// `cliffs_delta` on identical inputs is 0 (every pair is a tie).

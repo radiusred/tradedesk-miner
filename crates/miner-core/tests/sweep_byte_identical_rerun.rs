@@ -104,7 +104,8 @@ fn sweep_byte_identical_rerun_no_hygiene() {
         masked_b.len(),
     );
     assert_eq!(
-        masked_a, masked_b,
+        masked_a,
+        masked_b,
         "HYG-05: masked envelopes from two sweep runs (same manifest, same seed) must be byte-identical.\n\
          Run A: {}\nRun B: {}",
         serde_json::to_string_pretty(&masked_a).unwrap_or_default(),
@@ -152,7 +153,8 @@ fn sweep_byte_identical_rerun_with_hygiene_on() {
         masked_b.len(),
     );
     assert_eq!(
-        masked_a, masked_b,
+        masked_a,
+        masked_b,
         "HYG-05 + hygiene-on: masked envelopes from two sweep runs (same manifest, same seed, hygiene active) must be byte-identical.\n\
          Run A: {}\nRun B: {}",
         serde_json::to_string_pretty(&masked_a).unwrap_or_default(),

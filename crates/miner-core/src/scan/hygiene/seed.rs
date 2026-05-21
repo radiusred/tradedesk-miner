@@ -380,22 +380,8 @@ mod tests {
             symbol: "AB:bidCD".into(),
             side: Side::Bid,
         }];
-        let s_a = derive_job_seed(
-            0xDEAD,
-            "scan@1",
-            &a,
-            Timeframe::Tf15m,
-            &window,
-            "abc",
-        );
-        let s_b = derive_job_seed(
-            0xDEAD,
-            "scan@1",
-            &b,
-            Timeframe::Tf15m,
-            &window,
-            "abc",
-        );
+        let s_a = derive_job_seed(0xDEAD, "scan@1", &a, Timeframe::Tf15m, &window, "abc");
+        let s_b = derive_job_seed(0xDEAD, "scan@1", &b, Timeframe::Tf15m, &window, "abc");
         assert_ne!(
             s_a, s_b,
             "adjacent specs must not collide with a single spec containing the joined bytes (WR-07)"

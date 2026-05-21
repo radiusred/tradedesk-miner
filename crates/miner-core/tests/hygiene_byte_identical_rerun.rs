@@ -233,8 +233,16 @@ fn byte_identical_rerun_under_hygiene_on_variance_ratio() {
 
     let ci_a = result_a.effect.ci95.expect("bootstrap ran — ci95 Some");
     let ci_b = result_b.effect.ci95.expect("bootstrap ran — ci95 Some");
-    assert_eq!(ci_a[0].to_bits(), ci_b[0].to_bits(), "VR ci95 lo bit-identity");
-    assert_eq!(ci_a[1].to_bits(), ci_b[1].to_bits(), "VR ci95 hi bit-identity");
+    assert_eq!(
+        ci_a[0].to_bits(),
+        ci_b[0].to_bits(),
+        "VR ci95 lo bit-identity"
+    );
+    assert_eq!(
+        ci_a[1].to_bits(),
+        ci_b[1].to_bits(),
+        "VR ci95 hi bit-identity"
+    );
 
     let p_a = result_a.effect.p_value.expect("null ran — p_value Some");
     let p_b = result_b.effect.p_value.expect("null ran — p_value Some");
@@ -264,7 +272,12 @@ fn bootstrap_ci_populates_for_variance_ratio() {
     let bytes = run_engine_single(&req, &cache, |r| r.register(Box::new(VarianceRatioScan)));
     let result = first_result(&bytes);
     let ci = result.effect.ci95.expect("VR opt-in ⇒ ci95 must populate");
-    assert!(ci[0].is_finite() && ci[1].is_finite(), "ci95 finite; got [{}, {}]", ci[0], ci[1]);
+    assert!(
+        ci[0].is_finite() && ci[1].is_finite(),
+        "ci95 finite; got [{}, {}]",
+        ci[0],
+        ci[1]
+    );
     assert!(ci[0] <= ci[1]);
 }
 
@@ -295,14 +308,38 @@ fn byte_identical_rerun_under_hygiene_on_pearson_rolling() {
     let result_a = first_result(&bytes_a);
     let result_b = first_result(&bytes_b);
 
-    let ci_a = result_a.effect.ci95.expect("pair bootstrap ran — ci95 Some");
-    let ci_b = result_b.effect.ci95.expect("pair bootstrap ran — ci95 Some");
-    assert_eq!(ci_a[0].to_bits(), ci_b[0].to_bits(), "Pair ci95 lo bit-identity");
-    assert_eq!(ci_a[1].to_bits(), ci_b[1].to_bits(), "Pair ci95 hi bit-identity");
+    let ci_a = result_a
+        .effect
+        .ci95
+        .expect("pair bootstrap ran — ci95 Some");
+    let ci_b = result_b
+        .effect
+        .ci95
+        .expect("pair bootstrap ran — ci95 Some");
+    assert_eq!(
+        ci_a[0].to_bits(),
+        ci_b[0].to_bits(),
+        "Pair ci95 lo bit-identity"
+    );
+    assert_eq!(
+        ci_a[1].to_bits(),
+        ci_b[1].to_bits(),
+        "Pair ci95 hi bit-identity"
+    );
 
-    let p_a = result_a.effect.p_value.expect("pair null ran — p_value Some");
-    let p_b = result_b.effect.p_value.expect("pair null ran — p_value Some");
-    assert_eq!(p_a.to_bits(), p_b.to_bits(), "Pair empirical p bit-identity");
+    let p_a = result_a
+        .effect
+        .p_value
+        .expect("pair null ran — p_value Some");
+    let p_b = result_b
+        .effect
+        .p_value
+        .expect("pair null ran — p_value Some");
+    assert_eq!(
+        p_a.to_bits(),
+        p_b.to_bits(),
+        "Pair empirical p bit-identity"
+    );
 
     let repro_a = result_a.repro.expect("repro Some");
     let repro_b = result_b.repro.expect("repro Some");
@@ -328,12 +365,20 @@ fn bootstrap_ci_populates_for_pearson_rolling() {
     );
     let bytes = run_engine_single(&req, &cache, |r| r.register(Box::new(PearsonRollingScan)));
     let result = first_result(&bytes);
-    let ci = result.effect.ci95.expect("Pearson rolling opt-in ⇒ ci95 must populate");
+    let ci = result
+        .effect
+        .ci95
+        .expect("Pearson rolling opt-in ⇒ ci95 must populate");
     assert!(ci[0].is_finite() && ci[1].is_finite(), "ci95 finite");
     assert!(ci[0] <= ci[1]);
     // Pearson r is in [-1, 1]; the stationary-bootstrap CI must respect
     // this bound (modulo numerical noise — we allow a tiny overshoot).
-    assert!(ci[0] >= -1.01 && ci[1] <= 1.01, "Pearson CI must be near [-1, 1]; got [{}, {}]", ci[0], ci[1]);
+    assert!(
+        ci[0] >= -1.01 && ci[1] <= 1.01,
+        "Pearson CI must be near [-1, 1]; got [{}, {}]",
+        ci[0],
+        ci[1]
+    );
     let repro = result.repro.expect("repro Some");
     assert_eq!(repro.master_seed, 0xC0DE);
     assert!(repro.bootstrap.is_some());
@@ -378,10 +423,24 @@ fn byte_identical_rerun_under_hygiene_on_hour_of_day() {
     let result_a = first_result(&bytes_a);
     let result_b = first_result(&bytes_b);
 
-    let ci_a = result_a.effect.ci95.expect("SEAS bootstrap ran — ci95 Some");
-    let ci_b = result_b.effect.ci95.expect("SEAS bootstrap ran — ci95 Some");
-    assert_eq!(ci_a[0].to_bits(), ci_b[0].to_bits(), "SEAS ci95 lo bit-identity");
-    assert_eq!(ci_a[1].to_bits(), ci_b[1].to_bits(), "SEAS ci95 hi bit-identity");
+    let ci_a = result_a
+        .effect
+        .ci95
+        .expect("SEAS bootstrap ran — ci95 Some");
+    let ci_b = result_b
+        .effect
+        .ci95
+        .expect("SEAS bootstrap ran — ci95 Some");
+    assert_eq!(
+        ci_a[0].to_bits(),
+        ci_b[0].to_bits(),
+        "SEAS ci95 lo bit-identity"
+    );
+    assert_eq!(
+        ci_a[1].to_bits(),
+        ci_b[1].to_bits(),
+        "SEAS ci95 hi bit-identity"
+    );
 
     let repro_a = result_a.repro.expect("repro Some");
     let repro_b = result_b.repro.expect("repro Some");
@@ -408,11 +467,18 @@ fn bootstrap_ci_populates_for_hour_of_day() {
     );
     let bytes = run_engine_single(&req, &cache, |r| r.register(Box::new(HourOfDayScan)));
     let result = first_result(&bytes);
-    let ci = result.effect.ci95.expect("hour_of_day opt-in ⇒ ci95 must populate");
+    let ci = result
+        .effect
+        .ci95
+        .expect("hour_of_day opt-in ⇒ ci95 must populate");
     assert!(ci[0].is_finite() && ci[1].is_finite());
     // max_abs_t_stat >= 0 by construction; CI95 must respect the lower
     // bound (modulo bootstrap variance).
-    assert!(ci[0] >= -0.01, "max_abs lower CI must be near 0; got {}", ci[0]);
+    assert!(
+        ci[0] >= -0.01,
+        "max_abs lower CI must be near 0; got {}",
+        ci[0]
+    );
     assert!(ci[1] >= ci[0]);
     let repro = result.repro.expect("repro Some");
     assert_eq!(repro.master_seed, 0xF00D);
@@ -443,14 +509,21 @@ fn differing_master_seed_yields_differing_ci_for_variance_ratio() {
             Some(seed),
         )
     };
-    let bytes_a = run_engine_single(&mk(0xAAAA), &cache, |r| r.register(Box::new(VarianceRatioScan)));
-    let bytes_b = run_engine_single(&mk(0xBBBB), &cache, |r| r.register(Box::new(VarianceRatioScan)));
+    let bytes_a = run_engine_single(&mk(0xAAAA), &cache, |r| {
+        r.register(Box::new(VarianceRatioScan))
+    });
+    let bytes_b = run_engine_single(&mk(0xBBBB), &cache, |r| {
+        r.register(Box::new(VarianceRatioScan))
+    });
     let ci_a = first_result(&bytes_a).effect.ci95.expect("ci95 Some");
     let ci_b = first_result(&bytes_b).effect.ci95.expect("ci95 Some");
     // Different seeds → at least one of the two CI bounds must differ.
     assert!(
         ci_a[0].to_bits() != ci_b[0].to_bits() || ci_a[1].to_bits() != ci_b[1].to_bits(),
         "differing master_seed must yield differing CI; got [{}, {}] == [{}, {}]",
-        ci_a[0], ci_a[1], ci_b[0], ci_b[1]
+        ci_a[0],
+        ci_a[1],
+        ci_b[0],
+        ci_b[1]
     );
 }

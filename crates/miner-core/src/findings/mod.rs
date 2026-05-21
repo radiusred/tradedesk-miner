@@ -1214,8 +1214,7 @@ mod tests {
             .expect("top-level object")
             .remove("repro");
         let legacy_str = serde_json::to_string(&value).expect("legacy serialise");
-        let legacy: ResultFinding =
-            serde_json::from_str(&legacy_str).expect("legacy parse ok");
+        let legacy: ResultFinding = serde_json::from_str(&legacy_str).expect("legacy parse ok");
         assert!(
             legacy.repro.is_none(),
             "Omitted `repro` must default to None"

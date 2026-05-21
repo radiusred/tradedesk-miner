@@ -191,12 +191,12 @@ mod tests {
             resolved_params: serde_json::json!({"lags": 20}),
             param_hash: blake3_hex_zero(),
             dry_run,
-        master_seed: None,
-        job_seed: None,
-        bootstrap_method: None,
-        bootstrap_n: None,
-        null_method: None,
-        null_n: None,
+            master_seed: None,
+            job_seed: None,
+            bootstrap_method: None,
+            bootstrap_n: None,
+            null_method: None,
+            null_n: None,
             #[cfg(any(test, feature = "test-internal"))]
             sleep_after_first_finding_ms: None,
         }

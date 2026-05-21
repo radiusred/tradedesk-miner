@@ -126,7 +126,9 @@ impl Scan for SessionScan {
         reason = "envelope construction + many-to-many bucket assignment + label/boundary encoding live together in this single function per Pattern A; splitting would obscure the call-site flow"
     )]
     /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
-    fn supports_bootstrap(&self) -> bool { true }
+    fn supports_bootstrap(&self) -> bool {
+        true
+    }
 
     #[allow(
         clippy::too_many_lines,
@@ -243,7 +245,10 @@ impl Scan for SessionScan {
             )]
             n: Some(n as u64),
             ci95: None,
-            effect_size: Some(EffectSize { kind: "max_abs_t_stat".to_string(), value }),
+            effect_size: Some(EffectSize {
+                kind: "max_abs_t_stat".to_string(),
+                value,
+            }),
             extra,
         };
 
@@ -493,12 +498,12 @@ mod tests {
             resolved_params: params,
             param_hash: blake3_hex_zero(),
             dry_run: false,
-        master_seed: None,
-        job_seed: None,
-        bootstrap_method: None,
-        bootstrap_n: None,
-        null_method: None,
-        null_n: None,
+            master_seed: None,
+            job_seed: None,
+            bootstrap_method: None,
+            bootstrap_n: None,
+            null_method: None,
+            null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }

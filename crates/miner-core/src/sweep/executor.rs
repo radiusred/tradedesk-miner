@@ -414,11 +414,13 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
             let per_finding: Vec<FindingFdrEntry> = entries
                 .iter()
                 .zip(q_values.iter())
-                .map(|((finding_index_within_family, raw_p), q)| FindingFdrEntry {
-                    finding_index: *finding_index_within_family as u64,
-                    raw_p: *raw_p,
-                    q_value: *q,
-                })
+                .map(
+                    |((finding_index_within_family, raw_p), q)| FindingFdrEntry {
+                        finding_index: *finding_index_within_family as u64,
+                        raw_p: *raw_p,
+                        q_value: *q,
+                    },
+                )
                 .collect();
             out.insert(
                 family_key,
@@ -488,10 +490,7 @@ fn build_sweep_run_start(
         "blocks".to_string(),
         serde_json::Value::Number(serde_json::Number::from(manifest.jobs.len())),
     );
-    request.insert(
-        "dry_run".to_string(),
-        serde_json::Value::Bool(false),
-    );
+    request.insert("dry_run".to_string(), serde_json::Value::Bool(false));
 
     Finding::RunStart(RunStart {
         run_id,
@@ -505,11 +504,7 @@ fn build_sweep_run_start(
 /// Build a `Finding::DryRun` for a sweep dry-run — `planned_job_count`
 /// is populated; `planned_data_slice` is a placeholder (sweep doesn't
 /// have a single contiguous data slice).
-fn build_sweep_dry_run(
-    manifest: &SweepManifest,
-    run_id: RunId,
-    estimated_count: u64,
-) -> Finding {
+fn build_sweep_dry_run(manifest: &SweepManifest, run_id: RunId, estimated_count: u64) -> Finding {
     use crate::findings::{DataSlice, TimeRange};
     // Use the first job's first window as the placeholder data slice,
     // when present; otherwise an epoch-zero placeholder.
@@ -603,11 +598,7 @@ fn emit_sweep_run_end(
 /// typed `code` + `message`; other variants synthesise a `compute_error`
 /// envelope (defence-in-depth — those variants normally surface their
 /// own envelopes inside the engine).
-fn build_synthetic_per_job_error(
-    req: &ScanRequest,
-    err: &MinerError,
-    run_id: RunId,
-) -> Finding {
+fn build_synthetic_per_job_error(req: &ScanRequest, err: &MinerError, run_id: RunId) -> Finding {
     // Pull a structured `WireError` out of the typed error where possible.
     // For non-Preflight variants we fabricate a minimal `error_code` +
     // message; the per-job ScanError envelope is the engine's existing
@@ -765,10 +756,7 @@ mod tests {
             scope_family(sid, "scan_id"),
             Some("stats.autocorr.ljung_box@1".to_string())
         );
-        assert_eq!(
-            scope_family(sid, "scan_family"),
-            Some("stats".to_string())
-        );
+        assert_eq!(scope_family(sid, "scan_family"), Some("stats".to_string()));
         assert_eq!(scope_family(sid, "all"), Some("all".to_string()));
         assert_eq!(scope_family(sid, "none"), None);
         // Unknown -> fallback to scan_id.

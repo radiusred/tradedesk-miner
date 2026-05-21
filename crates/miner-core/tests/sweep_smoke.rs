@@ -26,8 +26,8 @@ use miner_core::cache::BarCache;
 use miner_core::config::{MinerConfig, OutputDest};
 use miner_core::findings::Finding;
 use miner_core::reader::Side;
-use miner_core::sweep::{SweepOptions, run_sweep};
 use miner_core::sweep::manifest::parse_manifest_str;
+use miner_core::sweep::{SweepOptions, run_sweep};
 use miner_reader_dukascopy::DukascopyReader;
 
 use common::{BufferSink, synthetic_cache::SyntheticCache};
@@ -112,7 +112,8 @@ fn sweep_smoke_two_scans_two_instruments() {
         .filter(|f| matches!(f, Finding::Result(_)))
         .count();
     assert_eq!(
-        result_count, 4,
+        result_count,
+        4,
         "expected 4 Result envelopes (2 scans × 2 instruments × 1 tf × 1 window × 1 params); got {}: {:?}",
         result_count,
         findings.iter().map(envelope_kind).collect::<Vec<_>>(),
@@ -123,7 +124,10 @@ fn sweep_smoke_two_scans_two_instruments() {
         .iter()
         .filter(|f| matches!(f, Finding::SweepSummary(_)))
         .count();
-    assert_eq!(summary_count, 1, "expected exactly one SweepSummary envelope");
+    assert_eq!(
+        summary_count, 1,
+        "expected exactly one SweepSummary envelope"
+    );
 
     let last = findings.last().expect("non-empty findings");
     assert!(
@@ -136,7 +140,13 @@ fn sweep_smoke_two_scans_two_instruments() {
     // "scan_id" produces one entry per scan_id@version).
     let summary = findings
         .iter()
-        .find_map(|f| if let Finding::SweepSummary(s) = f { Some(s) } else { None })
+        .find_map(|f| {
+            if let Finding::SweepSummary(s) = f {
+                Some(s)
+            } else {
+                None
+            }
+        })
         .expect("SweepSummary present");
     assert_eq!(
         summary.fdr_by_family.len(),

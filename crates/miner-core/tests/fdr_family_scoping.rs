@@ -99,7 +99,11 @@ fn fdr_family_scoping_scan_id_per_scan_at_version() {
         summary.fdr_by_family.len(),
         summary.fdr_by_family.keys().collect::<Vec<_>>()
     );
-    assert!(summary.fdr_by_family.contains_key("stats.autocorr.ljung_box@1"));
+    assert!(
+        summary
+            .fdr_by_family
+            .contains_key("stats.autocorr.ljung_box@1")
+    );
     assert!(
         summary
             .fdr_by_family

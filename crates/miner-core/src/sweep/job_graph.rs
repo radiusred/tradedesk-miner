@@ -95,26 +95,26 @@ pub fn expand(
         // Step 1: resolve scan.
         let scan = crate::engine::preflight::resolve_scan(&block.scan, registry)
             .map_err(MinerError::Preflight)?;
-        let (scan_id, version) =
-            crate::engine::preflight::resolve_scan_id_at_version(&block.scan)
-                .map_err(MinerError::Preflight)?;
+        let (scan_id, version) = crate::engine::preflight::resolve_scan_id_at_version(&block.scan)
+            .map_err(MinerError::Preflight)?;
         let scan_id_at_version = format!("{scan_id}@{version}");
         let arity = scan.arity();
 
         // Step 2: parse instruments grid (one InstrumentSpec list per
         // cartesian-instrument slot).
-        let instruments_grid = parse_instruments_grid(&block.instruments, arity).map_err(|msg| {
-            MinerError::Preflight(
-                WireError::preflight(
-                    PreflightCode::InvalidParameter,
-                    format!("[[jobs[{block_idx}]]] {msg}"),
+        let instruments_grid =
+            parse_instruments_grid(&block.instruments, arity).map_err(|msg| {
+                MinerError::Preflight(
+                    WireError::preflight(
+                        PreflightCode::InvalidParameter,
+                        format!("[[jobs[{block_idx}]]] {msg}"),
+                    )
+                    .with_context(
+                        "block_index",
+                        serde_json::Value::Number(serde_json::Number::from(block_idx)),
+                    ),
                 )
-                .with_context(
-                    "block_index",
-                    serde_json::Value::Number(serde_json::Number::from(block_idx)),
-                ),
-            )
-        })?;
+            })?;
 
         // Step 3: hygiene resolution (merged + parsed once per block).
         let merged_hygiene = merge_hygiene(&manifest.hygiene, block.hygiene.as_ref());
@@ -330,9 +330,8 @@ pub fn parse_instruments_grid(
                         value_kind_str(elem)
                     )
                 })?;
-                let spec = InstrumentSpec::from_str(s).map_err(|bad| {
-                    format!("instruments[{i}]: invalid InstrumentSpec {bad:?}")
-                })?;
+                let spec = InstrumentSpec::from_str(s)
+                    .map_err(|bad| format!("instruments[{i}]: invalid InstrumentSpec {bad:?}"))?;
                 out.push(vec![spec]);
             }
             Ok(out)
@@ -408,9 +407,7 @@ fn value_kind_str(v: &serde_json::Value) -> &'static str {
 /// For empty array values: a single point with the empty array is
 /// produced (preserves the user's intent).
 #[must_use]
-pub fn cartesian_params(
-    params: &BTreeMap<String, serde_json::Value>,
-) -> Vec<serde_json::Value> {
+pub fn cartesian_params(params: &BTreeMap<String, serde_json::Value>) -> Vec<serde_json::Value> {
     // WR-08: defensive ceiling for callers that bypass the sweep
     // manifest's `max_jobs` gate (`cartesian_params` is `pub` and may be
     // invoked by future test/CLI helpers).
@@ -612,11 +609,17 @@ mod tests {
         for (job_a, job_b) in a.iter().zip(b.iter()) {
             assert_eq!(job_a.scan_id_at_version, job_b.scan_id_at_version);
             assert_eq!(job_a.master_seed, job_b.master_seed);
-            assert_eq!(job_a.job_seed, job_b.job_seed, "job_seed must be deterministic");
+            assert_eq!(
+                job_a.job_seed, job_b.job_seed,
+                "job_seed must be deterministic"
+            );
             assert_eq!(job_a.param_hash.as_str(), job_b.param_hash.as_str());
         }
         // Two distinct jobs MUST produce distinct seeds (negative pin).
-        assert_ne!(a[0].job_seed, a[1].job_seed, "different params -> different seed");
+        assert_ne!(
+            a[0].job_seed, a[1].job_seed,
+            "different params -> different seed"
+        );
     }
 
     /// Test (Plan 05-04 Task 1): parse_instruments_grid Single-arity flat OK.

@@ -41,7 +41,9 @@ use crate::findings::{
 };
 use crate::gap::GapDetector;
 use crate::reader::{ClosedRangeUtc, Reader};
-use crate::scan::hygiene::{bootstrap as hygiene_bootstrap, null as hygiene_null, seed as hygiene_seed};
+use crate::scan::hygiene::{
+    bootstrap as hygiene_bootstrap, null as hygiene_null, seed as hygiene_seed,
+};
 use crate::scan::{BootstrapMethod, NullMethod, ScanCtx, ScanError, ScanRequest};
 
 use hygiene_buffering_sink::HygieneBufferingSink;
@@ -1053,7 +1055,11 @@ pub(crate) const HYGIENE_RESAMPLE_DEFAULT: u32 = 1000;
 #[inline]
 fn clamp_resample_n(n: Option<u32>) -> u32 {
     let raw = n.unwrap_or(HYGIENE_RESAMPLE_DEFAULT);
-    let raw = if raw == 0 { HYGIENE_RESAMPLE_DEFAULT } else { raw };
+    let raw = if raw == 0 {
+        HYGIENE_RESAMPLE_DEFAULT
+    } else {
+        raw
+    };
     raw.min(HYGIENE_RESAMPLE_CEILING)
 }
 
@@ -1734,12 +1740,12 @@ mod tests {
             resolved_params: resolved,
             param_hash,
             dry_run,
-        master_seed: None,
-        job_seed: None,
-        bootstrap_method: None,
-        bootstrap_n: None,
-        null_method: None,
-        null_n: None,
+            master_seed: None,
+            job_seed: None,
+            bootstrap_method: None,
+            bootstrap_n: None,
+            null_method: None,
+            null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }
@@ -2670,12 +2676,12 @@ mod tests {
             resolved_params: resolved,
             param_hash,
             dry_run: false,
-        master_seed: None,
-        job_seed: None,
-        bootstrap_method: None,
-        bootstrap_n: None,
-        null_method: None,
-        null_n: None,
+            master_seed: None,
+            job_seed: None,
+            bootstrap_method: None,
+            bootstrap_n: None,
+            null_method: None,
+            null_n: None,
             sleep_after_first_finding_ms: None,
         }
     }
@@ -2914,12 +2920,12 @@ mod cancellation_tests {
             resolved_params: resolved,
             param_hash,
             dry_run: false,
-        master_seed: None,
-        job_seed: None,
-        bootstrap_method: None,
-        bootstrap_n: None,
-        null_method: None,
-        null_n: None,
+            master_seed: None,
+            job_seed: None,
+            bootstrap_method: None,
+            bootstrap_n: None,
+            null_method: None,
+            null_n: None,
             sleep_after_first_finding_ms: sleep_after_ms,
         }
     }

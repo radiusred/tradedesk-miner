@@ -285,9 +285,7 @@ fn parse_bootstrap_method(s: &str) -> Result<BootstrapMethod, WireError> {
         "block" => Ok(BootstrapMethod::Block),
         other => Err(WireError::preflight(
             PreflightCode::InvalidParameter,
-            format!(
-                "--bootstrap must be one of \"stationary\" / \"block\"; got {other:?}"
-            ),
+            format!("--bootstrap must be one of \"stationary\" / \"block\"; got {other:?}"),
         )
         .with_context("bootstrap", serde_json::Value::String(other.to_string()))),
     }
@@ -305,9 +303,7 @@ fn parse_null_method(s: &str) -> Result<NullMethod, WireError> {
         "circular_shift" => Ok(NullMethod::CircularShift),
         other => Err(WireError::preflight(
             PreflightCode::InvalidParameter,
-            format!(
-                "--null must be one of \"phase_scramble\" / \"circular_shift\"; got {other:?}"
-            ),
+            format!("--null must be one of \"phase_scramble\" / \"circular_shift\"; got {other:?}"),
         )
         .with_context("null", serde_json::Value::String(other.to_string()))),
     }

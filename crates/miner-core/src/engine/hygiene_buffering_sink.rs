@@ -196,12 +196,17 @@ mod tests {
         let mut sink = HygieneBufferingSink::new(&mut inner, true);
         sink.write_envelope(&sample_run_start()).expect("ok");
         let r = sample_result();
-        sink.write_envelope(&Finding::Result(r.clone())).expect("ok");
+        sink.write_envelope(&Finding::Result(r.clone()))
+            .expect("ok");
         sink.write_envelope(&sample_run_end()).expect("ok");
         assert_eq!(sink.buffered_len(), 1, "one Result buffered");
         let (buffered, _inner_borrow) = sink.into_parts();
         assert_eq!(buffered.len(), 1);
-        let lines: Vec<&[u8]> = inner.0.split(|&b| b == b'\n').filter(|l| !l.is_empty()).collect();
+        let lines: Vec<&[u8]> = inner
+            .0
+            .split(|&b| b == b'\n')
+            .filter(|l| !l.is_empty())
+            .collect();
         assert_eq!(
             lines.len(),
             2,
@@ -219,12 +224,21 @@ mod tests {
         let mut sink = HygieneBufferingSink::new(&mut inner, false);
         sink.write_envelope(&sample_run_start()).expect("ok");
         let r = sample_result();
-        sink.write_envelope(&Finding::Result(r.clone())).expect("ok");
+        sink.write_envelope(&Finding::Result(r.clone()))
+            .expect("ok");
         sink.write_envelope(&sample_run_end()).expect("ok");
-        assert_eq!(sink.buffered_len(), 0, "no Result buffered when hygiene off");
+        assert_eq!(
+            sink.buffered_len(),
+            0,
+            "no Result buffered when hygiene off"
+        );
         let (buffered, _) = sink.into_parts();
         assert!(buffered.is_empty());
-        let lines: Vec<&[u8]> = inner.0.split(|&b| b == b'\n').filter(|l| !l.is_empty()).collect();
+        let lines: Vec<&[u8]> = inner
+            .0
+            .split(|&b| b == b'\n')
+            .filter(|l| !l.is_empty())
+            .collect();
         assert_eq!(
             lines.len(),
             3,

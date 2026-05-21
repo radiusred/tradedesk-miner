@@ -214,8 +214,24 @@ mod tests {
     fn circular_shift_null_p_deterministic_for_seed() {
         let values = lcg_iid(50, 0xDEAD);
         let observed = mean(&values);
-        let p_a = circular_shift_null_p(&values, observed, mean, 100, 0xBEEF, Tail::TwoSided, &no_cancel());
-        let p_b = circular_shift_null_p(&values, observed, mean, 100, 0xBEEF, Tail::TwoSided, &no_cancel());
+        let p_a = circular_shift_null_p(
+            &values,
+            observed,
+            mean,
+            100,
+            0xBEEF,
+            Tail::TwoSided,
+            &no_cancel(),
+        );
+        let p_b = circular_shift_null_p(
+            &values,
+            observed,
+            mean,
+            100,
+            0xBEEF,
+            Tail::TwoSided,
+            &no_cancel(),
+        );
         assert_eq!(p_a.to_bits(), p_b.to_bits(), "p-value bit-identity");
     }
 
@@ -223,11 +239,17 @@ mod tests {
     #[test]
     fn circular_shift_null_p_short_input_nan() {
         let one = [1.0_f64];
-        assert!(circular_shift_null_p(&one, 1.0, mean, 100, 0, Tail::TwoSided, &no_cancel()).is_nan());
+        assert!(
+            circular_shift_null_p(&one, 1.0, mean, 100, 0, Tail::TwoSided, &no_cancel()).is_nan()
+        );
         let empty: [f64; 0] = [];
-        assert!(circular_shift_null_p(&empty, 0.0, mean, 100, 0, Tail::TwoSided, &no_cancel()).is_nan());
+        assert!(
+            circular_shift_null_p(&empty, 0.0, mean, 100, 0, Tail::TwoSided, &no_cancel()).is_nan()
+        );
         let two = [1.0_f64, 2.0];
-        assert!(circular_shift_null_p(&two, 1.5, mean, 0, 0, Tail::TwoSided, &no_cancel()).is_nan());
+        assert!(
+            circular_shift_null_p(&two, 1.5, mean, 0, 0, Tail::TwoSided, &no_cancel()).is_nan()
+        );
     }
 
     /// CR-02 regression: empirical p MUST floor at `1 / (n_resamples + 1)`
@@ -250,7 +272,15 @@ mod tests {
         // can exceed it, more_extreme stays 0.
         let observed = 1000.0;
         let n_resamples = 99_u32;
-        let p = circular_shift_null_p(&values, observed, mean, n_resamples, 0xCAFE, Tail::TwoSided, &no_cancel());
+        let p = circular_shift_null_p(
+            &values,
+            observed,
+            mean,
+            n_resamples,
+            0xCAFE,
+            Tail::TwoSided,
+            &no_cancel(),
+        );
 
         // (1 + 0) / (1 + 99) = 0.01 exactly.
         let expected = 1.0_f64 / (f64::from(n_resamples) + 1.0);
