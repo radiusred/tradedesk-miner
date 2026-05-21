@@ -312,9 +312,22 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
 
     let fdr_family_scope = manifest.fdr.family.clone();
 
-    for (_idx, findings) in buffered {
+    // WR-09: cancel-poll inside the drain inner loop AND on sink-write
+    // error. Pre-WR-09 the drain processed every buffered finding
+    // unconditionally before checking cancel; a SIGINT mid-drain
+    // delayed user-visible response by tens of seconds on large
+    // sweeps. Additionally a `?` on `sink.write_envelope` propagated
+    // mid-record, leaving the JSONL stream truncated with no RunEnd
+    // envelope. The cleanup label below emits RunEnd before bailing
+    // in BOTH the cancel-during-drain and sink-write-error paths.
+    let mut sink_error: Option<MinerError> = None;
+    'drain: for (_idx, findings) in buffered {
         totals.jobs_run = totals.jobs_run.saturating_add(1);
         for finding in findings {
+            // WR-09 cancel poll inside the inner loop.
+            if cancel.load(Ordering::Relaxed) {
+                break 'drain;
+            }
             // Tally + family-scope BEFORE writing through, so the family
             // index ordering matches the streaming output position.
             match &finding {
@@ -350,8 +363,24 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
                 }
                 _ => {}
             }
-            sink.write_envelope(&finding)?;
+            // WR-09: capture the sink write error rather than `?`-bubbling
+            // mid-drain. We need to emit a RunEnd envelope before
+            // returning so the JSONL stream is not truncated.
+            if let Err(e) = sink.write_envelope(&finding) {
+                sink_error = Some(e);
+                break 'drain;
+            }
         }
+    }
+
+    // WR-09: if either cancel fired mid-drain OR a sink write failed,
+    // emit RunEnd to close the framing before returning. This mirrors
+    // engine::run_one_with_registry's framing-close discipline.
+    if let Some(err) = sink_error {
+        // Best-effort RunEnd; ignore further sink errors at this point
+        // (the underlying transport is already in a broken state).
+        let _ = emit_sweep_run_end(sink, run_id, started, totals);
+        return Err(err);
     }
 
     // -----------------------------------------------------------------------
