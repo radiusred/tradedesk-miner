@@ -182,17 +182,23 @@ where
 ///    `K_n = ceil(min(5 * log10(n), n / 2))`.
 /// 2. Find `m`: largest `k` such that `|r_k / r_0| > c * sqrt(log10(n) / n)`
 ///    with `c = 2.0` (the Politis-White 2004 default).
-/// 3. `g_hat = sum_{k = 1..=2m} lambda(k / (2m)) * r_k` where
-///    `lambda(t) = 1 - |t|` is the Bartlett kernel (Patton-Politis-White
-///    2009 correction).
-/// 4. `D_hat = (4/3) * g_hat^2`.
-/// 5. `b_star = (2 * g_hat^2 / D_hat) ^ (1/3) * n ^ (1/3)`.
+/// 3. `g_hat = sum_{k = 1..=2m} lambda(k / (2m)) * |k| * r_k` where
+///    `lambda(t) = 1 - |t|` is the Bartlett (flat-top) kernel (Patton-
+///    Politis-White 2009 erratum — the `|k|` weight inside the sum was
+///    missing from Politis-White 2004 and is the load-bearing data-
+///    dependent factor).
+/// 4. `g_dr = sum_{k = 0..=2m} lambda(k / (2m)) * r_k` (the symmetric
+///    half-sum; `lambda(0) = 1`).
+/// 5. `D_SB = 2 * g_dr^2` (the stationary-bootstrap MSE constant per
+///    PPW 2009 §3; NOT a function of `g_hat`).
+/// 6. `b_star = (2 * g_hat^2 / D_SB) ^ (1/3) * n ^ (1/3)`.
 ///
 /// ## Edge cases
 ///
 /// - `values.len() < 4` → `NaN`.
 /// - Constant series (`r_0 == 0`) → `NaN`. Callers fall back to
 ///   `ceil(n^(1/3))` per the documented contract.
+/// - `D_SB == 0` (degenerate `g_dr == 0`) → `NaN`. Same fallback.
 #[must_use]
 #[allow(
     clippy::cast_precision_loss,
@@ -244,13 +250,31 @@ pub fn block_length_pwppw(values: &[f64]) -> f64 {
 
     let two_m = 2 * m;
     let two_m_f = two_m as f64;
+    // PPW 2009 erratum: g_hat is the |k|-weighted half-sum (the missing
+    // factor in Politis-White 2004). This is the data-dependent term that
+    // captures the autocorrelation structure; without |k| the g_hat term
+    // algebraically cancels against a g_hat-derived D_hat and the selector
+    // collapses to a data-independent constant (CR-01).
     let mut g_hat = 0.0_f64;
     for k in 1..=two_m {
         let r_k = if k < r.len() { r[k] } else { 0.0 };
-        let lambda = 1.0 - (k as f64 / two_m_f).abs();
-        g_hat += lambda * r_k;
+        let lambda = (1.0 - (k as f64 / two_m_f).abs()).max(0.0);
+        g_hat += lambda * (k as f64) * r_k;
     }
-    let d_hat = 4.0 / 3.0 * g_hat * g_hat;
+    // D_SB: the stationary-bootstrap MSE constant. Computed from the
+    // symmetric half-sum of lambda-weighted autocovariances (NOT from
+    // g_hat); this is what makes the selector data-dependent.
+    let mut g_dr = 0.0_f64;
+    for k in 0..=two_m {
+        let r_k = if k < r.len() { r[k] } else { 0.0 };
+        let lambda = if k == 0 {
+            1.0
+        } else {
+            (1.0 - (k as f64 / two_m_f).abs()).max(0.0)
+        };
+        g_dr += lambda * r_k;
+    }
+    let d_hat = 2.0 * g_dr * g_dr;
     if d_hat == 0.0 {
         return f64::NAN;
     }
