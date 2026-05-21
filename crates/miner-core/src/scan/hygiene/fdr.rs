@@ -222,4 +222,61 @@ mod tests {
             );
         }
     }
+
+    /// CR-03 regression: NaN p-values must NOT corrupt q-values for the
+    /// finite entries.
+    ///
+    /// Pre-fix the `partial_cmp(&b).unwrap_or(Equal)` sort placed NaN
+    /// entries in arbitrary positions; the running-min step-up walk then
+    /// produced nonsensical q-values for every entry (not just the NaN
+    /// ones). Post-fix:
+    ///   - NaN inputs → NaN outputs at the same position.
+    ///   - finite inputs → q-values computed against the finite-only
+    ///     vector (`n = count of finite p`), preserving rank order.
+    #[test]
+    fn bh_fdr_with_nan_p_preserves_finite_q_values() {
+        // Mix NaN among a known-good p-vector. The finite subset
+        // [0.01, 0.02, 0.03, 0.04, 0.05] is the canonical 5-tuple from
+        // `bh_fdr_canonical_5`; its q-values are all 0.05 within 1e-12.
+        let p = [
+            0.01_f64,
+            f64::NAN,
+            0.02,
+            0.03,
+            f64::NAN,
+            0.04,
+            0.05,
+        ];
+        let q = bh_fdr(&p, 0.05);
+        assert_eq!(q.len(), p.len(), "output length matches input length");
+
+        // NaN inputs map to NaN outputs at the SAME position.
+        assert!(q[1].is_nan(), "q[1] (NaN input) must be NaN; got {}", q[1]);
+        assert!(q[4].is_nan(), "q[4] (NaN input) must be NaN; got {}", q[4]);
+
+        // The five finite-p positions are the canonical equal-spaced
+        // 5-tuple; BH q-values are all exactly 0.05 (within 1e-12). The
+        // load-bearing assertion: NaN entries did NOT shift the rank or
+        // n used for the BH calculation on the finite subset.
+        for &i in &[0_usize, 2, 3, 5, 6] {
+            assert!(
+                approx_eq(q[i], 0.05, TOL),
+                "q[{i}] (finite input p={}) = {} expected ~0.05",
+                p[i],
+                q[i]
+            );
+        }
+    }
+
+    /// CR-03: all-NaN input returns an all-NaN q-vector of the same length
+    /// (deterministic; not an arbitrary sort artefact).
+    #[test]
+    fn bh_fdr_with_all_nan_input_returns_all_nan() {
+        let p = [f64::NAN; 4];
+        let q = bh_fdr(&p, 0.05);
+        assert_eq!(q.len(), 4);
+        for (i, qi) in q.iter().enumerate() {
+            assert!(qi.is_nan(), "q[{i}] = {qi} expected NaN for all-NaN input");
+        }
+    }
 }
