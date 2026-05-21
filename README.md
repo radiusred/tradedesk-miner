@@ -40,8 +40,16 @@ envelope.
    ```sh
    git clone https://github.com/radiusred/tradedesk-miner
    cd tradedesk-miner
+   ./scripts/install-git-hooks.sh   # one-time: wires the cargo fmt pre-commit gate
    cargo build --workspace
    ```
+
+   `install-git-hooks.sh` points `core.hooksPath` at the tracked `.githooks/`
+   directory so the local pre-commit hook mirrors CI's `cargo fmt --check`
+   gate. On drift the hook auto-runs `cargo fmt --all`, lists the modified
+   files, and aborts the commit so you can review the changes. Set
+   `MINER_AUTOFIX=1` to let the hook re-stage and continue without review.
+   Bypass with `git commit --no-verify` if you must (CI will still fail).
 
 3. **Emit a fixture (the Phase 1 smoke test).**
 
