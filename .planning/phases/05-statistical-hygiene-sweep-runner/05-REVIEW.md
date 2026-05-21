@@ -33,7 +33,11 @@ findings:
   warning: 9
   info: 4
   total: 16
-status: issues_found
+status: fixed
+fixed_at: 2026-05-21T00:00:00Z
+fixes_applied:
+  critical_warning: 12
+  info: 0
 ---
 
 # Phase 5: Code Review Report
@@ -328,6 +332,42 @@ for (_idx, findings) in buffered {
 
 ---
 
+## Fixes Applied (2026-05-21)
+
+All 3 Critical + 9 Warning findings (12 of 16 total) resolved. The 4 Info findings (IN-01..IN-04) are out-of-scope for this remediation pass and remain open.
+
+| Finding | Commit | Summary |
+|---------|--------|---------|
+| CR-01 | `f9d5522` | `block_length_pwppw`: replace algebraic-collapse formula with PPW 2009 erratum form (data-dependent `g_hat` with `\|k\|` factor + independent `D_SB`) |
+| CR-01 (test) | `7d5e151` | Pin block-length variation across IID / AR(1)(0.5) / AR(1)(0.8) |
+| CR-02 | `7f46fc1` | Adopt `(1+B)/(1+N)` empirical-p convention (Davison & Hinkley 1997) in `circular_shift_null_p` + `pair_circular_shift_null_p` |
+| CR-02 (test) | `c380b1e` | Pin empirical-p floors at `1/(N+1)` |
+| CR-03 | `2d551ae` | Filter NaN p-values in `bh_fdr` (emit NaN q at same position) + skip NaN entries in executor family aggregation |
+| CR-03 (test) | `43877b2` | Pin deterministic NaN handling for mixed and all-NaN p-vectors |
+| WR-01 | `533efb6` | Add `Tail` enum + per-scan `tail_for` dispatch; route ADF, KPSS, ARCH-LM, Jarque-Bera, Ljung-Box through one-sided comparisons |
+| WR-02 | `5d95870` | `build_synthetic_per_job_error` synthesises a `ScanError` envelope from `MinerError::Preflight` so per-job preflight rejections surface |
+| WR-03 | `61e053b` | Preflight validation rejects out-of-range `[fdr].alpha` (incl. NaN) and over-ceiling `[hygiene].bootstrap_n` / `null_n` (global + per-block) |
+| WR-04 + WR-05 + WR-06 | `0a9bc6f` | Sparse cancel-poll (cadence 64) inside all four bootstrap/null kernels; `block_len` clamped to `n`; `n_resamples` clamped to `HYGIENE_RESAMPLE_CEILING` at kernel boundary |
+| WR-07 | `b419c63` | `derive_job_seed`: length-prefixed canonical bytes for every variable-length field (eliminates `:`-in-symbol and adjacent-spec collision paths) |
+| WR-08 | `e680997` | `cartesian_params`: saturating-mul total + 10M point ceiling matching `params_cartesian_size` discipline |
+| WR-09 | `2b39667` | Sweep drain loop polls cancel between findings AND emits `RunEnd` envelope on sink-write error (no truncated JSONL stream) |
+
+### Verification
+
+- `cargo build --workspace`: passes.
+- `cargo test --workspace --no-fail-fast`: **938 passed, 0 failed** (was 729 pre-fix; +209 tests cover the new regression pins).
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+
+### Out-of-scope (Info findings, deferred)
+
+- IN-01 — redundant `cohens_d` guard clause (cosmetic).
+- IN-02 — silent `clamp_resample_n` 0→default rewrite (UX nit).
+- IN-03 — `JobSink::write_raw_json` silent no-op (no current bypass).
+- IN-04 — `block_length_pwppw m == 0` clamp behaviour (now data-dependent thanks to CR-01; the clamp is no longer the dominant degeneration path but still merits a `NaN` sentinel in a follow-up).
+
+---
+
 _Reviewed: 2026-05-21T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Fixes applied: 2026-05-21_
