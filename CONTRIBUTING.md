@@ -1,0 +1,86 @@
+# Contributing to tradedesk-miner
+
+Thanks for your interest. This document covers the development setup, the
+quality gates your changes need to pass, and what to expect when opening a
+pull request.
+
+## Development setup
+
+Prerequisites: Rust 1.85+ stable (`rustup default 1.85`) and git.
+
+```sh
+git clone https://github.com/radiusred/tradedesk-miner
+cd tradedesk-miner
+./scripts/install-git-hooks.sh   # one-time: wires the pre-commit gate
+cargo build --workspace
+cargo test --workspace
+```
+
+`install-git-hooks.sh` points `core.hooksPath` at the tracked `.githooks/`
+directory so your local pre-commit hook mirrors the CI fmt and clippy gates.
+
+### Hook override environment variables
+
+| Variable | Effect |
+|---|---|
+| `MINER_AUTOFIX=1` | Hook re-stages fmt fixes and continues instead of aborting |
+| `MINER_SKIP_CLIPPY=1` | Hook skips clippy (CI still enforces the gate) |
+| `git commit --no-verify` | Bypasses the hook entirely |
+
+## Quality gates
+
+CI runs the gates below on every push and PR. The pre-commit hook covers
+gates 1 and 2; run the others locally before pushing.
+
+1. `cargo fmt --all -- --check` — formatting drift fails the build.
+2. `cargo clippy --workspace --all-targets -- -D warnings` — lints, including
+   the workspace `clippy.toml` `disallowed-macros` rule that bans `println!` /
+   `eprintln!` / `dbg!` outside the sanctioned `StdoutSink` and the logging
+   adapter. Stdout = findings, stderr = logs.
+3. `cargo test --workspace --no-fail-fast` — unit, integration, doctest, and
+   golden-fixture suites.
+4. `cargo build --workspace --all-targets` — compile health across every
+   crate and target kind.
+5. **Tokio-free `miner-core`.** `cargo tree -p miner-core --edges
+   normal,build` must show zero async-runtime crates (`tokio`, `async-std`,
+   `smol`, `async-trait`, `async-io`, `async-channel`, `async-executor`,
+   `async-task`). Async lives only at the wrapper edges via
+   `tokio::task::spawn_blocking`. Dev-dependencies are exempt.
+6. **Schema sync.** `cargo run -p xtask -- gen-schema` regenerates
+   `schemas/findings-v1.schema.json` from the `schemars` derives. The
+   committed schema is the contract — if you change a Rust type that affects
+   the envelope, re-run the gen and commit the diff in the same PR.
+
+## Pull request expectations
+
+- **One concern per PR.** Small, atomic commits beat one large rewrite.
+- **Conventional commit messages.** `feat:` / `fix:` / `docs:` / `chore:` /
+  `test:` / `refactor:` are the common prefixes; an optional scope helps
+  (e.g. `feat(scan): ...`, `docs(envelope): ...`).
+- **Tests for behavioural changes.** Add or update a test that would have
+  caught the bug or proves the new behaviour. The
+  `crates/miner-core/tests/goldens/` fixtures pin reference outputs against
+  pinned `statsmodels` / `scipy` / `pandas` versions — regen via the bundled
+  `generate_<scan>.py` recipes.
+- **Documentation.** If your change affects the `Finding` envelope, the scan
+  catalogue, the sweep manifest grammar, or the CLI surface, update the
+  matching doc under [`docs/`](docs/) in the same PR.
+- **License headers.** New Rust source files follow the existing pattern (no
+  per-file header; the workspace LICENSE applies). New scripts and runnable
+  examples carry `# SPDX-License-Identifier: Apache-2.0` and
+  `# Copyright 2026 Radius Red Ltd.` on the first two lines.
+- **Run the gates locally.** Don't ship a PR that you haven't seen pass
+  `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
+  warnings && cargo test --workspace` on your own machine.
+
+## Reporting bugs
+
+Open an issue with a minimal reproduction: the exact CLI invocation, the
+expected JSONL fragment, and the actual JSONL fragment (truncated is fine).
+If the bug is data-shaped, attach the smallest possible cache slice that
+triggers it.
+
+## License
+
+By contributing, you agree that your contributions will be licensed under
+the Apache License, Version 2.0. See [LICENSE](LICENSE).
