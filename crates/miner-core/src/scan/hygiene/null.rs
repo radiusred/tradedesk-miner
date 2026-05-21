@@ -172,4 +172,35 @@ mod tests {
         let two = [1.0_f64, 2.0];
         assert!(circular_shift_null_p(&two, 1.5, mean, 0, 0).is_nan());
     }
+
+    /// CR-02 regression: empirical p MUST floor at `1 / (n_resamples + 1)`
+    /// even when zero surrogates exceed the observed statistic.
+    ///
+    /// Construction: pass an `observed_stat` larger than any conceivable
+    /// surrogate-mean of a unit-magnitude series; every rotation produces
+    /// the SAME mean (rotation preserves the sum), so the count of more-
+    /// extreme surrogates is exactly zero.
+    ///
+    /// Pre-fix the naive `B / N` form returned `0.0` for this construction.
+    /// Post-fix the floor is `1 / (N + 1)`. Asserting `p > 0` AND
+    /// `p == 1/(N+1)` pins both invariants.
+    #[test]
+    fn circular_shift_null_p_floors_at_one_over_n_plus_one() {
+        // Series with non-zero sum, so the mean rotation is invariant
+        // (all surrogates have the same mean as the observed series).
+        let values = vec![1.0_f64; 50];
+        // Observed statistic well above the surrogate mean (1.0): nothing
+        // can exceed it, more_extreme stays 0.
+        let observed = 1000.0;
+        let n_resamples = 99_u32;
+        let p = circular_shift_null_p(&values, observed, mean, n_resamples, 0xCAFE);
+
+        // (1 + 0) / (1 + 99) = 0.01 exactly.
+        let expected = 1.0_f64 / (f64::from(n_resamples) + 1.0);
+        assert!(p > 0.0, "p must be strictly positive: got {p}");
+        assert!(
+            (p - expected).abs() < 1e-15,
+            "p {p} != expected floor {expected} = 1/(N+1)"
+        );
+    }
 }
