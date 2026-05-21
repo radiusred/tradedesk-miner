@@ -207,6 +207,81 @@ pub fn parse_manifest_str(s: &str) -> Result<SweepManifest, MinerError> {
     reason = "linear preflight walk: cardinality gate -> per-block (resolve scan -> arity check -> hygiene-support check -> hygiene-method parse) -> tally. Splitting per-step would obscure the documented validation ordering."
 )]
 pub fn validate(manifest: &SweepManifest, registry: &Registry) -> Result<u64, MinerError> {
+    // WR-03: HYGIENE_RESAMPLE_CEILING enforced at preflight (defence-in-
+    // depth — the engine also clamps at the call site, but rejecting
+    // here surfaces the constraint explicitly).
+    const CEILING: u64 = crate::engine::HYGIENE_RESAMPLE_CEILING as u64;
+
+    // WR-03: validate [fdr].alpha before any other check. NaN must be
+    // rejected explicitly because the `(0.0..=1.0).contains(&NaN)` check
+    // returns false on its own, but a `debug_assert!` inside `bh_fdr` only
+    // fires under `cfg(debug_assertions)`; in release builds a NaN alpha
+    // would silently ride into FdrFamilySummary.alpha on the wire.
+    if !(0.0..=1.0).contains(&manifest.fdr.alpha) || manifest.fdr.alpha.is_nan() {
+        return Err(MinerError::Preflight(
+            WireError::preflight(
+                PreflightCode::InvalidParameter,
+                format!(
+                    "[fdr].alpha must be in [0, 1]; got {}",
+                    manifest.fdr.alpha
+                ),
+            )
+            .with_context(
+                "fdr_alpha",
+                serde_json::Number::from_f64(manifest.fdr.alpha)
+                    .map_or(serde_json::Value::Null, serde_json::Value::Number),
+            ),
+        ));
+    }
+
+    // WR-03: validate [hygiene].bootstrap_n / null_n against the documented
+    // HYGIENE_RESAMPLE_CEILING. The engine clamps over-cap counts at the
+    // call site, but rejecting at preflight surfaces the constraint
+    // explicitly rather than letting the user think they got 1M
+    // resamples when they actually got 100k.
+    if u64::from(manifest.hygiene.bootstrap_n) > CEILING {
+        return Err(MinerError::Preflight(
+            WireError::preflight(
+                PreflightCode::InvalidParameter,
+                format!(
+                    "[hygiene].bootstrap_n exceeds HYGIENE_RESAMPLE_CEILING ({CEILING}); got {}",
+                    manifest.hygiene.bootstrap_n
+                ),
+            )
+            .with_context(
+                "bootstrap_n",
+                serde_json::Value::Number(serde_json::Number::from(
+                    manifest.hygiene.bootstrap_n,
+                )),
+            )
+            .with_context(
+                "ceiling",
+                serde_json::Value::Number(serde_json::Number::from(CEILING)),
+            ),
+        ));
+    }
+    if u64::from(manifest.hygiene.null_n) > CEILING {
+        return Err(MinerError::Preflight(
+            WireError::preflight(
+                PreflightCode::InvalidParameter,
+                format!(
+                    "[hygiene].null_n exceeds HYGIENE_RESAMPLE_CEILING ({CEILING}); got {}",
+                    manifest.hygiene.null_n
+                ),
+            )
+            .with_context(
+                "null_n",
+                serde_json::Value::Number(serde_json::Number::from(
+                    manifest.hygiene.null_n,
+                )),
+            )
+            .with_context(
+                "ceiling",
+                serde_json::Value::Number(serde_json::Number::from(CEILING)),
+            ),
+        ));
+    }
+
     // Tally the estimated cardinality first (cheap; no Vec materialisation)
     // so the SweepTooLarge gate fires BEFORE we walk per-block validation.
     let estimated = crate::sweep::job_graph::estimated_job_count(manifest);
@@ -259,6 +334,40 @@ pub fn validate(manifest: &SweepManifest, registry: &Registry) -> Result<u64, Mi
         // Hygiene support — merge per-block hygiene over the global hygiene
         // block (per-block wins when both set).
         let merged_hygiene = merge_hygiene(&manifest.hygiene, block.hygiene.as_ref());
+
+        // WR-03 (per-block): the merged per-block bootstrap_n / null_n
+        // must also respect HYGIENE_RESAMPLE_CEILING; per-block overrides
+        // can sneak past the global check above.
+        if u64::from(merged_hygiene.bootstrap_n) > CEILING {
+            return Err(MinerError::Preflight(
+                WireError::preflight(
+                    PreflightCode::InvalidParameter,
+                    format!(
+                        "[[jobs[{block_idx}].hygiene]].bootstrap_n exceeds HYGIENE_RESAMPLE_CEILING ({CEILING}); got {}",
+                        merged_hygiene.bootstrap_n
+                    ),
+                )
+                .with_context(
+                    "block_index",
+                    serde_json::Value::Number(serde_json::Number::from(block_idx)),
+                ),
+            ));
+        }
+        if u64::from(merged_hygiene.null_n) > CEILING {
+            return Err(MinerError::Preflight(
+                WireError::preflight(
+                    PreflightCode::InvalidParameter,
+                    format!(
+                        "[[jobs[{block_idx}].hygiene]].null_n exceeds HYGIENE_RESAMPLE_CEILING ({CEILING}); got {}",
+                        merged_hygiene.null_n
+                    ),
+                )
+                .with_context(
+                    "block_index",
+                    serde_json::Value::Number(serde_json::Number::from(block_idx)),
+                ),
+            ));
+        }
         if let Some(bootstrap_str) = merged_hygiene.bootstrap.as_deref() {
             let bm = parse_bootstrap_method(bootstrap_str).map_err(|msg| {
                 MinerError::Preflight(WireError::preflight(
@@ -618,5 +727,138 @@ mod tests {
             Ok(crate::scan::NullMethod::PhaseScramble)
         ));
         assert!(parse_null_method("none").is_err());
+    }
+
+    /// WR-03: out-of-range [fdr].alpha is rejected at preflight with
+    /// `PreflightCode::InvalidParameter`.
+    #[test]
+    fn validate_rejects_out_of_range_fdr_alpha() {
+        for bad in [-0.5_f64, 1.5, 100.0, -1.0, f64::NAN] {
+            let toml = format!(
+                r#"
+                    [fdr]
+                    family = "scan_id"
+                    alpha = {bad}
+
+                    [[jobs]]
+                    scan = "stats.autocorr.ljung_box@1"
+                    instruments = ["EURUSD:bid"]
+                    timeframes = ["15m"]
+                    windows = ["2024-01-01:2024-01-02"]
+                "#,
+                bad = if bad.is_nan() { "nan".to_string() } else { format!("{bad}") },
+            );
+            // NaN is the awkward case: TOML doesn't have a NaN literal.
+            // Skip the NaN literal path; the runtime NaN check is
+            // exercised by the constructed manifest below.
+            if !bad.is_nan() {
+                let m: SweepManifest = toml::from_str(&toml).expect("parse");
+                let reg = registry_bootstrap();
+                let err = validate(&m, &reg).expect_err("must reject");
+                let MinerError::Preflight(w) = err else {
+                    panic!("expected Preflight; got {err:?}");
+                };
+                assert_eq!(w.code, "invalid_parameter");
+                assert!(
+                    w.message.contains("[fdr].alpha"),
+                    "message must mention [fdr].alpha; got {:?}",
+                    w.message
+                );
+            }
+        }
+
+        // NaN alpha via direct struct construction (TOML doesn't parse NaN).
+        let mut m = SweepManifest::default();
+        m.fdr.alpha = f64::NAN;
+        m.jobs.push(JobBlock {
+            scan: "stats.autocorr.ljung_box@1".to_string(),
+            instruments: serde_json::json!(["EURUSD:bid"]),
+            timeframes: vec!["15m".to_string()],
+            windows: vec!["2024-01-01:2024-01-02".to_string()],
+            gap_policy: None,
+            params: BTreeMap::new(),
+            hygiene: None,
+        });
+        let reg = registry_bootstrap();
+        let err = validate(&m, &reg).expect_err("must reject NaN alpha");
+        let MinerError::Preflight(w) = err else {
+            panic!("expected Preflight; got {err:?}");
+        };
+        assert_eq!(w.code, "invalid_parameter");
+        assert!(w.message.contains("[fdr].alpha"));
+    }
+
+    /// WR-03: `[hygiene].bootstrap_n` over `HYGIENE_RESAMPLE_CEILING` is
+    /// rejected at preflight rather than silently clamped at the engine.
+    #[test]
+    fn validate_rejects_over_ceiling_bootstrap_n() {
+        let toml = r#"
+            [hygiene]
+            bootstrap = "stationary"
+            bootstrap_n = 1000000
+
+            [[jobs]]
+            scan = "stats.autocorr.ljung_box@1"
+            instruments = ["EURUSD:bid"]
+            timeframes = ["15m"]
+            windows = ["2024-01-01:2024-01-02"]
+        "#;
+        let m: SweepManifest = toml::from_str(toml).expect("parse");
+        let reg = registry_bootstrap();
+        let err = validate(&m, &reg).expect_err("must reject");
+        let MinerError::Preflight(w) = err else {
+            panic!("expected Preflight; got {err:?}");
+        };
+        assert_eq!(w.code, "invalid_parameter");
+        assert!(
+            w.message.contains("bootstrap_n") && w.message.contains("HYGIENE_RESAMPLE_CEILING"),
+            "message must mention bootstrap_n + ceiling; got {:?}",
+            w.message
+        );
+    }
+
+    /// WR-03: same for per-block `[[jobs].hygiene].null_n` — over-cap
+    /// values are caught by the per-block merged check.
+    #[test]
+    fn validate_rejects_over_ceiling_per_block_null_n() {
+        let toml = r#"
+            [[jobs]]
+            scan = "stats.autocorr.ljung_box@1"
+            instruments = ["EURUSD:bid"]
+            timeframes = ["15m"]
+            windows = ["2024-01-01:2024-01-02"]
+
+            [[jobs.hygiene]]
+            "#;
+        // Per-block hygiene must be `[jobs.hygiene]` (table), not an array.
+        // Use direct struct construction for clarity.
+        let _ = toml; // silence the placeholder above; see direct
+        // construction below.
+        let mut m = SweepManifest::default();
+        m.jobs.push(JobBlock {
+            scan: "stats.autocorr.ljung_box@1".to_string(),
+            instruments: serde_json::json!(["EURUSD:bid"]),
+            timeframes: vec!["15m".to_string()],
+            windows: vec!["2024-01-01:2024-01-02".to_string()],
+            gap_policy: None,
+            params: BTreeMap::new(),
+            hygiene: Some(HygieneBlock {
+                bootstrap: None,
+                bootstrap_n: 0,
+                null: Some("circular_shift".to_string()),
+                null_n: 1_000_000,
+            }),
+        });
+        let reg = registry_bootstrap();
+        let err = validate(&m, &reg).expect_err("must reject");
+        let MinerError::Preflight(w) = err else {
+            panic!("expected Preflight; got {err:?}");
+        };
+        assert_eq!(w.code, "invalid_parameter");
+        assert!(
+            w.message.contains("null_n") && w.message.contains("HYGIENE_RESAMPLE_CEILING"),
+            "message must mention null_n + ceiling; got {:?}",
+            w.message
+        );
     }
 }
