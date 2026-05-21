@@ -45,11 +45,15 @@ envelope.
    ```
 
    `install-git-hooks.sh` points `core.hooksPath` at the tracked `.githooks/`
-   directory so the local pre-commit hook mirrors CI's `cargo fmt --check`
-   gate. On drift the hook auto-runs `cargo fmt --all`, lists the modified
-   files, and aborts the commit so you can review the changes. Set
-   `MINER_AUTOFIX=1` to let the hook re-stage and continue without review.
-   Bypass with `git commit --no-verify` if you must (CI will still fail).
+   directory so the local pre-commit hook mirrors two CI gates:
+   `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D
+   warnings`. On fmt drift the hook auto-runs `cargo fmt --all`, lists the
+   modified files, and aborts the commit so you can review the changes; set
+   `MINER_AUTOFIX=1` to let it re-stage and continue without review. Clippy
+   failures abort the commit with the clippy output — fix the lints
+   manually, or set `MINER_SKIP_CLIPPY=1` for fast WIP commits (CI will
+   still enforce the gate). Bypass everything with `git commit --no-verify`
+   if you must.
 
 3. **Emit a fixture (the Phase 1 smoke test).**
 
