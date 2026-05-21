@@ -309,12 +309,24 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
                 Finding::Result(r) => {
                     totals.results_emitted = totals.results_emitted.saturating_add(1);
                     if let Some(p) = r.effect.p_value {
-                        if let Some(family_key) =
-                            scope_family(&r.scan_id_at_version, &fdr_family_scope)
-                        {
-                            let entries = by_family.entry(family_key).or_default();
-                            let finding_index_within_family = entries.len();
-                            entries.push((finding_index_within_family, p));
+                        // CR-03: skip NaN p-values from family aggregation.
+                        // NaN p-values arise legitimately from analytic
+                        // kernels on degenerate inputs (e.g., constant-
+                        // variance bucket → t-stat NaN); including them
+                        // in the BH-FDR walk would corrupt q-values for
+                        // every other entry in the family. The kernel
+                        // itself defends against this (see
+                        // `scan::hygiene::fdr::bh_fdr`), but filtering at
+                        // the boundary keeps the family vector clean and
+                        // the rejection point visible.
+                        if !p.is_nan() {
+                            if let Some(family_key) =
+                                scope_family(&r.scan_id_at_version, &fdr_family_scope)
+                            {
+                                let entries = by_family.entry(family_key).or_default();
+                                let finding_index_within_family = entries.len();
+                                entries.push((finding_index_within_family, p));
+                            }
                         }
                     }
                 }

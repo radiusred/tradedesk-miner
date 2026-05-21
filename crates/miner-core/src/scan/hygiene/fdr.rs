@@ -30,6 +30,25 @@
 /// rank `n` down to rank 1) of `min(1, p_(k) * n / k)` for `k >= i`. This
 /// enforces the step-up monotonicity that makes `q` a non-decreasing
 /// function of `p`'s rank.
+///
+/// ## NaN handling (CR-03)
+///
+/// NaN p-values are NOT silently included in the sort + step-up walk
+/// (the prior `partial_cmp(&b).unwrap_or(Equal)` placed NaNs in
+/// arbitrary positions, corrupting q-values for every entry in the
+/// family — not just the NaN ones). Instead:
+///
+/// - NaN entries are filtered OUT of the sort/walk; q-values are
+///   computed on the finite-p subset with the BH `n` equal to the
+///   COUNT OF FINITE entries (not the full input length).
+/// - At the corresponding output index for each NaN input, the q-value
+///   is `f64::NAN` (caller can detect and surface).
+///
+/// The decision (vs early-error) keeps the kernel tolerant of degenerate
+/// analytic-p inputs that flow legitimately through the engine boundary
+/// (e.g., constant-variance bucket → t-stat NaN) without poisoning the
+/// rest of the family. Callers that want strict rejection should filter
+/// `p.is_nan()` at their boundary (see `sweep::executor` drain loop).
 #[must_use]
 #[allow(
     clippy::cast_precision_loss,
@@ -45,15 +64,35 @@ pub fn bh_fdr(p_values: &[f64], alpha: f64) -> Vec<f64> {
         "alpha out of [0, 1]: {alpha}"
     );
 
-    // Sort an `(original_index, p_value)` buffer ascending by p.
-    let mut indexed: Vec<(usize, f64)> = p_values.iter().copied().enumerate().collect();
+    // Pre-fill output with NaN. Positions corresponding to NaN p-values
+    // stay NaN; positions corresponding to finite p-values are overwritten
+    // below.
+    let mut q = vec![f64::NAN; n];
+
+    // Sort an `(original_index, p_value)` buffer ascending by p, but
+    // FILTER NaN entries out of the working set so they cannot end up
+    // in arbitrary sort positions (CR-03). The BH step-up walk operates
+    // on the finite-p subset only; NaN inputs receive NaN q-values
+    // (already pre-filled above).
+    let mut indexed: Vec<(usize, f64)> = p_values
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, p)| !p.is_nan())
+        .collect();
+    if indexed.is_empty() {
+        return q;
+    }
     indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    let n_f = n as f64;
+    // BH `n` is the COUNT OF FINITE p-values, not the full input length.
+    // Including NaN positions in `n` would inflate q-values for every
+    // finite entry by the number of NaN inputs.
+    let n_finite = indexed.len();
+    let n_f = n_finite as f64;
     // Reverse-scan running-min for step-up monotonicity.
-    let mut q = vec![0.0_f64; n];
     let mut running_min = 1.0_f64;
-    for k in (0..n).rev() {
+    for k in (0..n_finite).rev() {
         // 1-indexed rank for the k-th smallest p.
         let i = k + 1;
         let raw_q = (indexed[k].1 * n_f / (i as f64)).min(1.0);
