@@ -411,6 +411,11 @@ fn value_kind_str(v: &serde_json::Value) -> &'static str {
 pub fn cartesian_params(
     params: &BTreeMap<String, serde_json::Value>,
 ) -> Vec<serde_json::Value> {
+    // WR-08: defensive ceiling for callers that bypass the sweep
+    // manifest's `max_jobs` gate (`cartesian_params` is `pub` and may be
+    // invoked by future test/CLI helpers).
+    const CARTESIAN_OUT_CEILING: usize = 10_000_000;
+
     if params.is_empty() {
         // Empty params -> one cartesian point: an empty object.
         return vec![serde_json::Value::Object(serde_json::Map::new())];
@@ -429,7 +434,26 @@ pub fn cartesian_params(
         .collect();
 
     let mut out: Vec<serde_json::Value> = Vec::new();
-    let total: usize = choices.iter().map(Vec::len).product();
+    // WR-08: mirror the saturating discipline used by
+    // `params_cartesian_size` (which feeds the SweepTooLarge gate).
+    // Unchecked `product()` can overflow `usize` silently for many-axis
+    // manifests on 32-bit targets, producing a wrapped tiny `total`
+    // that under-sizes the reserve and triggers many reallocations.
+    // Saturating-mul converges on `usize::MAX` rather than wrapping.
+    let total: usize = choices
+        .iter()
+        .fold(1_usize, |acc, c| acc.saturating_mul(c.len()));
+    // WR-08: 10M points is two orders of magnitude above any sensible
+    // interactive sweep and well under any OOM risk; users who
+    // legitimately need more should explicitly raise their sweep
+    // `max_jobs`.
+    if total > CARTESIAN_OUT_CEILING {
+        // Defensive: return an empty expansion rather than allocate
+        // anywhere near `usize::MAX`. Callers detect "no points produced"
+        // and surface an appropriate error (the sweep path catches this
+        // via the SweepTooLarge gate before reaching `cartesian_params`).
+        return Vec::new();
+    }
     out.reserve(total);
 
     // Index-based nested-loop expansion (lexicographic over keys-then-choices).
