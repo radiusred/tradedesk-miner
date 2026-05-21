@@ -26,9 +26,11 @@ windows = ["2024-06-12:2024-06-13"]
 params = { lags = 5 }
 
 [hygiene]
-bootstrap = { method = "stationary", n_iter = 999 }
-null = { method = "circular_shift", n_iter = 999 }
+bootstrap = "stationary"
+bootstrap_n = 999
+null = "circular_shift"
+null_n = 999
 
 [fdr]
-family = "per_scan_id"
+family = "scan_id"
 alpha = 0.05
