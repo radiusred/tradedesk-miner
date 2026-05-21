@@ -45,10 +45,10 @@ use rayon::prelude::*;
 use crate::cache::BarCache;
 use crate::config::MinerConfig;
 use crate::engine::{RunOutcome, run_one_with_registry};
-use crate::error::MinerError;
+use crate::error::{MinerError, ScanErrorCode};
 use crate::findings::{
-    DryRunFinding, FdrFamilySummary, Finding, FindingFdrEntry, FindingSink, RunSummary,
-    SweepSummaryFinding, SweepTotals, run_id::RunId,
+    DataSlice, DryRunFinding, FdrFamilySummary, Finding, FindingFdrEntry, FindingSink, RunSummary,
+    ScanErrorFinding, Source, SweepSummaryFinding, SweepTotals, TimeRange, run_id::RunId,
 };
 use crate::reader::Reader;
 use crate::scan::ScanRequest;
@@ -266,7 +266,15 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
             // INSIDE the per-job sink (engine convention from Plan 03-07).
             // The Vec<Finding> contains zero or more Result/ScanError/etc
             // envelopes; the deterministic drain replays them in order.
-            let _ = run_one_with_registry(
+            //
+            // WR-02: capture per-job MinerError::Preflight and synthesise a
+            // ScanError envelope into the job sink. `run_one_with_registry`
+            // returns Preflight for unknown-scan / arity-mismatch /
+            // hygiene-not-supported failures and emits NO envelope before
+            // returning — without this synthesis the sweep would silently
+            // drop the job (defence-in-depth against drift between
+            // `manifest::validate` and the per-job engine checks).
+            let outcome = run_one_with_registry(
                 &scan_req,
                 cfg,
                 reader,
@@ -274,6 +282,10 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
                 Arc::clone(&cancel),
                 registry,
             );
+            if let Err(err) = outcome {
+                let synth = build_synthetic_per_job_error(&scan_req, &err, run_id);
+                let _ = job_sink.write_envelope(&synth);
+            }
             (idx, job_sink.buf)
         })
         .collect();
@@ -552,6 +564,80 @@ fn emit_sweep_run_end(
     Ok(())
 }
 
+/// WR-02 helper: build a `Finding::ScanError` envelope from a per-job
+/// `MinerError`. Used to surface preflight rejections (or any other
+/// uncaught engine error) that `run_one_with_registry` returned WITHOUT
+/// emitting an envelope itself.
+///
+/// Always returns a Finding — every `MinerError` reaching the per-job
+/// boundary is something the user should see. `Preflight` carries the
+/// typed `code` + `message`; other variants synthesise a `compute_error`
+/// envelope (defence-in-depth — those variants normally surface their
+/// own envelopes inside the engine).
+fn build_synthetic_per_job_error(
+    req: &ScanRequest,
+    err: &MinerError,
+    run_id: RunId,
+) -> Finding {
+    // Pull a structured `WireError` out of the typed error where possible.
+    // For non-Preflight variants we fabricate a minimal `error_code` +
+    // message; the per-job ScanError envelope is the engine's existing
+    // wire convention so consumers do not need a new error path.
+    let (error_code, message): (String, String) = match err {
+        MinerError::Preflight(w) => (w.code.clone(), w.message.clone()),
+        other => {
+            // Other MinerError variants (Io / Scan / Serialize) already
+            // surface their own envelopes inside the engine when they
+            // arise mid-run; if one returns at the per-job boundary the
+            // engine's framing-close discipline already swallowed the
+            // emitter. Synthesise a compute-error envelope so the user
+            // sees something rather than silent loss.
+            (
+                ScanErrorCode::ComputeError.as_str().to_string(),
+                format!("per-job engine error: {other}"),
+            )
+        }
+    };
+
+    let sources: Vec<Source> = req
+        .instruments
+        .iter()
+        .map(|spec| Source {
+            source_id: String::new(),
+            symbol: spec.symbol.clone(),
+            side: spec.side.as_str().to_string(),
+            timeframe: req.timeframe.as_str().to_string(),
+        })
+        .collect();
+    let data_slice = DataSlice {
+        range: TimeRange {
+            start_utc: req.window.start,
+            end_utc: req.window.end,
+        },
+        gap_manifest_ref: None,
+        gap_manifest: None,
+        sources,
+    };
+
+    Finding::ScanError(ScanErrorFinding {
+        schema_version: 1,
+        scan_id_at_version: format!("{}@{}", req.scan_id, req.version),
+        param_hash: req.param_hash.as_str().to_string(),
+        code_revision: crate::CODE_REVISION.to_string(),
+        data_slice,
+        dsr: None,
+        fdr_q: None,
+        run_id,
+        produced_at_utc: Utc::now(),
+        error_code,
+        message,
+        request_context: serde_json::json!({
+            "scan_id": req.scan_id,
+            "kind": "per_job_preflight",
+        }),
+    })
+}
+
 /// Translate a `ResolvedJob` into a single-shot `ScanRequest` for
 /// `engine::run_one_with_registry`.
 fn job_to_scan_request(job: &crate::sweep::job_graph::ResolvedJob) -> ScanRequest {
@@ -679,5 +765,75 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<SweepOptions>();
         assert_send_sync::<crate::sweep::job_graph::ResolvedJob>();
+    }
+
+    /// WR-02: a `MinerError::Preflight` returned from
+    /// `run_one_with_registry` is synthesised into a `Finding::ScanError`
+    /// envelope carrying the typed preflight `code` + `message` so the
+    /// sweep output surfaces the rejection rather than silently dropping
+    /// the job.
+    #[test]
+    fn build_synthetic_per_job_error_preserves_preflight_code_and_message() {
+        use crate::aggregator::Timeframe;
+        use crate::error::{PreflightCode, WireError};
+        use crate::findings::TimeRange;
+        use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
+        use chrono::TimeZone;
+
+        let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 2, 1, 0, 0, 0).unwrap();
+        let window = ClosedRangeUtc { start, end };
+        let req = ScanRequest {
+            scan_id: "stats.autocorr.ljung_box".to_string(),
+            version: 1,
+            instruments: vec![InstrumentSpec {
+                symbol: "EURUSD".into(),
+                side: Side::Bid,
+            }],
+            timeframe: Timeframe::Tf15m,
+            window,
+            sub_range: TimeRange {
+                start_utc: start,
+                end_utc: end,
+            },
+            gap_policy: crate::GapPolicyKind::ContinuousOnly,
+            resolved_params: serde_json::json!({}),
+            param_hash: Blake3Hex::from_hex_bytes(&[b'0'; 64]),
+            dry_run: false,
+            master_seed: None,
+            job_seed: None,
+            bootstrap_method: None,
+            bootstrap_n: None,
+            null_method: None,
+            null_n: None,
+            #[cfg(any(test, feature = "test-internal"))]
+            sleep_after_first_finding_ms: None,
+        };
+        let err = MinerError::Preflight(WireError::preflight(
+            PreflightCode::HygieneNotSupported,
+            "synth: scan does not support requested null method",
+        ));
+        let run_id = RunId::new();
+        let synth = build_synthetic_per_job_error(&req, &err, run_id);
+        let Finding::ScanError(se) = synth else {
+            panic!("expected Finding::ScanError; got something else");
+        };
+        assert_eq!(se.error_code, "hygiene_not_supported");
+        assert!(
+            se.message
+                .contains("does not support requested null method"),
+            "message lost: {}",
+            se.message
+        );
+        assert_eq!(se.run_id, run_id, "run_id threaded through unchanged");
+        assert_eq!(
+            se.scan_id_at_version, "stats.autocorr.ljung_box@1",
+            "scan_id@version composed from req fields"
+        );
+        assert_eq!(
+            se.data_slice.sources.len(),
+            1,
+            "single-instrument source vector"
+        );
     }
 }
