@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 6 context gathered (docs-only scope)
-last_updated: "2026-05-21T18:01:32.825Z"
-last_activity: 2026-05-21 -- Phase 06 execution started
+stopped_at: Plan 06-01 complete — docs-only Phase 6 scope locked; ARCHITECTURE.md + license-footer published
+last_updated: "2026-05-21T18:11:41.455Z"
+last_activity: 2026-05-21
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 41
-  completed_plans: 38
-  percent: 93
+  completed_plans: 39
+  percent: 95
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 ## Current Position
 
 Phase: 06 (mcp-http-wrappers) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 06
-Last activity: 2026-05-21 -- Phase 06 execution started
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-05-21
 
-Progress: [██████████] 100%
+Progress: [██████████] 95%
 
 Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, phase-scramble nulls, BH-FDR, sweep manifest. Begin with `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
 
@@ -63,6 +63,7 @@ Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, 
 | Phase 04 P06 | 16min | 2 tasks | 8 files |
 | Phase 04 P11 | ~45 min | 2 tasks | 14 files |
 | Phase 04 P04-12 | ~40min | 3 tasks | 9 files |
+| Phase 06 P01 | ~8min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,10 @@ Recent decisions affecting current work:
 - [Phase ?]: Plan 04-11: cargo clippy -D warnings workspace cleanup deferred to Phase 7 hardening; only 3 in-scope LN_2 lints in drawdown/kernel.rs fixed. **AMENDED by Plan 04-13 (2026-05-20):** deferral reversed for the entire workspace (miner-core lib + tests + miner-cli) — all clippy::pedantic errors resolved, CI gate 2 now green. Phase 7 retains the deny-warnings audit responsibility for any NEW code added in Phases 5–6 + `cargo deny` / `cargo audit` sweeps.
 - [Phase ?]: Plan 04-12: CR-01 (Pair-arity engine dispatch) closed — engine::run_one_with_registry now branches on scan.arity() and routes Pair scans through dispatch_pair_arity_body (wraps the previously-orphaned engine::gap_policy::dispatch_pair). Coverage tightened: arity_preflight + byte_identical_rerun + 4 CROSS integration tests now drive the engine path (9 separate tests trip a future regression).
 - [Phase ?]: Plan 04-13 (2026-05-20): CI Gate 2 (cargo clippy --workspace --all-targets -- -D warnings) GREEN for the first time since Phase 4 implementation began. All clippy::pedantic errors resolved across miner-core lib + tests + miner-cli (88 lib-only inventory expanded to ~200 once lib compiled cleanly). Atomic-per-category commit discipline preserved (7 commits, 1 chore follow-up). `#[allow(..., reason = "...")]` for 5 intentional patterns (closed-form regression bodies, sample-size casts, CLI-bounded indices, canonical statistical notation, internal-facade pass-by-value convention). Crate-level `#![cfg_attr(test, allow(...))]` in lib.rs for test-fixture patterns (float_cmp on goldens, cast_* on synthetic OHLCV generators, etc.). Per-integration-test-file `#![allow(...)]` blocks. Plan 04-11's "deferred to Phase 7" decision reversed — Phase 7 retains only the deny-warnings audit for NEW code in Phases 5-6 + cargo deny / cargo audit sweeps.
+- [Phase ?]: Plan 06-01: D6-05 Pattern A applied — OP-02 + OP-03 moved fully into v2 PLAT-v2-07 + PLAT-v2-08; 3-column traceability table preserved (v2 doc pointer rides in Status cell, no schema change). 50 v1 requirements (was 52).
+- [Phase ?]: Plan 06-01: ROADMAP Phase 6 reshaped from CODE to DOCS per D6-01 + Open Question #7 — Goal + 5 Success Criteria rewritten to describe the docs deliverable; rmcp Research-flag blockquote removed; Phase 7 plan-list pollution (3 orphan 06-0?-PLAN.md bullets) cleaned to TBD placeholder.
+- [Phase ?]: Plan 06-01: License-footer URL form locked to bare URL (no markdown autolink) per D6-04 + Open Question #6 default (4-of-5 tradedesk sibling-repo majority). docs/.license-footer.md is the single source of truth (8 lines, byte-identical to ARCHITECTURE.md tail); Plans 06-02 + 06-03 paste it verbatim.
+- [Phase ?]: Plan 06-01: ARCHITECTURE.md uses plain-text section labels (Overview / Data Flow (high level) / Sync core + async edges / Key design decisions) — NOT H2 headings — per the tradedesk sibling-repo pattern. Only the trailing License heading is H2. Replaces tradedesk's 'Live vs Backtest paths' section with miner's 'Sync core + async edges' (FOUND-04 / D-15 / D-19).
 
 ### Pending Todos
 
@@ -118,7 +123,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-21T16:33:03.185Z
-Stopped at: Phase 6 context gathered (docs-only scope)
-Resume file: .planning/phases/06-mcp-http-wrappers/06-CONTEXT.md
+Last session: 2026-05-21T18:11:41.446Z
+Stopped at: Plan 06-01 complete — docs-only Phase 6 scope locked; ARCHITECTURE.md + license-footer published
+Resume file: .planning/phases/06-mcp-http-wrappers/06-02-PLAN.md
 Next action: Begin Phase 5 (Statistical Hygiene & Sweep Runner) via `/gsd-discuss-phase 5`. The Phase 5 plan in ROADMAP.md owns OP-04 (TOML sweep manifest fanout) + HYG-01..05 (effect sizes, BH-FDR, block bootstrap, phase-scrambled nulls, bit-for-bit reproducible RNG).
