@@ -21,9 +21,11 @@ tradedesk-dukascopy (cache)  →  tradedesk-miner (raw findings)
 
 Phase 1 (Foundations & Contracts), Phase 2 (reader / aggregator / cache),
 Phase 3 (scan engine + facade + CLI), and Phase 4 (the v1 scan catalogue)
-complete. Phase 4 ships 22 registered scans across three families — 11
-single-instrument anomaly tests (ANOM), 5 two-instrument cross scans
-(CROSS), and 6 seasonality scans (SEAS) — every one callable via
+complete. Phase 4 ships 23 registered scans across three families — 12
+single-instrument anomaly tests (ANOM, including both raw and
+squared-returns Ljung-Box variants under ANOM-04), 5 two-instrument
+cross scans (CROSS, with both Pearson and Spearman rolling-correlation
+under CROSS-02), and 6 seasonality scans (SEAS) — every one callable via
 `miner scan <id>@<version>` with identical envelope shape across families
 (single discriminant by `scan_id`, scan-specific extras in
 `effect.extra`). The Phase 1 contract surface — locked `Finding` JSON
@@ -108,7 +110,7 @@ streams `RunStart` → per-finding envelopes (`Result` / `ScanError` /
    MINER_BAR_CACHE_ROOT=/tmp/bar \
    MINER_OUTPUT=stdout \
    cargo run -p miner-cli -- scan stats.autocorr.ljung_box@1 \
-       --instrument EURUSD --side bid --timeframe 15m \
+       --instrument EURUSD:bid --timeframe 15m \
        --window 2024-01-01:2024-12-31
    ```
 
@@ -122,7 +124,7 @@ streams `RunStart` → per-finding envelopes (`Result` / `ScanError` /
 
    ```sh
    cargo run -p miner-cli -- scan stats.autocorr.ljung_box@1 \
-       --instrument EURUSD --timeframe 15m \
+       --instrument EURUSD:bid --timeframe 15m \
        --window 2024-01-01:2024-01-02 \
        --dry-run
    ```
@@ -165,7 +167,7 @@ Per-scan parameter docs are reachable via
    Expected first `Result` line (truncated):
 
    ```json
-   {"kind":"result","scan_id_at_version":"stats.summary.welford@1",
+   {"kind":"result","scan_id@version":"stats.summary.welford@1",
     "effect":{"metric":"summary_welford_mean","value":-1.23e-6,
               "extra":{"excess_kurtosis":...,"iqr":...,"max":...,
                        "min":...,"n":...,"skew":...,"std":...}},
@@ -188,7 +190,7 @@ Per-scan parameter docs are reachable via
    Expected first `Result` line (truncated):
 
    ```json
-   {"kind":"result","scan_id_at_version":"cross.cointegration.engle_granger@1",
+   {"kind":"result","scan_id@version":"cross.cointegration.engle_granger@1",
     "effect":{"metric":"engle_granger_hedge_ratio","value":0.873,
               "p_value":0.041,
               "extra":{"adf_stat":...,"hedge_ratio_alpha":...,
@@ -213,7 +215,7 @@ Per-scan parameter docs are reachable via
    Expected first `Result` line (truncated):
 
    ```json
-   {"kind":"result","scan_id_at_version":"seas.bucket.hour_of_day@1",
+   {"kind":"result","scan_id@version":"seas.bucket.hour_of_day@1",
     "effect":{"metric":"hour_of_day_max_abs_t_stat","value":2.14,
               "n":671,
               "extra":{"buckets":[0,1,...,23],"counts":...,"iqrs":...,
@@ -279,13 +281,13 @@ The canonical Quant-agent workflow:
 
    ```text
    {"kind":"run_start", ...}
-   {"kind":"result", "scan_id_at_version":"stats.autocorr.ljung_box@1",
+   {"kind":"result", "scan_id@version":"stats.autocorr.ljung_box@1",
     "effect":{"metric":"ljung_box_q_stat","value":...,"p_value":0.043,
-              "ci95":{"low":...,"high":...}},
+              "ci95":[..., ...]},
     "repro":{"master_seed":3735928559,"job_seed":...,
              "bootstrap":{"method":"stationary","n":500},
              "null":{"method":"circular_shift","n":500}}, ...}
-   {"kind":"result", "scan_id_at_version":"stats.autocorr.ljung_box@1", ...}
+   {"kind":"result", "scan_id@version":"stats.autocorr.ljung_box@1", ...}
    {"kind":"sweep_summary",
     "fdr_by_family":{"stats.autocorr.ljung_box@1":{
         "method":"benjamini_hochberg","alpha":0.05,
@@ -344,10 +346,12 @@ wire boundary without coupling to `miner-core`'s internal types.
   reader shell, and the `miner-bench` benchmark binary. A seventh `xtask`
   crate hosts dev-only commands like `cargo run -p xtask -- gen-schema`.
 - **Locked `Finding` envelope** — five-variant tagged enum (`run_start`,
-  `result`, `scan_error`, `gap_aborted`, `run_end`) with frozen common
-  fields (`schema_version`, `scan_id@version`, `param_hash`, `code_revision`,
-  `data_slice`, reserved-but-null `dsr` and `fdr_q`). The committed
-  `schemas/findings-v1.schema.json` is regenerable via
+  `result`, `scan_error`, `gap_aborted`, `run_end`; Phases 3 and 5
+  additively extended the enum with `dry_run` and `sweep_summary` — see
+  `docs/findings_envelope.md` for the current seven-variant shape) with
+  frozen common fields (`schema_version`, `scan_id@version`, `param_hash`,
+  `code_revision`, `data_slice`, reserved-but-null `dsr` and `fdr_q`).
+  The committed `schemas/findings-v1.schema.json` is regenerable via
   `cargo run -p xtask -- gen-schema`.
 - **Stdout = findings, stderr = logs** — `StdoutSink` is the only writer to
   `io::stdout()` in the workspace; `tracing-subscriber` routes structured
