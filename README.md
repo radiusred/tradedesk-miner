@@ -377,6 +377,20 @@ See `.planning/ROADMAP.md`. Plan-by-plan summaries live under
 `.planning/phases/<phase>/<phase>-<plan>-SUMMARY.md`.
 
 
+## Documentation
+
+Start with:
+
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [docs/findings_envelope.md](docs/findings_envelope.md)
+- [docs/scan_catalogue.md](docs/scan_catalogue.md)
+- [docs/sweep_manifest.md](docs/sweep_manifest.md)
+- [docs/agent_integration.md](docs/agent_integration.md)
+- [docs/future_mcp_http.md](docs/future_mcp_http.md)
+
+Runnable examples live under [docs/examples/](docs/examples/).
+
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, quality gates,

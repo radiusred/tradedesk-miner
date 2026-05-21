@@ -1,11 +1,14 @@
-//! Phase 6: implementation forthcoming.
+//! Placeholder binary; HTTP server implementation deferred to v2.
 //!
-//! Phase 1 placeholder. The HTTP server (built on axum + tokio + tower) lands in Phase 6.
-//! Logging goes to stderr so the stdout JSONL stream stays clean (D-15, D-19).
+//! See `docs/future_mcp_http.md` for the architectural sketch and the
+//! rationale for the deferral. Logging goes to stderr so the stdout
+//! JSONL stream stays clean (D-15, D-19).
 
 fn main() {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
-    tracing::info!("miner-http placeholder; real implementation lands in Phase 6 (axum)");
+    tracing::info!(
+        "miner-http placeholder; implementation deferred to v2 -- see docs/future_mcp_http.md"
+    );
 }
