@@ -39,6 +39,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::error::{MinerError, PreflightCode, WireError};
@@ -49,7 +50,7 @@ use crate::scan::Registry;
 // ---------------------------------------------------------------------------
 
 /// Root of the sweep manifest deserialiser tree.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 pub struct SweepManifest {
     #[serde(default)]
     pub sweep: SweepConfig,
@@ -62,7 +63,7 @@ pub struct SweepManifest {
 }
 
 /// `[sweep]` block — sweep-level seed + cardinality ceiling.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct SweepConfig {
     pub seed: Option<u64>,
     #[serde(default = "default_max_jobs")]
@@ -89,7 +90,7 @@ fn default_max_jobs() -> u64 {
 }
 
 /// `[hygiene]` (and per-job `[[jobs].hygiene]`) block — global hygiene defaults.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 pub struct HygieneBlock {
     pub bootstrap: Option<String>,
     #[serde(default)]
@@ -100,7 +101,7 @@ pub struct HygieneBlock {
 }
 
 /// `[fdr]` block — FDR scope + alpha.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct FdrConfig {
     #[serde(default = "default_fdr_family")]
     pub family: String,
@@ -136,7 +137,7 @@ fn default_alpha() -> f64 {
 /// `Vec<Vec<String>>` (D5-01 arity split). The shape is dispatched per-
 /// block in `job_graph::parse_instruments_grid` against the registry-
 /// resolved `Scan::arity()`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct JobBlock {
     pub scan: String,
     pub instruments: serde_json::Value,

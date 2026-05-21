@@ -64,9 +64,26 @@ use crate::sweep::manifest::{SweepManifest, validate};
 /// `Finding::DryRun` with `planned_job_count == Some(estimated_count)`
 /// and returns `RunOutcome::Ok` without invoking any scan bodies (per
 /// RESEARCH Pattern 5).
+///
+/// `sleep_after_first_finding_ms` is the SIGINT-race hook threaded through
+/// `job_to_scan_request` onto every per-job
+/// `ScanRequest.sleep_after_first_finding_ms`. Plan 05-05's `sigint_mid_sweep`
+/// integration test uses it to make the cancel race deterministic. The field
+/// itself is plain `Option<u64>` (always present) because callers may need
+/// to forward `None` even from a release build; the cfg gate lives on the
+/// **kernel-side** sleep loop (`ScanCtx.sleep_after_first_finding_ms` /
+/// `LjungBoxScan::run`), which is the actual "test-only behaviour" boundary.
+/// Setting this field from a release-built binary is a no-op because the
+/// downstream `ScanRequest.sleep_after_first_finding_ms` field is itself
+/// `#[cfg(any(test, feature = "test-internal"))]`-gated.
 #[derive(Debug, Clone, Default)]
 pub struct SweepOptions {
     pub dry_run: bool,
+    /// Plan 05-05 — SIGINT-race hook (see struct docs). Setter call site in
+    /// the CLI is `#[cfg(any(test, feature = "test-internal"))]`-gated; this
+    /// field stays ungated so the `SweepOptions { .. }` struct literal in
+    /// the CLI compiles uniformly across feature sets.
+    pub sleep_after_first_finding_ms: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +233,13 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
     // Step 6 — rayon-parallel fanout (RESEARCH Pattern 4).
     // Each worker writes into a per-job JobSink (in-memory Vec<Finding>).
     // -----------------------------------------------------------------------
+    // Plan 05-05: thread the SweepOptions sleep-hook into every per-job
+    // ScanRequest. The downstream `ScanRequest.sleep_after_first_finding_ms`
+    // field is cfg-gated to `test` / `test-internal`, so the propagation
+    // here only compiles into the request struct under matching cfg.
+    // Release builds (no `test-internal`) drop the field assignment.
+    let sleep_after_first_finding_ms = opts.sleep_after_first_finding_ms;
+
     let buffered: Vec<(usize, Vec<Finding>)> = jobs
         .par_iter()
         .enumerate()
@@ -224,7 +248,19 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
             if cancel.load(Ordering::Relaxed) {
                 return (idx, Vec::new());
             }
-            let scan_req = job_to_scan_request(job);
+            let scan_req = {
+                #[allow(unused_mut)]
+                let mut r = job_to_scan_request(job);
+                #[cfg(any(test, feature = "test-internal"))]
+                {
+                    r.sleep_after_first_finding_ms = sleep_after_first_finding_ms;
+                }
+                #[cfg(not(any(test, feature = "test-internal")))]
+                {
+                    let _ = sleep_after_first_finding_ms;
+                }
+                r
+            };
             let mut job_sink = JobSink::new();
             // Best-effort: per-job errors become ScanError envelopes
             // INSIDE the per-job sink (engine convention from Plan 03-07).

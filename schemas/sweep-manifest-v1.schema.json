@@ -1,0 +1,140 @@
+{
+  "$defs": {
+    "FdrConfig": {
+      "description": "`[fdr]` block — FDR scope + alpha.",
+      "properties": {
+        "alpha": {
+          "default": 0.05,
+          "format": "double",
+          "type": "number"
+        },
+        "family": {
+          "default": "scan_id",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "HygieneBlock": {
+      "description": "`[hygiene]` (and per-job `[[jobs].hygiene]`) block — global hygiene defaults.",
+      "properties": {
+        "bootstrap": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bootstrap_n": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "null": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "null_n": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "JobBlock": {
+      "description": "One `[[jobs]]` block — single scan id, multi-instrument / multi-tf /\nmulti-window / multi-param-grid axis declaration.\n\n`instruments` is `serde_json::Value` (NOT a typed `Vec<String>` or\n`Vec<Vec<String>>`) because Single-arity scans take a flat\n`Vec<String>` whereas Pair-arity scans take a nested\n`Vec<Vec<String>>` (D5-01 arity split). The shape is dispatched per-\nblock in `job_graph::parse_instruments_grid` against the registry-\nresolved `Scan::arity()`.",
+      "properties": {
+        "gap_policy": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hygiene": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HygieneBlock"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instruments": true,
+        "params": {
+          "additionalProperties": true,
+          "default": {},
+          "type": "object"
+        },
+        "scan": {
+          "type": "string"
+        },
+        "timeframes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "windows": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "scan",
+        "instruments",
+        "timeframes",
+        "windows"
+      ],
+      "type": "object"
+    },
+    "SweepConfig": {
+      "description": "`[sweep]` block — sweep-level seed + cardinality ceiling.",
+      "properties": {
+        "max_jobs": {
+          "default": 100000,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seed": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Root of the sweep manifest deserialiser tree.",
+  "properties": {
+    "fdr": {
+      "$ref": "#/$defs/FdrConfig"
+    },
+    "hygiene": {
+      "$ref": "#/$defs/HygieneBlock"
+    },
+    "jobs": {
+      "items": {
+        "$ref": "#/$defs/JobBlock"
+      },
+      "type": "array"
+    },
+    "sweep": {
+      "$ref": "#/$defs/SweepConfig"
+    }
+  },
+  "title": "SweepManifest",
+  "type": "object"
+}

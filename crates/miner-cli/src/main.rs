@@ -30,20 +30,24 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Parser;
+use miner_core::cache::BarCache;
 use miner_core::config::{MinerConfig, OutputDest};
 use miner_core::engine::{RunOutcome, run_one};
 use miner_core::error::stderr_emit::emit_to_stderr;
-use miner_core::error::{PreflightCode, WireError};
+use miner_core::error::{MinerError, PreflightCode, WireError};
 use miner_core::findings::sink::{FileSink, StdoutSink};
 use miner_core::findings::{Finding, FindingSink, RunEnd, RunId, RunStart, RunSummary};
+use miner_core::sweep::{SweepOptions, run_sweep};
 use miner_reader_dukascopy::DukascopyReader;
 use tracing_subscriber::EnvFilter;
 
 mod cli;
 mod scan_args;
+mod sweep_args;
 
 use cli::{Cli, Command, resolve_toml_path};
 use scan_args::ScanArgs;
+use sweep_args::SweepArgs;
 
 fn main() -> anyhow::Result<()> {
     // -----------------------------------------------------------------------
@@ -123,6 +127,21 @@ fn main() -> anyhow::Result<()> {
                     // no behaviour change for catch-all engine errors.
                     // Cancel=true still wins via compute_exit_code's
                     // short-circuit → 130.
+                    RunOutcome::PreflightFailed
+                }
+            };
+            let code = compute_exit_code(cancel.load(Ordering::SeqCst), &outcome);
+            std::process::exit(code);
+        }
+        Command::Sweep(sweep_args) => {
+            // Plan 05-05 — `miner sweep` dispatch. Same Err-handling pattern as
+            // the Scan arm: catch-all Err → PreflightFailed → exit 1 (unless
+            // cancel is set, in which case 130 wins per D3-24).
+            let result = handle_sweep_subcommand(sweep_args, &cfg, &mut *sink, Arc::clone(&cancel));
+            let outcome = match result {
+                Ok(o) => o,
+                Err(e) => {
+                    tracing::error!(error = %e, "sweep dispatch failed");
                     RunOutcome::PreflightFailed
                 }
             };
@@ -376,6 +395,79 @@ fn handle_scan_subcommand(
             Ok(RunOutcome::PreflightFailed)
         }
         Err(e) => Err(anyhow::anyhow!("engine::run_one: {e}")),
+    }
+}
+
+/// `miner sweep <manifest>` subcommand — translate clap-parsed `SweepArgs` into
+/// a typed `SweepManifest`, construct the `DukascopyReader` + `BarCache` at the
+/// binary edge, and hand off to `miner_core::sweep::run_sweep`.
+///
+/// **Plan 05-05 (D5-04 / OP-04):** the sweep executor handles its own framing
+/// (`RunStart` → per-job envelopes → `SweepSummary` → `RunEnd`), preflight
+/// validation (`SweepTooLarge`, arity mismatch, `HygieneNotSupported`,
+/// `UnknownScan`), rayon-parallel fanout, BH-FDR aggregation, and the
+/// SIGINT-short-circuits-SweepSummary contract. This dispatcher's job is purely
+/// translating CLI args → typed manifest → forwarding to the engine entry point.
+///
+/// Exit-code routing identical to `miner scan` (per D3-24):
+/// `Ok → 0`, preflight `WireError → 1`, `HadScanErrors → 2`, `cancel → 130`
+/// (cancel wins via `compute_exit_code`'s short-circuit, set in `main()` arm).
+///
+/// # Errors
+/// Returns an `anyhow::Error` on non-preflight engine failure (reader / cache /
+/// io). Preflight `WireError`s are emitted to stderr inline and surface as
+/// `Ok(RunOutcome::PreflightFailed)` (mirroring `handle_scan_subcommand`).
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "SweepArgs is built by clap and consumed once at the call site; passing by value matches the Subcommand variant's owned `SweepArgs` shape"
+)]
+fn handle_sweep_subcommand(
+    args: SweepArgs,
+    cfg: &MinerConfig,
+    sink: &mut dyn FindingSink,
+    cancel: Arc<AtomicBool>,
+) -> anyhow::Result<RunOutcome> {
+    // Step 1 — load + override the manifest. WireError on read/parse failure
+    // surfaces as a structured stderr line + RunOutcome::PreflightFailed (the
+    // exit-code router maps to 1; cancel still wins).
+    let manifest = match args.to_manifest() {
+        Ok(m) => m,
+        Err(wire_err) => {
+            let _ = emit_to_stderr(&wire_err);
+            return Ok(RunOutcome::PreflightFailed);
+        }
+    };
+
+    // Step 2 — translate flags into SweepOptions. The sleep-hook itself is
+    // only set under `test` / `test-internal` cfg (where SweepArgs exposes
+    // the matching flag); release builds (no `test-internal`) leave the
+    // SweepOptions field as `None` and the downstream
+    // `ScanRequest.sleep_after_first_finding_ms` cfg gate ensures the field
+    // isn't even present in the per-job ScanRequest.
+    #[cfg(any(test, feature = "test-internal"))]
+    let sleep_after_first_finding_ms = args.sleep_after_first_finding_ms;
+    #[cfg(not(any(test, feature = "test-internal")))]
+    let sleep_after_first_finding_ms: Option<u64> = None;
+    let opts = SweepOptions {
+        dry_run: args.dry_run,
+        sleep_after_first_finding_ms,
+    };
+
+    // Step 3 — construct reader + bar cache at the binary edge (RESEARCH Open
+    // Question 6 — readers are NEVER carried by MinerConfig).
+    let reader = DukascopyReader::new(cfg.cache_root.clone());
+    let bar_cache = BarCache::new(cfg.bar_cache_root.clone());
+
+    // Step 4 — hand off to the engine. Preflight errors arrive here as
+    // `Err(MinerError::Preflight(WireError))` (manifest::validate),
+    // structurally identical to `run_one`'s preflight path.
+    match run_sweep(manifest, opts, cfg, &reader, &bar_cache, sink, cancel) {
+        Ok(outcome) => Ok(outcome),
+        Err(MinerError::Preflight(wire_err)) => {
+            let _ = emit_to_stderr(&wire_err);
+            Ok(RunOutcome::PreflightFailed)
+        }
+        Err(e) => Err(anyhow::anyhow!("sweep::run_sweep: {e}")),
     }
 }
 

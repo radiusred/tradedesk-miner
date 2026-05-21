@@ -86,7 +86,7 @@ fn build_with_test_internal_feature() {
 }
 
 #[test]
-#[serial_test::serial]
+#[serial_test::file_serial(miner_bin_test_internal)]
 fn cancel_overrides_error_exit_130() {
     // Step 0 — rebuild with --features test-internal so the cfg-gated
     // MINER_FORCE_ENGINE_ERROR env hook is compiled into the spawned binary.
