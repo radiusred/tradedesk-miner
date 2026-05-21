@@ -132,4 +132,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-15 after initialization*
+*Last updated: 2026-05-21 — Phase 06 (MCP & HTTP Wrappers, Docs-Only) complete; OP-02/03 reclassified to v2 as PLAT-v2-07/08.*
