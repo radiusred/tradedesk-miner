@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Plan 06-01 complete — docs-only Phase 6 scope locked; ARCHITECTURE.md + license-footer published
-last_updated: "2026-05-21T20:00:00.000Z"
+status: planning
+stopped_at: Phase 7 context gathered (Rust-ecosystem defaults applied)
+last_updated: "2026-05-21T22:42:04.358Z"
 last_activity: 2026-05-21
 progress:
   total_phases: 7
-  completed_phases: 7
+  completed_phases: 6
   total_plans: 41
   completed_plans: 41
   percent: 100
@@ -130,7 +130,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-21T18:53:55.759Z
-Stopped at: Plan 06-01 complete — docs-only Phase 6 scope locked; ARCHITECTURE.md + license-footer published
-Resume file: None
+Last session: 2026-05-21T22:42:04.349Z
+Stopped at: Phase 7 context gathered (Rust-ecosystem defaults applied)
+Resume file: .planning/phases/07-hardening-benchmarks-reproducibility/07-CONTEXT.md
 Next action: Begin Phase 5 (Statistical Hygiene & Sweep Runner) via `/gsd-discuss-phase 5`. The Phase 5 plan in ROADMAP.md owns OP-04 (TOML sweep manifest fanout) + HYG-01..05 (effect sizes, BH-FDR, block bootstrap, phase-scrambled nulls, bit-for-bit reproducible RNG).
