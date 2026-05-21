@@ -70,7 +70,10 @@ fn sweep_dry_run_emits_one_dry_run_finding_no_results() {
     let mut sink = BufferSink::new();
     let outcome = run_sweep(
         manifest,
-        SweepOptions { dry_run: true },
+        SweepOptions {
+            dry_run: true,
+            ..Default::default()
+        },
         &cfg,
         &reader,
         &bar_cache,

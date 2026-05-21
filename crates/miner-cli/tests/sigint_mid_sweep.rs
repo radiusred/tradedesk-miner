@@ -1,38 +1,36 @@
-//! Phase 3 integration test — SIGINT preserves streamed findings + exits 130 (OP-06 / SC-5a / D3-22).
+//! Phase 5 integration test — SIGINT mid-sweep preserves already-streamed
+//! findings + suppresses SweepSummary + exits 130 (OP-04 / D5-04 / D3-22 /
+//! Plan 05-05 Task 3).
 //!
 //! `#![cfg(unix)]` — unix-only because `nix::sys::signal::kill` is a
-//! POSIX-specific API. On non-unix platforms cargo skips the file entirely.
+//! POSIX-specific API.
 //!
-//! ## Setup (Blocker 3 step 4 — consumes Plan 02/04/05 artifacts; NO retroactive edits)
-//!
-//! - Plan 02 Task 2: `ScanCtx.sleep_after_first_finding_ms` and
-//!   `ScanRequest.sleep_after_first_finding_ms` cfg-gated `Option<u64>` fields
-//!   + `test-internal` feature in `crates/miner-core/Cargo.toml`.
-//! - Plan 04 Task 2: `LjungBoxScan::run` cancel-aware sleep loop polling
-//!   `ctx.cancel` every ~10ms.
-//! - Plan 05 Task 1: `ScanArgs --sleep-after-first-finding-ms <ms>` CLI flag
-//!   cfg-gated identically.
-//!
-//! Plan 06 ONLY authors the integration test below — it does NOT add any
-//! retroactive edits to earlier plans.
+//! Structurally mirrors `sigint_preserves_stream.rs` (the single-shot
+//! `miner scan` SIGINT regression). Differences:
+//! - Spawns `miner sweep <manifest> --sleep-after-first-finding-ms 5000`
+//!   (the manifest TOML carries two jobs so the first Result is emitted
+//!   before SIGINT lands, then the per-job sleep loop pauses for the race
+//!   window).
+//! - Asserts the SweepSummary envelope is NOT in the captured stdout
+//!   (HYG-05 / D5-04 — SweepSummary is suppressed when cancel is set).
 //!
 //! ## Build prerequisite
 //!
 //! `--sleep-after-first-finding-ms` is gated on `cfg(any(test, feature =
-//! "test-internal"))`. The `CARGO_BIN_EXE_miner` binary built by Cargo for
-//! integration tests does NOT carry `cfg(test)` (test-runner builds the
-//! BINARY without test-cfg) and does not auto-enable `test-internal`. The
-//! test below invokes `cargo build -p miner-cli --features test-internal
-//! --bin miner` as its first step to rebuild the binary with the feature
-//! active, then spawns the resulting `target/debug/miner` directly.
+//! "test-internal"))`. The integration test builds the `miner` binary with
+//! `--features test-internal` before spawning it.
 
 #![cfg(unix)]
-#![allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+#![allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::doc_markdown,
+    reason = "test docstrings are descriptive prose, not API identifiers"
+)]
 
 use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::Duration;
 
 use chrono::NaiveDate;
 use miner_core::Side;
@@ -45,8 +43,6 @@ use fixtures::SyntheticCache;
 /// Locate the workspace-root `target/debug/miner` produced by
 /// `cargo build -p miner-cli --features test-internal --bin miner`.
 fn target_miner_path() -> PathBuf {
-    // CARGO_MANIFEST_DIR points at `crates/miner-cli`; the workspace root is
-    // two levels up.
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest
         .parent()
@@ -86,9 +82,36 @@ fn build_with_test_internal_feature() {
     );
 }
 
+/// Write a synthetic two-job sweep manifest with the same instrument layout
+/// the SIGINT test exercises against the SyntheticCache fixture.
+fn write_sigint_sweep_manifest(dir: &std::path::Path) -> PathBuf {
+    let path = dir.join("manifest.toml");
+    std::fs::write(
+        &path,
+        r#"
+[sweep]
+seed = 3735928559
+max_jobs = 100
+
+[fdr]
+family = "scan_id"
+alpha = 0.05
+
+[[jobs]]
+scan = "stats.autocorr.ljung_box@1"
+instruments = ["EURUSD:bid", "GBPUSD:bid"]
+timeframes = ["15m"]
+windows = ["2024-06-12:2024-06-13"]
+params = { lags = [5] }
+"#,
+    )
+    .expect("write manifest");
+    path
+}
+
 #[test]
 #[serial_test::file_serial(miner_bin_test_internal)]
-fn sigint_preserves_already_streamed_findings_and_exits_130() {
+fn sigint_mid_sweep_preserves_streamed_findings() {
     // Step 0 — rebuild with --features test-internal so the cfg-gated CLI
     // flag is reachable end-to-end.
     build_with_test_internal_feature();
@@ -99,14 +122,18 @@ fn sigint_preserves_already_streamed_findings_and_exits_130() {
         bin.display(),
     );
 
-    // Step 1 — build a synthetic cache with one full UTC day so the scan
-    // has something to read.
+    // Step 1 — build a synthetic cache with two instruments. Both jobs read
+    // the same day so the bar-cache builds are quick.
     let day = NaiveDate::from_ymd_opt(2024, 6, 12).unwrap();
-    let cache = SyntheticCache::new().with_deterministic_day("EURUSD", Side::Bid, day, 0xDEAD_BEEF);
+    let cache = SyntheticCache::new()
+        .with_deterministic_day("EURUSD", Side::Bid, day, 0xDEAD_BEEF)
+        .with_deterministic_day("GBPUSD", Side::Bid, day, 0xCAFE_F00D);
+    let manifest_path = write_sigint_sweep_manifest(cache.tempdir().path());
 
-    // Step 2 — spawn `miner scan ... --sleep-after-first-finding-ms 5000`.
-    // The scan emits its single Result + then pauses; the test sends SIGINT
-    // during the sleep and asserts the streamed findings persisted.
+    // Step 2 — spawn `miner sweep ... --sleep-after-first-finding-ms 5000`.
+    // The 5s sleep lives INSIDE the LjungBox kernel after the first Result;
+    // we deliver SIGINT during that pause so cancel observable BEFORE the
+    // sweep reaches its end-of-sweep BH-FDR + SweepSummary stage.
     let mut child = Command::new(&bin)
         .env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
@@ -115,14 +142,8 @@ fn sigint_preserves_already_streamed_findings_and_exits_130() {
         .env("MINER_OUTPUT", "stdout")
         .current_dir(cache.tempdir().path())
         .args([
-            "scan",
-            "stats.autocorr.ljung_box@1",
-            "--instrument",
-            "EURUSD:bid",
-            "--timeframe",
-            "15m",
-            "--window",
-            "2024-06-12:2024-06-13",
+            "sweep",
+            manifest_path.to_str().expect("manifest path utf-8"),
             "--sleep-after-first-finding-ms",
             "5000",
         ])
@@ -133,9 +154,10 @@ fn sigint_preserves_already_streamed_findings_and_exits_130() {
 
     let child_pid = child.id();
 
-    // Step 3 — read lines from the child's stdout until we see the first
-    // Result envelope. The scan emits RunStart immediately, then the Result,
-    // then pauses for 5s.
+    // Step 3 — read stdout line-by-line until we see the first Result
+    // envelope. The sweep emits one RunStart immediately, then per-job
+    // Results in order; the kernel's cancel-aware sleep loop kicks in
+    // after each per-job Result, giving us a 5s window to deliver SIGINT.
     let stdout = child.stdout.take().expect("child stdout");
     let mut reader = BufReader::new(stdout);
     let mut buf = String::new();
@@ -152,7 +174,7 @@ fn sigint_preserves_already_streamed_findings_and_exits_130() {
         }
         buf.clear();
     }
-    assert!(saw_result, "child must emit a Result before SIGINT");
+    assert!(saw_result, "child must emit at least one Result before SIGINT");
 
     // Step 4 — deliver SIGINT to the child.
     kill(Pid::from_raw(child_pid as i32), Signal::SIGINT).expect("kill SIGINT");
@@ -166,9 +188,8 @@ fn sigint_preserves_already_streamed_findings_and_exits_130() {
         "SIGINT must yield exit 130; got {code:?}; captured stdout so far:\n{captured}",
     );
 
-    // Step 6 — drain any remaining stdout and verify the Result + RunEnd
-    // envelopes both made it to stdout (per-envelope flush + RunEnd emitted
-    // before exit per D3-22).
+    // Step 6 — drain remaining stdout; assert RunStart + at least one Result
+    // persisted, NO SweepSummary envelope.
     let mut remaining = String::new();
     reader
         .into_inner()
@@ -184,23 +205,21 @@ fn sigint_preserves_already_streamed_findings_and_exits_130() {
                 .unwrap_or_else(|e| panic!("captured line not JSON: {e}; line: {l}"))
         })
         .collect();
+    let kinds: Vec<&str> = lines
+        .iter()
+        .map(|v| v["kind"].as_str().unwrap_or("?"))
+        .collect();
     assert!(
-        lines.iter().any(|v| v["kind"] == "run_start"),
-        "RunStart must persist after SIGINT; captured lines: {:?}",
-        lines.iter().map(|v| v["kind"].clone()).collect::<Vec<_>>(),
+        kinds.iter().any(|k| *k == "run_start"),
+        "RunStart must persist after SIGINT; kinds: {kinds:?}",
     );
     assert!(
-        lines.iter().any(|v| v["kind"] == "result"),
-        "the first Result must persist after SIGINT (D-19 per-envelope flush)",
+        kinds.iter().any(|k| *k == "result"),
+        "the first Result must persist after SIGINT (per-envelope flush); kinds: {kinds:?}",
     );
     assert!(
-        lines.iter().any(|v| v["kind"] == "run_end"),
-        "RunEnd must still be emitted after SIGINT (engine returns cleanly per D3-22); \
-         captured lines: {:?}",
-        lines.iter().map(|v| v["kind"].clone()).collect::<Vec<_>>(),
+        !kinds.iter().any(|k| *k == "sweep_summary"),
+        "SweepSummary MUST be suppressed when SIGINT lands mid-sweep \
+         (HYG-05 / D5-04); kinds: {kinds:?}",
     );
-
-    // Belt-and-brace: ensure the test didn't hang (the 5s sleep was
-    // interrupted by SIGINT — we should be here within ~1s of the kill).
-    let _ = Duration::from_millis(0);
 }

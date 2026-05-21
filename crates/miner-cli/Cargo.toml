@@ -64,7 +64,12 @@ tempfile     = "3"
 # could not be used here because miner-cli depends on `figment` with the workspace
 # feature set (no `test` feature), and adding the `test` feature only for a binary
 # crate's dev-deps would pull in extra dev-deps for the whole workspace.
-serial_test  = "3"
+#
+# Plan 05-05 enables the `file_locks` feature so `#[file_serial(miner_bin)]` can
+# serialise tests that share the `target/debug/miner` binary across separate
+# integration-test processes (each test file is its own process; the `serial`
+# attribute alone only serialises within a single process).
+serial_test  = { version = "3", features = ["file_locks"] }
 # End-to-end binary harness; used by Plan 07's `cli_streams` integration test to spawn
 # the actual built `miner` binary via `assert_cmd::Command::cargo_bin("miner")`.
 assert_cmd   = "2"

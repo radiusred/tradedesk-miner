@@ -438,9 +438,19 @@ fn handle_sweep_subcommand(
         }
     };
 
-    // Step 2 — translate flags into SweepOptions.
+    // Step 2 — translate flags into SweepOptions. The sleep-hook itself is
+    // only set under `test` / `test-internal` cfg (where SweepArgs exposes
+    // the matching flag); release builds (no `test-internal`) leave the
+    // SweepOptions field as `None` and the downstream
+    // `ScanRequest.sleep_after_first_finding_ms` cfg gate ensures the field
+    // isn't even present in the per-job ScanRequest.
+    #[cfg(any(test, feature = "test-internal"))]
+    let sleep_after_first_finding_ms = args.sleep_after_first_finding_ms;
+    #[cfg(not(any(test, feature = "test-internal")))]
+    let sleep_after_first_finding_ms: Option<u64> = None;
     let opts = SweepOptions {
         dry_run: args.dry_run,
+        sleep_after_first_finding_ms,
     };
 
     // Step 3 — construct reader + bar cache at the binary edge (RESEARCH Open
