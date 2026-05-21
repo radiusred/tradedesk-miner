@@ -439,4 +439,74 @@ mod tests {
         let short = [1.0_f64, 2.0, 3.0];
         assert!(block_length_pwppw(&short).is_nan());
     }
+
+    /// Generate an AR(1) series with autoregression coefficient `phi` and
+    /// zero-mean IID innovations via the same LCG used by `lcg_iid`.
+    /// Used by the CR-01 regression test to produce a series with a
+    /// known, non-trivial autocorrelation structure.
+    fn lcg_ar1(n: usize, seed: u64, phi: f64) -> Vec<f64> {
+        let innovations = lcg_iid(n, seed);
+        let mut out = Vec::with_capacity(n);
+        let mut prev = 0.0_f64;
+        for u in innovations {
+            let v = phi * prev + u;
+            out.push(v);
+            prev = v;
+        }
+        out
+    }
+
+    /// CR-01 regression: `block_length_pwppw` must produce DIFFERENT
+    /// outputs for differently-autocorrelated inputs of the same length.
+    ///
+    /// Pre-fix the function algebraically collapsed to `(3/2)^(1/3) * n^(1/3)`
+    /// — a data-independent constant — so an IID series and an AR(1)(phi=0.5)
+    /// series of the same length produced identical block lengths. This
+    /// test exercises four series of length 1000:
+    ///   - IID (white noise)
+    ///   - AR(1) with phi = 0.5 (moderate positive autocorrelation)
+    ///   - AR(1) with phi = 0.8 (strong positive autocorrelation)
+    /// and asserts no two are within 1e-3 of each other. The bug pinned all
+    /// three to ~11.447.
+    #[test]
+    fn block_length_pwppw_varies_with_autocorrelation() {
+        let n = 1000;
+        let b_iid = block_length_pwppw(&lcg_iid(n, 0xDEAD));
+        let b_ar05 = block_length_pwppw(&lcg_ar1(n, 0xDEAD, 0.5));
+        let b_ar08 = block_length_pwppw(&lcg_ar1(n, 0xDEAD, 0.8));
+        assert!(b_iid.is_finite(), "iid b_star must be finite");
+        assert!(b_ar05.is_finite(), "ar1(0.5) b_star must be finite");
+        assert!(b_ar08.is_finite(), "ar1(0.8) b_star must be finite");
+
+        // Pin the algebraic-collapse signature: the buggy implementation
+        // returns (3/2)^(1/3) * n^(1/3) ≈ 11.4471 for every series of
+        // length 1000. The corrected selector must drift away from that
+        // constant for autocorrelated inputs.
+        let buggy_constant = (3.0_f64 / 2.0).powf(1.0 / 3.0) * (n as f64).powf(1.0 / 3.0);
+        // At minimum, AR(1) with phi=0.8 must move materially off the
+        // buggy constant (it is the most-autocorrelated input here).
+        assert!(
+            (b_ar08 - buggy_constant).abs() > 1.0,
+            "ar1(0.8) b_star {b_ar08} matched pre-fix constant {buggy_constant} (data-independent collapse)"
+        );
+
+        // Cross-input variance: the three selectors must produce
+        // measurably different recommendations.
+        assert!(
+            (b_iid - b_ar05).abs() > 1e-3,
+            "block length collapsed to constant: iid={b_iid} ar1(0.5)={b_ar05}"
+        );
+        assert!(
+            (b_ar05 - b_ar08).abs() > 1e-3,
+            "block length collapsed to constant: ar1(0.5)={b_ar05} ar1(0.8)={b_ar08}"
+        );
+
+        // Sanity: stronger autocorrelation should not produce a smaller
+        // block recommendation (monotonicity expectation of the PPW
+        // selector for AR(1) processes).
+        assert!(
+            b_ar08 >= b_ar05 - 1e-9,
+            "ar1(0.8) b_star {b_ar08} < ar1(0.5) b_star {b_ar05} (expected monotone)"
+        );
+    }
 }
