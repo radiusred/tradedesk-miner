@@ -510,10 +510,10 @@ fn differing_master_seed_yields_differing_ci_for_variance_ratio() {
         )
     };
     let bytes_a = run_engine_single(&mk(0xAAAA), &cache, |r| {
-        r.register(Box::new(VarianceRatioScan))
+        r.register(Box::new(VarianceRatioScan));
     });
     let bytes_b = run_engine_single(&mk(0xBBBB), &cache, |r| {
-        r.register(Box::new(VarianceRatioScan))
+        r.register(Box::new(VarianceRatioScan));
     });
     let ci_a = first_result(&bytes_a).effect.ci95.expect("ci95 Some");
     let ci_b = first_result(&bytes_b).effect.ci95.expect("ci95 Some");

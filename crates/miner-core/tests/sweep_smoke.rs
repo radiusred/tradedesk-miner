@@ -33,6 +33,10 @@ use miner_reader_dukascopy::DukascopyReader;
 use common::{BufferSink, synthetic_cache::SyntheticCache};
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "end-to-end smoke for the sweep facade — cache setup, manifest parsing, options wiring, sink construction, and the cluster of post-run assertions are intentionally inline so the path reads top-to-bottom; splitting hides the data flow"
+)]
 fn sweep_smoke_two_scans_two_instruments() {
     // Synthetic cache: same day for both EURUSD and GBPUSD; deterministic
     // LCG-seeded bars so the sweep run is reproducible.
