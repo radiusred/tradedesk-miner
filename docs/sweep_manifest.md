@@ -210,6 +210,14 @@ Two failure paths produce a single `WireError` on stderr (no `RunStart` on stdou
 
 Every preflight diagnostic carries structured context keys (e.g. `block_index`, `scan_id`, `estimated_job_count`, `max_jobs`) so consumers can route errors without parsing the message string.
 
+## References
+
+The statistical hygiene and FDR machinery `miner sweep` exposes draws on three primary sources:
+
+- Politis & Romano (1994), *The Stationary Bootstrap*. JASA 89(428) — the `bootstrap = "stationary"` method's geometric block-length sampler.
+- Theiler, Eubank, Longtin, Galdrikian, Farmer (1992), *Testing for nonlinearity in time series: the method of surrogate data*. Physica D 58 — the `null = "circular_shift"` and IAAFT surrogate constructions.
+- Benjamini & Hochberg (1995), *Controlling the False Discovery Rate*. JRSS-B 57(1) — the BH step-up procedure applied per `[fdr].family` scope.
+
 ## See Also
 
 - [findings_envelope.md](findings_envelope.md) — the `Finding::SweepSummary` + `DryRunFinding` shapes
