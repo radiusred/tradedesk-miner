@@ -164,9 +164,18 @@ Plans:
   3. User can run `miner-bench` and `hyperfine` recipes against the dev sample (28 instruments × 3 timeframes × 6 years) and obtain reproducible wall-clock numbers documented in the README; flamegraph / samply profiling shows allocations below 5% of hot path.
   4. User can clone the repo, follow the README quickstart against the checked-in fixture cache, and produce at least one finding without any external download or hardcoded path.
   5. User can read README sections covering Dukascopy data-source caveats (00-indexed months, tick-count volume, bid/ask independence, weekend gaps, data licensing implications) and `cargo audit` / `cargo deny` runs clean in CI.
-**Plans**: TBD pending Phase 7 plan-phase
+**Plans**: 9 plans
 
-Plans: TBD pending Phase 7 plan-phase
+Plans:
+- [ ] 07-01-PLAN.md — Goldens regen via uv-driven pinned Python 3.11 venv; un-ignore three #[ignore]d golden tests; CONTRIBUTING.md ## Regenerating goldens
+- [ ] 07-02-PLAN.md — Synthetic fixture cache (tests/fixtures/cache/) + deterministic gen-fixtures binary + SHA256SUMS + README quickstart swap
+- [ ] 07-03-PLAN.md — deny.toml v2 schema + cargo audit + cargo deny CI gates + CONTRIBUTING.md Quality gates rows 7-8
+- [ ] 07-04-PLAN.md — CHANGELOG.md scaffold (Keep a Changelog 1.1.0; Unreleased + [1.0.0] placeholder)
+- [ ] 07-05-PLAN.md — IAAFT phase-scramble kernel in null.rs + realfft workspace dep + noise-replay regression test + flip supports_null_method on 5 scans (HYG-02, HYG-05)
+- [ ] 07-06-PLAN.md — Criterion microbenches (6 bench files under crates/miner-core/benches/) + [profile.release] debug = 1 + criterion + dhat workspace deps
+- [ ] 07-07-PLAN.md — docs/data_sources.md (Dukascopy caveats deep ref) + README ## Data source caveats summary
+- [ ] 07-08-PLAN.md — miner-bench recipe runner (replaces placeholder) + dhat feature + hyperfine/dhat wrapper scripts + docs/bench-results.md + README ## Performance + CONTRIBUTING.md ## Profiling
+- [ ] 07-09-PLAN.md — Findings envelope snapshot test + golden (FOUND-02, FOUND-03, OUT-03)
 **UI hint**: No
 
 ## Progress
@@ -182,4 +191,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 4. Scan Catalogue (ANOM, CROSS, SEAS) | 7/11 | In Progress|  |
 | 5. Statistical Hygiene & Sweep Runner | 0/TBD | Not started | - |
 | 6. MCP & HTTP Wrappers (Docs-Only) | 2/3 | In Progress|  |
-| 7. Hardening, Benchmarks & Reproducibility | 0/TBD | Not started | - |
+| 7. Hardening, Benchmarks & Reproducibility | 0/9 | Planned | - |
