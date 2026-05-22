@@ -88,6 +88,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rand::Rng;
+use rand::RngCore;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
 

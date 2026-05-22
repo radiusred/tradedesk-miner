@@ -298,7 +298,7 @@ where
     if r2c.process(&mut input_padded, &mut spectrum).is_err() {
         return f64::NAN;
     }
-    let target_amplitudes: Vec<f64> = spectrum.iter().map(realfft::num_complex::Complex::norm).collect();
+    let target_amplitudes: Vec<f64> = spectrum.iter().map(|c| c.norm()).collect();
 
     // Sorted input values + their inverse rank lookup for the rank-shuffle
     // step. STABLE sort with explicit `(idx, val)` tiebreaker — RESEARCH
