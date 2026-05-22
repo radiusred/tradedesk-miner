@@ -93,10 +93,14 @@ jobs:
       # array with an inline `RUSTSEC-YYYY-NNNN — <reason> — review by
       # YYYY-MM-DD` comment per the allowlist-by-exception policy in
       # CONTRIBUTING.md ## Quality gates.
+      # rustsec/audit-check@v2.0.0 installs cargo-audit latest without --locked
+      # and as of 2026-05 picks up transitive deps (time@0.3.47, smol_str@0.3.6,
+      # ...) that require rustc 1.86+, breaking against this repo's pinned 1.85.
+      # Use --locked so cargo-audit's own Cargo.lock pins the dep graph instead.
       - name: cargo audit
-        uses: rustsec/audit-check@v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cargo install --locked cargo-audit
+          cargo audit
 
       # Gate 8 (Phase 07 Plan 07-03 / D7-05) — cargo deny check. Runs all four
       # sub-checks against `deny.toml` at the repo root: licenses (D7-05
