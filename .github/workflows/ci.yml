@@ -24,6 +24,18 @@ on: [push, pull_request]
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    # Skip CI on release/* PRs. The release-PR diff is a one-line bump to
+    # `[workspace.package].version` in Cargo.toml + a deterministic Cargo.lock
+    # regen — no behavioural change. CI already ran on every commit on main
+    # before the release was triggered, and the post-merge push event still
+    # triggers CI on main. Skipping here lets the paperclip-relay → Testy →
+    # Cody auto-merge chain proceed without waiting ~12 min for a
+    # re-validation of code that's identical to what's already on main.
+    #
+    # Note: `pull_request: branches-ignore` filters the BASE branch (always
+    # `main` for the release flow), so it does NOT skip release/* head refs.
+    # The job-level `if:` below is the only filter that works for HEAD refs.
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')
     steps:
       - uses: actions/checkout@v6  # v6 runs on Node 24; v4 was deprecated (Node 20)
 
