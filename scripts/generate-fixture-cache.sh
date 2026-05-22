@@ -2,15 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Radius Red Ltd.
 #
-# Regenerate the synthetic Dukascopy-shape fixture cache at
+# Generate the synthetic Dukascopy-shape fixture cache at
 # `tests/fixtures/cache/` from a deterministic seed (Plan 07-02).
 #
 # Output is byte-identical across machines: the underlying Rust generator
 # (`crates/miner-bench/src/bin/gen-fixtures.rs`) uses the Numerical Recipes
 # LCG (PATTERNS Pattern C) for per-day closes plus single-threaded zstd
 # level 3 compression (RESEARCH Pitfall 4). The companion `SHA256SUMS`
-# file is committed alongside the bytes so `sha256sum -c` proves
-# byte-identity on every clone.
+# file is regenerated alongside the bytes; `sha256sum -c` against it
+# proves byte-identity for the current run. Bytes and SHA256SUMS are
+# gitignored (see `.gitignore`) — fresh clones generate them on demand
+# via this script before running the README example.
 #
 # Usage:
 #   bash scripts/generate-fixture-cache.sh

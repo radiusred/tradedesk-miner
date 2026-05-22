@@ -65,8 +65,21 @@ the gate); `git commit --no-verify` bypasses everything.
 
 ## Example
 
-Run a scan over a populated cache and stream NDJSON `Finding` envelopes to
-stdout:
+The repo ships a synthetic-cache **generator** (deterministic, no external
+download) rather than the cache bytes. Generate it once after cloning:
+
+```sh
+bash scripts/generate-fixture-cache.sh
+```
+
+That populates `./tests/fixtures/cache/EURUSD/…` + `…/GBPUSD/…` and writes
+a `SHA256SUMS` manifest you can re-verify any time with
+`(cd tests/fixtures/cache && sha256sum -c SHA256SUMS)`. The bytes are
+byte-identical across machines (Numerical Recipes LCG + single-threaded
+zstd-3) and are gitignored to keep the repo lean.
+
+Then run a scan over the populated cache and stream NDJSON `Finding`
+envelopes to stdout:
 
 ```sh
 MINER_CACHE_ROOT=./tests/fixtures/cache \
@@ -76,8 +89,6 @@ cargo run -p miner-cli -- scan seas.bucket.hour_of_day@1 \
     --instrument EURUSD:bid --timeframe 15m \
     --window 2024-01-01:2024-01-31
 ```
-
-If you cloned the repo, this works as-is — no external download needed.
 
 Truncated `Result` envelope:
 
