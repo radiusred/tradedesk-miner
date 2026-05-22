@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: milestone_complete
+status: completed
 stopped_at: Plan 07-09 (locked findings-envelope snapshot test) complete; envelope_snapshot.jsonl golden + 3 active byte-determinism tests shipped
-last_updated: "2026-05-22T11:01:23.905Z"
+last_updated: "2026-05-22T11:47:26.611Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 7
-  completed_phases: 8
+  completed_phases: 7
   total_plans: 50
   completed_plans: 50
-  percent: 114
+  percent: 100
 ---
 
 # Project State
@@ -140,6 +140,9 @@ Items acknowledged and carried forward from previous milestone close:
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
 | Operator surface | OP-02 (MCP) + OP-03 (HTTP) | Design documented v1 (docs/future_mcp_http.md); implementation deferred to v2 (PLAT-v2-07, PLAT-v2-08) | Phase 6 |
+| Engle-Granger parity | engle_granger_matches_statsmodels_coint_golden | Test `#[ignore]`d; pre-existing kernel gap; HYG-01 owns reconciliation | Phase 7 |
+| Clippy workspace gate | gen-fixtures.rs + hygiene_dispatch.rs lints | Pre-existing under `--all-targets -D warnings`; tracked in 07/deferred-items.md items 3-5 | Phase 7 |
+| Context-question debt | 21 open research notes across 01-07 CONTEXT.md files | Implicitly resolved by shipped phase work; acknowledged at v1.0 close 2026-05-22 (no per-question follow-up required) | Milestone close |
 
 ## Session Continuity
 

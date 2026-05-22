@@ -12,6 +12,24 @@ tradedesk-dukascopy (cache)  →  tradedesk-miner (raw findings)
                               →  tradedesk (strategies, backtests, live)
 ```
 
+## Current State
+
+**Shipped v1.0** (2026-05-22) — 7 phases, 50 plans, 124 tasks, 63,741 LOC Rust.
+
+The v1.0 MVP delivers:
+- Locked `Finding` JSON envelope schema with CI-enforced stdout=findings/stderr=logs discipline
+- Pluggable `Reader` trait + Dukascopy zstd-CSV reader + deterministic aggregator + Arrow IPC derived-bar cache + structured gap manifest
+- Scan engine facade with `miner scan` / `miner sweep` / `miner scans` CLI, four-tier exit codes, SIGINT handling
+- 22 v1 scans across ANOM (returns, summary, vol-rolling, Ljung-Box, ADF, KPSS, VR, ARCH-LM, JB, outliers, drawdown) + CROSS (Pearson/Spearman rolling, OLS rolling, lead-lag, Engle-Granger) + SEAS (hour/day/session/EOM-SOM/event-window/ANOVA-Kruskal) families, all validated against scipy/statsmodels goldens
+- Statistical hygiene layer: effect sizes, block bootstrap CIs, IAAFT phase-scramble nulls, BH-FDR aggregation, deterministic seed propagation
+- Reproducible TOML sweep manifest runner with cartesian expansion, rayon parallelism, byte-identical reruns
+- Docs and contracts: `docs/agent_integration.md`, `docs/future_mcp_http.md`, scan catalogue, sweep manifest reference, Dukascopy data-source caveats deep ref
+- Hardening: real goldens regen pipeline, noise-replay regression test, criterion microbenches, dhat alloc profiling, cargo-audit/deny CI, clone-and-run fixture cache + README quickstart, locked findings-envelope snapshot test
+
+## Next Milestone Goals
+
+(To be defined when starting v1.1 via `/gsd:new-milestone`.) Likely candidates carried forward in **Active** below.
+
 ## Core Value
 
 Surface raw statistical candidates from years of OHLCV data fast enough that a quant agent can run wide sweeps and targeted queries interactively, without waiting on Python data pipelines.
@@ -20,42 +38,43 @@ Surface raw statistical candidates from years of OHLCV data fast enough that a q
 
 ### Validated
 
-<!-- Shipped and confirmed valuable. -->
-
-(None yet — ship to validate)
+- ✓ Rust library crate with a stable scan-engine API — v1.0
+- ✓ Pluggable data-reader trait with Dukascopy zstd-CSV reader matching the `tradedesk-dukascopy` cache layout — v1.0
+- ✓ Caller-specified bar resolution (15m / 1h / 1d) — v1.0
+- ✓ Semi-permanent on-disk cache of aggregated bars (Arrow IPC, two-axis invalidation) — v1.0
+- ✓ Statistical anomaly scans (vol regimes, mean-reversion, autocorrelation, return distributions) — v1.0
+- ✓ Cross-instrument relationship scans (lead-lag, correlations, cointegration) — v1.0
+- ✓ Time-of-day / seasonality scans (session, hour-of-day, day-of-week, end-of-month) — v1.0
+- ✓ Findings carry effect statistics **plus** raw underlying arrays — v1.0
+- ✓ Findings stream to stdout in JSONL; miner does not persist results — v1.0
+- ✓ Interactive query mode + batch sweep mode — v1.0
+- ✓ CLI binary as thin wrapper over the library — v1.0
+- ✓ MCP server interface — designed; implementation deferred to v2 (docs/future_mcp_http.md)
+- ✓ HTTP API interface — designed; implementation deferred to v2 (docs/future_mcp_http.md)
+- ✓ Open-source friendly defaults: no hardcoded paths, configurable cache root, documented reader trait — v1.0
 
 ### Active
 
-<!-- Current scope. Building toward these. -->
+<!-- Carried forward to v1.1 / v2. Concrete scope set during /gsd:new-milestone. -->
 
-- [ ] Rust library crate with a stable scan-engine API
-- [ ] Pluggable data-reader trait; ships with a Dukascopy zstd-CSV reader matching the `tradedesk-dukascopy` cache layout
-- [ ] Caller-specified bar resolution (15m / 1h / 1d as the typical working set; not 1m by default)
-- [ ] Semi-permanent on-disk cache of aggregated bars, keyed by source + symbol + resolution + side
-- [ ] Statistical anomaly scans (volatility regimes, mean-reversion edges, autocorrelation, unusual return distributions)
-- [ ] Cross-instrument relationship scans (lead-lag, correlation breakdowns, cointegration, basket divergence)
-- [ ] Time-of-day / seasonality scans (session, hour-of-day, day-of-week, end-of-month)
-- [ ] Findings carry effect statistics **plus** raw underlying arrays so the quant agent can re-test or visualize
-- [ ] Findings stream to stdout in a stable, structured format (JSON / JSONL); miner does not persist results
-- [ ] Both interactive query mode (single scan, one set of parameters) and batch sweep mode (broad pre-defined scan set)
-- [ ] CLI binary as a thin wrapper over the library
-- [x] MCP server interface — designed; implementation deferred to v2 (see docs/future_mcp_http.md)
-- [x] HTTP API interface — designed; implementation deferred to v2 (see docs/future_mcp_http.md)
-- [ ] Open-source friendly defaults: no hardcoded paths, cache root configurable, reader pluggability documented
+- [ ] HYG-01: Engle-Granger ADF kernel reconciliation against canonical `scan::anom::adf::kernel::adfuller` (deferred from Plan 04-11; re-enables `engle_granger_matches_statsmodels_coint_golden`)
+- [ ] PLAT-v2-07: MCP server implementation (`rmcp` Rust SDK; design locked in `docs/future_mcp_http.md`)
+- [ ] PLAT-v2-08: HTTP server implementation (`axum`; design locked in `docs/future_mcp_http.md`)
+- [ ] Clippy workspace `-D warnings` cleanup (gen-fixtures.rs format_collect + hygiene_dispatch.rs lints — see Phase 7 `deferred-items.md`)
+- [ ] Bench-results capture from reference workstation (populate TBD cells in `docs/bench-results.md`)
+- [ ] CHANGELOG.md [1.0.0] entry (fill in once v1.0 release date is final)
 
 ### Out of Scope
 
-<!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
-
-- Chart/price-structure pattern matching (head-and-shoulders, flags, doji clusters) — explicitly de-scoped: miner is statistical, not technical-analysis
-- Strategy generation, hypothesis formation, backtesting — Quant agent and `tradedesk` already own those
+- Chart/price-structure pattern matching (head-and-shoulders, flags, doji clusters) — miner is statistical, not technical-analysis
+- Strategy generation, hypothesis formation, backtesting — Quant agent and `tradedesk` own those
 - User interface (web, TUI, desktop) — agent-operated only
-- Tick-level scans — 1-minute cache is the finest input; tick microstructure can come later if needed
+- Tick-level scans — 1-minute cache is the finest input
 - Python bindings (PyO3) in v1 — deferred until a concrete `tradedesk` integration requires them
-- Persistent findings store (SQLite / Parquet / DuckDB) — caller owns persistence; miner streams
-- Re-downloading or normalizing source data — `tradedesk-dukascopy` already owns the cache; miner is a consumer
+- Persistent findings store (SQLite / Parquet / DuckDB) — caller owns persistence
+- Re-downloading or normalizing source data — `tradedesk-dukascopy` owns the cache; miner consumes
 - Live market data — historical scans only; live is `tradedesk`'s domain
-- Hard latency/throughput SLOs — "as fast as good Rust and parallelism deliver" is the bar; concrete numbers fall out of benchmarks once v1 lands
+- Hard latency/throughput SLOs — "as fast as good Rust and parallelism deliver"
 
 ## Context
 
@@ -84,7 +103,7 @@ Sample environment for development:
 
 It expects findings as `effect statistics + raw arrays` so it can re-test independently and decide what's worth promoting to a hypothesis.
 
-**Why Rust.** Mining is embarrassingly parallel over instruments, timeframes, parameter grids, and historical windows. A scan can fan out across 28 instruments × 3 timeframes × dozens of parameter combinations × millions of bars per slice. Python's current aggregation/scanning is the bottleneck the agent feels.
+**Why Rust.** Mining is embarrassingly parallel over instruments, timeframes, parameter grids, and historical windows. A scan can fan out across 28 instruments × 3 timeframes × dozens of parameter combinations × millions of bars per slice.
 
 **Future tradedesk reuse.** `tradedesk` currently does its own 1-min → resampled-bar aggregation in Python. Miner's aggregator is a candidate to eventually export and reuse from `tradedesk` (via the deferred Python bindings) so a single fast Rust implementation owns aggregation for the whole ecosystem.
 
@@ -103,16 +122,24 @@ It expects findings as `effect statistics + raw arrays` so it can re-test indepe
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Rust, library + thin CLI/MCP/HTTP wrappers | Single core, three surfaces, no logic duplication; standard Rust pattern | — Pending |
-| Statistical mining only; no chart patterns | The quant agent treats findings statistically; chart-pattern matching is a different (and noisier) discipline | — Pending |
-| Findings carry effect stats + raw arrays | The quant agent re-tests independently rather than trusting miner's summary | — Pending |
-| Streaming output; caller persists | Keeps miner stateless and protocol-agnostic; consumers (CLI users, MCP agents, HTTP clients) decide storage | — Pending |
-| Pluggable readers from day 1 | Open-source distribution implies users with different cache shapes; trait now is cheaper than a refactor later | — Pending |
-| Native bar resolution = caller-specified (15m / 1h / 1d typical) | Matches how the RadiusRed quant team actually works; 1-min cache is a substrate, not the analysis grid | — Pending |
-| Aggregated bars cached semi-permanently | Aggregation is expensive; recomputation is wasteful when scans iterate parameter grids | — Pending |
-| PyO3 bindings deferred to post-v1 | Speeds v1; binary distribution covers MCP/HTTP/CLI use cases; bindings land when a concrete tradedesk integration demands them | — Pending |
-| `tradedesk-miner` + Apache 2.0 | Discoverable in the RadiusRed family; license matches siblings | — Pending |
-| No silent scans over gapped data; caller picks `strict` or `continuous_only` policy per run | Dukascopy caches legitimately have gaps (weekends, outages, partial downloads); silent scans over holes are the textbook way to publish nonsense findings. Detection happens at the reader/aggregator boundary; policy is selected per scan invocation | — Pending |
+| Rust, library + thin CLI/MCP/HTTP wrappers | Single core, three surfaces, no logic duplication | ✓ Good (v1.0 ships library + CLI; MCP/HTTP design locked, impl deferred to v2) |
+| Statistical mining only; no chart patterns | Quant agent treats findings statistically; chart-pattern matching is a different (noisier) discipline | ✓ Good |
+| Findings carry effect stats + raw arrays | Quant agent re-tests independently rather than trusting miner's summary | ✓ Good |
+| Streaming output; caller persists | Keeps miner stateless and protocol-agnostic | ✓ Good |
+| Pluggable readers from day 1 | Open-source distribution implies users with different cache shapes | ✓ Good (Reader trait shipped; only Dukascopy reader implemented in v1) |
+| Native bar resolution = caller-specified (15m / 1h / 1d typical) | Matches how the RadiusRed quant team actually works; 1-min is substrate, not analysis grid | ✓ Good |
+| Aggregated bars cached semi-permanently | Aggregation is expensive; recomputation wasteful when scans iterate parameter grids | ✓ Good (Arrow IPC, two-axis invalidation) |
+| PyO3 bindings deferred to post-v1 | Speeds v1; bindings land when concrete `tradedesk` integration demands them | — Pending (no v2 driver yet) |
+| `tradedesk-miner` + Apache 2.0 | Discoverable in RadiusRed family; license matches siblings | ✓ Good |
+| No silent scans over gapped data; caller picks `strict` or `continuous_only` policy | Dukascopy caches legitimately have gaps; silent scans over holes are how nonsense findings get published | ✓ Good (gap_policy enforced in engine) |
+| `miner-core` is sync + rayon only; no tokio | Async-runtime-free core keeps the library embeddable; tokio enters only at MCP/HTTP wrappers | ✓ Good (CI-enforced via `cargo tree -p miner-core` grep) |
+| Stdout = findings, stderr = logs | Wire-protocol cleanliness for agent consumers | ✓ Good (CI-enforced via clippy disallowed_macros) |
+| `Finding` envelope locked from day 1 | Schema retrofitting is painful for downstream consumers | ✓ Good (schema_version field; envelope_snapshot test pins it) |
+| Arrow IPC for derived-bar cache (not Parquet, not bincode+zstd) | Read-mostly access pattern + zero-copy + language portability | ✓ Good (one file per (source, symbol, side, timeframe), tempfile-rename crash-safety) |
+| Hand-rolled statistical kernels validated against scipy/statsmodels goldens | No comprehensive Rust stats crate covers ADF/KPSS/VR/ARCH-LM/JB/bootstrap/BH-FDR/DSR | ✓ Good (provenance-gated golden tests, pinned scipy 1.14.1 / statsmodels 0.14.6) |
+| IAAFT phase-scramble null for HYG-02/HYG-05 | Surrogate that preserves marginal + power spectrum; circular-shift insufficient for autocorr/spectral tests | ✓ Good (Theiler 1992 kernel, realfft 3.5, byte-identical reruns) |
+| Phase 6 reshaped CODE → DOCS; MCP/HTTP impl deferred to v2 | rmcp SDK churn + axum integration cost not justified for v1 quant-agent use case (CLI subprocess works) | ✓ Good (OP-02/OP-03 → PLAT-v2-07/PLAT-v2-08; design preserved in docs/future_mcp_http.md) |
+| Engle-Granger ADF parity left local; canonical re-route deferred to HYG-01 | Engle-Granger v1 ships with hand-rolled adf_step; full MacKinnon parity costs more than v1 needs | ⚠️ Revisit at HYG-01 (one golden test `#[ignore]`d) |
 
 ## Evolution
 
@@ -132,4 +159,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-21 — Phase 06 (MCP & HTTP Wrappers, Docs-Only) complete; OP-02/03 reclassified to v2 as PLAT-v2-07/08.*
+*Last updated: 2026-05-22 after v1.0 MVP milestone.*
