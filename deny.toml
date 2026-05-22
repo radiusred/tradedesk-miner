@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Radius Red Ltd.
+#
+# cargo-deny configuration for tradedesk-miner.
+#
+# This file targets the cargo-deny 0.19.6+ schema. Several `[advisories]`
+# keys that older docs and example configs still reference have been REMOVED
+# from this schema and MUST NOT be reintroduced — adding them now causes
+# cargo-deny to fail with "unknown key" before it ever reads Cargo.lock.
+#
+# Removed keys (all advisories now emit errors by default):
+#   * `vulnerability`        — REMOVED
+#   * `unsound`              — REMOVED
+#   * `notice`               — REMOVED
+#   * `severity-threshold`   — REMOVED
+#
+# References:
+#   * Phase 07 RESEARCH §"Pitfall 6"
+#     (.planning/phases/07-hardening-benchmarks-reproducibility/07-RESEARCH.md)
+#   * Upstream docs (current valid keyset):
+#     https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html
+#
+# The `version` field is no longer required; cargo-deny detects the v2 schema
+# implicitly when the removed keys are absent.
+
+[advisories]
+yanked       = "deny"
+unmaintained = "all"
+ignore       = []
+# Temporary advisory ignores belong in `ignore = [...]` above with an inline
+# comment of the form:
+#   "RUSTSEC-YYYY-NNNN",  # <one-line reason> — review by YYYY-MM-DD
+# per D7-05 allowlist-by-exception policy.
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+]
+# Out-of-allowlist licenses require a separate commit that adds the license
+# here with an inline `# allowed-for: <crate>@<version> — <license> — <reason>`
+# comment, per D7-05 allowlist-by-exception policy.
+
+[bans]
+multiple-versions = "warn"
+wildcards         = "deny"
+# `deny = []` / `allow = []` / `skip = []` left at their defaults; can be
+# tightened in v1.x once the dependency surface stabilises.
+
+[sources]
+unknown-registry = "deny"
+unknown-git      = "deny"
