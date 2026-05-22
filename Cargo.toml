@@ -28,6 +28,11 @@ members = [
 ]
 
 [workspace.package]
+# Bumped by .github/workflows/prepare-release.yml on every release.
+# All member crates inherit via `version.workspace = true` — a single
+# source of truth keeps internal path-deps (e.g. miner-cli → miner-core)
+# from going out of sync at version-bump time.
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
@@ -134,4 +139,16 @@ pedantic = { level = "warn", priority = -1 }
 # this change because cached release artifacts won't have the debug-info build flag set;
 # Plan 07-08 owns the dhat-profiling consumer that depends on this setting.
 [profile.release]
+# `debug = 1` (line tables only) preserved for dhat symbol attribution per
+# Plan 07-06 §"Pitfall 1". The remaining knobs are distribution-grade
+# tuning enabled at v1.0 release prep:
+#   * lto = "thin"      — cross-crate inlining; ~5-15% perf, small ↑ link time
+#   * codegen-units = 1 — better optimisation; longer compile, smaller + faster
+#   * strip = "symbols" — drop symbol tables in the shipped binary (debug-info
+#                         line tables ARE preserved because `strip = "symbols"`
+#                         only removes .symtab/.strtab, NOT .debug_*; dhat still
+#                         resolves frames).
 debug = 1
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

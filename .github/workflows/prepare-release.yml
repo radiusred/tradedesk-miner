@@ -1,0 +1,220 @@
+name: Prepare Release
+
+# Mirrors the radiusred sibling-repo release pattern (tradedesk + tradedesk-dukascopy):
+#   workflow_dispatch ONLY (never auto-fires) → analyze → approval gate
+#   (release-approval environment) → execute (version bump + GitHub Release).
+#
+# The siblings call radiusred/.github reusable-release.yml, which assumes
+# Python + Hatch and bumps pyproject.toml — incompatible with a Cargo
+# workspace. This file mirrors the same job structure, secrets, and
+# environment-gating contract but inlines a Cargo-aware version bump.
+#
+# Required repo settings (Settings → Secrets and variables → Actions):
+#   Variable  RELEASE_APP_CLIENT_ID    — radiusred-release GitHub App client id
+#   Secret    RELEASE_APP_PRIVATE_KEY  — the App's private key (PEM)
+# Required GitHub Environment:
+#   release-approval — Settings → Environments → require reviewers
+#
+# Publishing of binaries to the Release page happens in publish.yml, which
+# fires on `release.published` after this workflow creates the Release.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze commits and compute next version
+    runs-on: ubuntu-latest
+    outputs:
+      bump_type: ${{ steps.calc.outputs.bump_type }}
+      new_tag: ${{ steps.calc.outputs.new_tag }}
+      current_version: ${{ steps.calc.outputs.current_version }}
+    steps:
+      - name: Generate App token
+        uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Calculate version (conventional commits → semver bump)
+        id: calc
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Current workspace version is the single source of truth
+          # (Cargo.toml [workspace.package].version; all crates inherit).
+          current_version=$(awk '
+            /^\[workspace\.package\]/ {in_section=1; next}
+            /^\[/ && in_section {exit}
+            in_section && /^version[[:space:]]*=[[:space:]]*"/ {
+              gsub(/^version[[:space:]]*=[[:space:]]*"|"[[:space:]]*$/, "")
+              print
+              exit
+            }
+          ' Cargo.toml)
+          if [ -z "$current_version" ]; then
+            echo "::error::Could not read [workspace.package].version from Cargo.toml"
+            exit 1
+          fi
+
+          # Last tag (if any); fall back to v0.0.0 sentinel.
+          last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+
+          # Conventional Commits → bump type.
+          # major: any `<type>(scope)?!:` header OR `BREAKING CHANGE:` footer
+          # minor: any `feat(scope)?:`
+          # patch: anything else (fix, chore, docs, refactor, test, …)
+          headers=$(git log "${last_tag}..HEAD" --pretty=format:%s 2>/dev/null || git log --pretty=format:%s)
+          bodies=$(git log "${last_tag}..HEAD" --pretty=format:%B 2>/dev/null || git log --pretty=format:%B)
+
+          bump=patch
+          if echo "$headers" | grep -Eq '^[a-z]+(\([^)]+\))?!:'; then
+            bump=major
+          elif echo "$bodies" | grep -qE 'BREAKING[- ]CHANGE:'; then
+            bump=major
+          elif echo "$headers" | grep -Eqi '^feat(\([^)]+\))?:'; then
+            bump=minor
+          fi
+
+          IFS=. read -r major minor patch <<< "$current_version"
+          case "$bump" in
+            major) new_version="$((major + 1)).0.0" ;;
+            minor) new_version="${major}.$((minor + 1)).0" ;;
+            patch) new_version="${major}.${minor}.$((patch + 1))" ;;
+          esac
+          new_tag="v${new_version}"
+
+          {
+            echo "### Release Plan for ${GITHUB_REPOSITORY}"
+            echo ""
+            echo "- Current version: \`${current_version}\`"
+            echo "- Detected bump: **${bump}** (from $(echo "$headers" | wc -l | tr -d ' ') commit(s) since \`${last_tag}\`)"
+            echo "- New version: \`${new_version}\`"
+            echo "- New tag: \`${new_tag}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo "bump_type=${bump}"
+            echo "new_tag=${new_tag}"
+            echo "current_version=${current_version}"
+          } >> "$GITHUB_OUTPUT"
+
+  gate:
+    name: Approval Checkpoint
+    needs: analyze
+    runs-on: ubuntu-latest
+    environment: release-approval
+    steps:
+      - run: |
+          echo "Release approved by environment reviewer."
+          echo "  bump: ${{ needs.analyze.outputs.bump_type }}"
+          echo "  ${{ needs.analyze.outputs.current_version }} → ${{ needs.analyze.outputs.new_tag }}"
+
+  execute:
+    name: Bump workspace version and create Release
+    needs: [analyze, gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate App token
+        uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Bump workspace version
+        env:
+          NEW_TAG: ${{ needs.analyze.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          new_version="${NEW_TAG#v}"
+
+          # Patch [workspace.package].version in the root Cargo.toml only.
+          # Every crate inherits via `version.workspace = true`, so a single
+          # write keeps the whole workspace in lockstep.
+          python3 - "$new_version" <<'PY'
+          import re
+          import sys
+
+          new = sys.argv[1]
+          path = "Cargo.toml"
+          src = open(path, "r", encoding="utf-8").read()
+
+          pattern = re.compile(
+              r'(\[workspace\.package\][^\[]*?\nversion[[:space:]]*=[[:space:]]*")[^"]*(")',
+              re.DOTALL,
+          )
+          out, n = pattern.subn(rf'\g<1>{new}\g<2>', src, count=1)
+          if n != 1:
+              # Fall back to simpler match if [character class] notation
+              # tripped over Python's regex engine.
+              pattern2 = re.compile(
+                  r'(\[workspace\.package\][^\[]*?\nversion\s*=\s*")[^"]*(")',
+                  re.DOTALL,
+              )
+              out, n = pattern2.subn(rf'\g<1>{new}\g<2>', src, count=1)
+          if n != 1:
+              sys.stderr.write("ERROR: failed to locate [workspace.package].version\n")
+              sys.exit(1)
+
+          open(path, "w", encoding="utf-8").write(out)
+          print(f"Bumped [workspace.package].version → {new}")
+          PY
+
+          # Refresh Cargo.lock so the bumped version is reflected in
+          # transitive resolution. `cargo metadata` re-resolves without
+          # network so this works in a hermetic CI environment.
+          cargo metadata --format-version=1 --no-deps >/dev/null
+
+      - name: Commit version bump
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW_TAG: ${{ needs.analyze.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: release ${NEW_TAG} [skip ci]"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
+
+      - name: Generate release notes
+        id: notes
+        if: hashFiles('cliff.toml') != ''
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --unreleased --tag ${{ needs.analyze.outputs.new_tag }} --strip header
+        env:
+          OUTPUT: RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW_TAG: ${{ needs.analyze.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          if [ -s RELEASE_NOTES.md ]; then
+            gh release create "${NEW_TAG}" --notes-file RELEASE_NOTES.md
+          else
+            gh release create "${NEW_TAG}" --generate-notes
+          fi

@@ -25,7 +25,27 @@ envelope, with a parallel sweep runner that applies bootstrap CIs, null
 distributions, and Benjamini-Hochberg FDR. MCP and HTTP wrappers are
 documented and deferred — see [docs/future_mcp_http.md](docs/future_mcp_http.md).
 
-## Quickstart
+## Install (prebuilt binary — no toolchain required)
+
+Download the right tarball for your platform from the latest
+[GitHub Release](https://github.com/radiusred/tradedesk-miner/releases/latest),
+extract, and place `miner` on `$PATH`:
+
+```sh
+# Example: Linux x86_64. Substitute the asset for your platform from the
+# release page; verify against SHA256SUMS in the same release.
+curl -fsSL -O https://github.com/radiusred/tradedesk-miner/releases/latest/download/SHA256SUMS
+curl -fsSL -O https://github.com/radiusred/tradedesk-miner/releases/latest/download/miner-1.0.0-x86_64-unknown-linux-gnu.tar.gz
+shasum -a 256 -c SHA256SUMS --ignore-missing
+tar -xzf miner-1.0.0-x86_64-unknown-linux-gnu.tar.gz
+install -m 0755 miner-1.0.0-x86_64-unknown-linux-gnu/miner ~/.local/bin/miner
+miner --version
+```
+
+Targets currently published per release: `x86_64-unknown-linux-gnu`,
+`aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`, `x86_64-apple-darwin`.
+
+## Build from source
 
 Prerequisites: Rust 1.85+ stable (`rustup default 1.85`) and git.
 

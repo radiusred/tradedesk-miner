@@ -1,0 +1,133 @@
+name: Publish binaries
+
+# Fires when `prepare-release.yml` creates a GitHub Release.
+# Cross-compiles the `miner` CLI binary for each supported target triple and
+# attaches the tarballs to the Release page so users (notably the Quant
+# agent) can install without a Rust toolchain on the target machine.
+#
+# This is the Cargo-workspace analog of the siblings' PyPI `publish.yml`.
+# Where Python ships wheels via Trusted Publishing, Rust ships pre-built
+# binaries via Release assets.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write  # for attaching artifacts to the Release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 — primary target (Quant agent host class).
+          # `gnu` (glibc) is the default; if a downstream agent runs on a
+          # distro without the matching glibc, add `x86_64-unknown-linux-musl`
+          # to this matrix for a fully static fallback.
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+            archive_ext: tar.gz
+
+          # Linux ARM64 — for any agent deployed on Graviton / Ampere boxes.
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            archive_ext: tar.gz
+
+          # macOS arm64 (Apple Silicon) — for local-dev workstations.
+          - target: aarch64-apple-darwin
+            os: macos-14
+            archive_ext: tar.gz
+
+          # macOS x86_64 — older Intel Macs; remove once Apple drops Intel
+          # support, currently still in the Quant team's mix.
+          - target: x86_64-apple-darwin
+            os: macos-13
+            archive_ext: tar.gz
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Install Rust toolchain (pinned 1.85 + matrix target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85"
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry and target/
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+
+      - name: Build miner binary (release profile)
+        env:
+          CARGO_TERM_COLOR: always
+        run: cargo build --release --target ${{ matrix.target }} --bin miner
+
+      - name: Stage release tarball
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          archive_basename="miner-${version}-${{ matrix.target }}"
+          staging="${RUNNER_TEMP}/${archive_basename}"
+          mkdir -p "${staging}"
+
+          # Pack the binary, license, README, CHANGELOG so the tarball is
+          # self-describing.
+          cp "target/${{ matrix.target }}/release/miner" "${staging}/"
+          cp README.md LICENSE CHANGELOG.md "${staging}/" 2>/dev/null || true
+
+          archive_path="${RUNNER_TEMP}/${archive_basename}.${{ matrix.archive_ext }}"
+          tar -C "${RUNNER_TEMP}" -czf "${archive_path}" "${archive_basename}"
+          shasum -a 256 "${archive_path}" | awk '{print $1}' > "${archive_path}.sha256"
+
+          {
+            echo "archive_path=${archive_path}"
+            echo "checksum_path=${archive_path}.sha256"
+            echo "archive_basename=${archive_basename}.${{ matrix.archive_ext }}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "${GITHUB_REF_NAME}" \
+            "${{ steps.stage.outputs.archive_path }}" \
+            "${{ steps.stage.outputs.checksum_path }}" \
+            --clobber
+
+  # Single-runner aggregator: collects all checksums into a single
+  # SHA256SUMS file so users can verify with one `shasum -c` command.
+  # Mirrors the per-fixture SHA256SUMS pattern from Plan 07-02.
+  manifest:
+    name: Publish SHA256SUMS manifest
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download all release assets and build manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets && cd assets
+          gh release download "${GITHUB_REF_NAME}" --pattern '*.tar.gz' --pattern '*.zip'
+          : > SHA256SUMS
+          for f in *.tar.gz *.zip; do
+            [ -e "$f" ] || continue
+            sha=$(shasum -a 256 "$f" | awk '{print $1}')
+            printf '%s  %s\n' "$sha" "$f" >> SHA256SUMS
+          done
+          gh release upload "${GITHUB_REF_NAME}" SHA256SUMS --clobber
