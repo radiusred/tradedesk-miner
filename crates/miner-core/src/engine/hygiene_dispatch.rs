@@ -573,7 +573,7 @@ where
 /// produced by the IAAFT (Theiler 1992) phase-scramble kernel rather than
 /// a circular rotation — preserves leg B's marginal AND power spectrum
 /// across resamples while leg A is held fixed. Use for pair-arity scans
-/// that opt into PhaseScramble (lead_lag, engle_granger). The deterministic-
+/// that opt into `PhaseScramble` (`lead_lag`, `engle_granger`). The deterministic-
 /// seeding contract is preserved by deriving a per-resample sub-seed via a
 /// single `Xoshiro256PlusPlus::next_u64()` call.
 #[must_use]
@@ -598,6 +598,8 @@ pub(crate) fn pair_iaaft_phase_scramble_null_p<F>(
 where
     F: Fn(&[f64], &[f64]) -> f64,
 {
+    use std::cell::RefCell;
+
     use crate::scan::hygiene::bootstrap::BOOTSTRAP_CANCEL_POLL_CADENCE;
     use crate::scan::hygiene::null::{Tail, iaaft_phase_scramble_null_p};
     debug_assert_eq!(
@@ -623,7 +625,6 @@ where
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
     let mut more_extreme: u32 = 0;
     let obs_abs = observed_stat.abs();
-    use std::cell::RefCell;
     let captured: RefCell<Option<Vec<f64>>> = RefCell::new(None);
     for resample in 0..n_resamples {
         if resample % BOOTSTRAP_CANCEL_POLL_CADENCE == 0 && cancel.load(Ordering::Relaxed) {
@@ -651,9 +652,8 @@ where
             10,
             1.0,
         );
-        let surrogate_b = match captured.borrow().clone() {
-            Some(s) => s,
-            None => return f64::NAN,
+        let Some(surrogate_b) = captured.borrow().clone() else {
+            return f64::NAN;
         };
         let surr_stat = stat(values_a, &surrogate_b);
         let is_more_extreme = match tail {

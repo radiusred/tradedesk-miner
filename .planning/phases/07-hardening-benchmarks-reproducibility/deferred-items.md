@@ -1,7 +1,7 @@
 # Phase 07 — Deferred Items
 
-Out-of-scope discoveries logged by executors. These items were observed during
-plan execution but do NOT belong to the current plan's scope; they are
+Out-of-scope discoveries logged by executors during plan execution. These
+items were observed but do NOT belong to the current plan's scope; they are
 tracked here so the phase verifier (or a follow-on plan) can address them.
 
 ## From Plan 07-03 (cargo audit + cargo deny CI gates)
@@ -28,8 +28,8 @@ tracked here so the phase verifier (or a follow-on plan) can address them.
   the plan's explicit acceptance-criteria fallback ("trust the GH Action that
   runs in Task 2 ... OR document in the SUMMARY that local verification was
   skipped and CI is the gate").
-- **Recommendation:** Plan 07-06 / 07-07 will create the missing
-  `benches/*.rs` files as part of the bench-harness scaffolding.
+- **Resolution:** Plan 07-06 created the missing `benches/*.rs` files; this
+  item is now resolved (kept here for historical traceability).
 
 ### 2. `cargo-deny 0.18.3` cannot parse RUSTSEC entries that use CVSS 4.0
 
@@ -51,9 +51,45 @@ tracked here so the phase verifier (or a follow-on plan) can address them.
   README at v1.x time if local cargo-deny becomes a contributor expectation
   (would require bumping `rust-toolchain.toml` to 1.88+).
 
+## From Plan 07-06 (criterion microbenches)
+
+### 3. `cargo clippy --workspace --all-targets -- -D warnings` fails on `crates/miner-bench/src/bin/gen-fixtures.rs`
+
+- **Discovered while:** Plan 07-06 Task 2 verification of the workspace-wide
+  clippy gate.
+- **Symptom:** `cargo clippy --workspace --all-targets -- -D warnings` exits
+  non-zero with 4 errors in `crates/miner-bench/src/bin/gen-fixtures.rs` (the
+  `format_collect` lint on the SHA256 hex-encoding loops at lines 195-196).
+  The errors are pre-existing — they were introduced by Plan 07-02 when
+  `gen-fixtures.rs` landed; the Phase 7 wave-0 acceptance gates ran clippy
+  WITHOUT `-D warnings` strict, so the errors did not block the Plan 07-02
+  commit.
+- **Why deferred:** Plan 07-06's scope is `crates/miner-core/benches/`. The
+  `gen-fixtures.rs` errors are out of scope per the GSD scope-boundary rule
+  ("Only auto-fix issues DIRECTLY caused by the current task's changes").
+  Plan 07-06's stricter `cargo clippy -p miner-core --benches -- -D warnings`
+  gate passes — that is the gate the plan acceptance criteria explicitly
+  require.
+- **Proposed owner:** A follow-up cleanup plan in Phase 7 (or Phase 8) that
+  runs the full `--all-targets -D warnings` gate and fixes the remaining
+  pre-existing lints crate-wide. The mechanical fixes are:
+  - `crates/miner-bench/src/bin/gen-fixtures.rs:195` — replace
+    `.map(|b| format!("{b:02x}")).collect::<String>()` with a `write!`-into-
+    `String` loop (clippy's `format_collect` lint).
+- **Concrete patch suggestion (un-applied, for the follow-up):**
+  ```rust
+  use std::fmt::Write as _;
+  let digest_hex = digest.iter().fold(String::with_capacity(64), |mut acc, b| {
+      write!(acc, "{b:02x}").expect("writing to String never fails");
+      acc
+  });
+  ```
+- **Risk if left:** None for Plan 07-06 acceptance. If a future plan tightens
+  CI to `-D warnings` workspace-wide, this becomes a blocker for that plan.
+
 ## From Plan 07-09 (locked findings-envelope snapshot test)
 
-### 3. Pre-existing `cargo clippy -p miner-core --lib -- -D warnings` failures in hygiene modules
+### 4. Pre-existing `cargo clippy -p miner-core --lib -- -D warnings` failures in hygiene modules
 
 - **Discovered while:** Running `cargo clippy -p miner-core --test
   findings_envelope_snapshot -- -D warnings` per Plan 07-09 acceptance
@@ -73,6 +109,8 @@ tracked here so the phase verifier (or a follow-on plan) can address them.
   acceptance criterion's `cargo clippy -p miner-core --test
   findings_envelope_snapshot -- -D warnings` invocation only because clippy
   compiles the lib as a dependency of the integration test.
-- **Recommendation:** Plan 07-04 (CI hardening / `-D warnings` audit) or a
-  follow-on hygiene-module cleanup PR should address these. Out of scope for
-  the byte-determinism gate this plan ships.
+- **Note:** Plan 07-06 (merged after 07-09) applied Rule 3 clippy fixes to
+  several of these lints in `hygiene_dispatch.rs` and `null.rs`. A focused
+  follow-up should re-run the gate to confirm what remains.
+- **Recommendation:** A follow-on hygiene-module cleanup PR should address
+  whatever remains. Out of scope for the byte-determinism gate this plan ships.

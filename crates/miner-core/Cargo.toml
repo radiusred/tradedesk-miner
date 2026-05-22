@@ -111,9 +111,55 @@ zstd.workspace       = true
 # field stays absent from the release surface. The same pattern (with a
 # parent-path) is used by `crates/miner-cli/Cargo.toml`.
 miner-core           = { path = ".", features = ["test-internal"] }
+# Phase 7 (Plan 07-06) — criterion microbench harness. Bench-only (`[dev-dependencies]`),
+# so it does NOT leak into the production dependency graph (`--edges normal,build`).
+# FOUND-04 invariant preserved (no tokio/async-* creep). The `[[bench]]` entries at the
+# bottom of this file register the six microbench binaries; each requires the
+# `harness=false` flag (07-RESEARCH §"Pitfall 2" — omitting it causes "no main function"
+# link errors). NOTE: `dhat` is deliberately NOT added as a miner-core dep here
+# (07-RESEARCH §"Anti-Patterns"); dhat is gated to `miner-bench` only via Plan 07-08.
+criterion.workspace  = true
+# Phase 7 (Plan 07-06) — `csv` is needed by `benches/bench_csv_parse_1day.rs` to
+# mirror the production CSV-parse callsite in `crates/miner-reader-dukascopy/src/reader.rs`.
+# The bench measures the same `csv::ReaderBuilder::new().has_headers(true).from_reader(...)`
+# pipeline against an in-memory decompressed buffer; dev-dep keeps it out of the
+# production graph.
+csv.workspace        = true
 
 [lints]
 workspace = true
+
+# Phase 7 (Plan 07-06) microbench registration — six criterion binaries living at
+# `crates/miner-core/benches/bench_*.rs`. The custom-harness flag is REQUIRED for every
+# entry (07-RESEARCH §"Pitfall 2"); criterion supplies its own `main` via
+# `criterion_main!`, and omitting the flag triggers a `no main function` link error.
+#
+# CI does NOT run these (per D7-03 — criterion variance on shared runners is too
+# high for a useful gate); local `cargo bench -p miner-core` runs all six.
+
+[[bench]]
+name = "bench_zstd_decompress_1day"
+harness = false
+
+[[bench]]
+name = "bench_csv_parse_1day"
+harness = false
+
+[[bench]]
+name = "bench_aggregate_1m_to_15m"
+harness = false
+
+[[bench]]
+name = "bench_rolling_corr"
+harness = false
+
+[[bench]]
+name = "bench_ljung_box"
+harness = false
+
+[[bench]]
+name = "bench_ols_fit_4d"
+harness = false
 
 # Phase 3 Plan 02 additions:
 # `test-internal` exposes test-only hooks (e.g., `ScanCtx.sleep_after_first_finding_ms`,

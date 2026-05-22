@@ -369,7 +369,7 @@ where
                 return f64::NAN;
             }
             let inv_norm = 1.0 / n_padded as f64;
-            for v in time_scratch.iter_mut() {
+            for v in &mut time_scratch {
                 *v *= inv_norm;
             }
 
@@ -669,7 +669,7 @@ mod tests {
         assert!(p2.is_nan(), "empty input must return NaN");
     }
 
-    /// Test 2: n_resamples == 0 returns NaN.
+    /// Test 2: `n_resamples` == 0 returns NaN.
     #[test]
     fn iaaft_returns_nan_for_zero_resamples() {
         let s = iaaft_test_series();
@@ -848,7 +848,7 @@ mod tests {
     /// Direct unit test against the `next_5_smooth` helper:
     /// - 1024 is already 5-smooth (2^10) → unchanged.
     /// - 1009 is prime → rounds up to the next 5-smooth integer 1024.
-    /// - 100_000 = 2^5 * 5^5 → already 5-smooth, unchanged.
+    /// - `100_000` = 2^5 * 5^5 → already 5-smooth, unchanged.
     #[test]
     fn iaaft_padding_uses_5_smooth_length() {
         assert_eq!(next_5_smooth(1024), 1024, "1024 = 2^10 is 5-smooth");
