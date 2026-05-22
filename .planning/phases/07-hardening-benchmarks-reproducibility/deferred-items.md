@@ -50,3 +50,29 @@ tracked here so the phase verifier (or a follow-on plan) can address them.
 - **Recommendation:** No action required. Document in CONTRIBUTING.md /
   README at v1.x time if local cargo-deny becomes a contributor expectation
   (would require bumping `rust-toolchain.toml` to 1.88+).
+
+## From Plan 07-09 (locked findings-envelope snapshot test)
+
+### 3. Pre-existing `cargo clippy -p miner-core --lib -- -D warnings` failures in hygiene modules
+
+- **Discovered while:** Running `cargo clippy -p miner-core --test
+  findings_envelope_snapshot -- -D warnings` per Plan 07-09 acceptance
+  criteria (the new test file itself emits zero clippy warnings).
+- **Evidence:** 6 errors on main HEAD (pre-existing — not introduced by this
+  plan), all in:
+  - `crates/miner-core/src/engine/hygiene_dispatch.rs:576` (3× `doc_markdown`
+    — "item in documentation is missing backticks")
+  - `crates/miner-core/src/engine/hygiene_dispatch.rs:626` (`items_after_statements`)
+  - `crates/miner-core/src/engine/hygiene_dispatch.rs:654` (`manual_let_else`)
+  - `crates/miner-core/src/scan/hygiene/null.rs:372` (`explicit_iter_loop`)
+- **Scope:** Pre-existing in lib code from Phase 5 hygiene work; unrelated to
+  Plan 07-09's `tests/findings_envelope_snapshot.rs` + `tests/goldens/
+  envelope_snapshot.jsonl` deliverables.
+- **Impact on 07-09:** None for the snapshot test itself — the test file
+  passes clippy with zero warnings. The pre-existing lib errors block the
+  acceptance criterion's `cargo clippy -p miner-core --test
+  findings_envelope_snapshot -- -D warnings` invocation only because clippy
+  compiles the lib as a dependency of the integration test.
+- **Recommendation:** Plan 07-04 (CI hardening / `-D warnings` audit) or a
+  follow-on hygiene-module cleanup PR should address these. Out of scope for
+  the byte-determinism gate this plan ships.

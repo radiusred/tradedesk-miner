@@ -1,0 +1,2 @@
+{"code_revision":"test-revision-fixed","kind":"run_start","miner_version":"0.1.0","request":{"command":"emit-fixture"},"run_id":"<masked_run_id>","started_at_utc":"<masked_started_at_utc>"}
+{"ended_at_utc":"<masked_ended_at_utc>","kind":"run_end","run_id":"<masked_run_id>","summary":{"gap_aborted":0,"per_scan":{},"results_emitted":0,"scan_errors":0},"wall_clock_ms":0}
