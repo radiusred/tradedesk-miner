@@ -89,7 +89,10 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 /// reproduction documentation and so future in-binary repetition (if ever
 /// added) doesn't require a CLI-shape change.
 #[derive(Parser, Debug)]
-#[command(name = "miner-bench", about = "Recipe runner for the Phase 7 bench harness")]
+#[command(
+    name = "miner-bench",
+    about = "Recipe runner for the Phase 7 bench harness"
+)]
 struct Args {
     /// Path to a TOML `SweepManifest` (e.g. `benches/recipes/single-job.toml`).
     #[arg(long)]

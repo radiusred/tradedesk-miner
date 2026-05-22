@@ -144,8 +144,8 @@ fn build_synthetic_reader(symbol: &str, start: NaiveDate, days: usize) -> BenchR
     let n_bars = days * 1440;
     let closes = lcg_closes(n_bars, 0xCAFE);
     let mut reader = BenchReader::new();
-    let day_zero_start: DateTime<Utc> = Utc
-        .from_utc_datetime(&start.and_hms_opt(0, 0, 0).expect("00:00:00 valid"));
+    let day_zero_start: DateTime<Utc> =
+        Utc.from_utc_datetime(&start.and_hms_opt(0, 0, 0).expect("00:00:00 valid"));
     for d in 0..days {
         let date = start
             .checked_add_signed(Duration::days(d as i64))
@@ -166,7 +166,9 @@ fn build_synthetic_reader(symbol: &str, start: NaiveDate, days: usize) -> BenchR
                 tick_volume: (i + 1) as f64,
             });
         }
-        reader.bars.insert((symbol.to_string(), Side::Bid, date), bars);
+        reader
+            .bars
+            .insert((symbol.to_string(), Side::Bid, date), bars);
     }
     reader
 }
@@ -179,8 +181,7 @@ fn bench_aggregate_1m_to_15m(c: &mut Criterion) {
     let symbol = "EURUSD";
     let start = NaiveDate::from_ymd_opt(2024, 1, 1).expect("valid date");
     let reader = build_synthetic_reader(symbol, start, 250);
-    let range_start = Utc
-        .from_utc_datetime(&start.and_hms_opt(0, 0, 0).expect("00:00:00 valid"));
+    let range_start = Utc.from_utc_datetime(&start.and_hms_opt(0, 0, 0).expect("00:00:00 valid"));
     let range_end = range_start + Duration::days(250);
     let range = ClosedRangeUtc {
         start: range_start,

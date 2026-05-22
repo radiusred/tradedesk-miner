@@ -138,7 +138,8 @@ fn envelope_snapshot_byte_identical_across_runs() {
     let masked1 = mask_envelope_jsonl(&raw1);
     let masked2 = mask_envelope_jsonl(&raw2);
     assert_eq!(
-        masked1, masked2,
+        masked1,
+        masked2,
         "OUT-03 closure: masked envelopes from two in-process emit-fixture\n\
          invocations differ.\nRun 1:\n{}\nRun 2:\n{}",
         masked1.join("\n"),
@@ -174,8 +175,10 @@ fn envelope_snapshot_covers_all_emitted_variants() {
     // The emit-fixture invocation emits exactly these two framing
     // envelopes per D-09 / D-11; a future plan that adds another variant
     // to the path must update this set in the same PR.
-    let expected: HashSet<String> =
-        ["run_start", "run_end"].iter().map(|s| (*s).to_string()).collect();
+    let expected: HashSet<String> = ["run_start", "run_end"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
     assert_eq!(
         kinds, expected,
         "envelope-snapshot variant coverage drift: expected {expected:?}, got {kinds:?}.\n\
@@ -197,6 +200,10 @@ fn envelope_snapshot_covers_all_emitted_variants() {
 /// drift can be silently masked by re-running the regen helper).
 #[test]
 #[ignore = "regen-only: writes the golden — operator-triggered via --ignored"]
+// Operator-triggered regen helper: a single stderr breadcrumb is the expected
+// UX when running `--ignored` from a terminal, and adding tracing-subscriber
+// setup just for this one line would be unjustified ceremony.
+#[allow(clippy::disallowed_macros)]
 fn regenerate_envelope_snapshot_golden() {
     let raw = run_envelope_invocation_capture_stdout();
     let masked_lines = mask_envelope_jsonl(&raw);

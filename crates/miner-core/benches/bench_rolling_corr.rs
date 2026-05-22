@@ -148,11 +148,7 @@ fn bench_pearson_rolling(c: &mut Criterion) {
     let window = 100;
     c.bench_function("rolling_corr_pearson_w100_n10000", |bb| {
         bb.iter(|| {
-            let r = rolling_pearson(
-                black_box(&a),
-                black_box(&b),
-                black_box(window),
-            );
+            let r = rolling_pearson(black_box(&a), black_box(&b), black_box(window));
             black_box(r);
         });
     });
@@ -164,11 +160,7 @@ fn bench_spearman_rolling(c: &mut Criterion) {
     let window = 100;
     c.bench_function("rolling_corr_spearman_w100_n10000", |bb| {
         bb.iter(|| {
-            let r = rolling_spearman(
-                black_box(&a),
-                black_box(&b),
-                black_box(window),
-            );
+            let r = rolling_spearman(black_box(&a), black_box(&b), black_box(window));
             black_box(r);
         });
     });
