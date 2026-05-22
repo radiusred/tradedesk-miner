@@ -74,6 +74,20 @@ code routing, and a programmatic-consumption walkthrough, see
 [docs/scan_catalogue.md](docs/scan_catalogue.md), and
 [docs/sweep_manifest.md](docs/sweep_manifest.md).
 
+## Data source caveats
+
+`tradedesk-miner` reads the cache layout `tradedesk-dukascopy` produces. A few
+non-obvious conventions matter for interpreting findings:
+
+- Months are **00-indexed** on disk (`2024/00/` = January, `2024/11/` = December).
+- The `volume` column is a **tick count**, not lot volume.
+- Bid and ask sides are processed independently; spread reconstruction is out of scope.
+- Weekend and exchange-holiday gaps are intentional, not missing data; the
+  `gap_policy` flag controls how scans treat them.
+
+See [docs/data_sources.md](docs/data_sources.md) for the full reference, including
+the data licensing posture.
+
 ## Design principles
 
 - **Locked `Finding` envelope.** Seven-variant tagged enum (`run_start`,
