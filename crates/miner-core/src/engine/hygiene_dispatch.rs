@@ -575,6 +575,15 @@ where
 /// that opt into PhaseScramble (lead_lag, engle_granger). The deterministic-
 /// seeding contract is preserved by deriving a per-resample sub-seed via a
 /// single `Xoshiro256PlusPlus::next_u64()` call.
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "n_resamples / more_extreme are u32 counts; f64 conversion exact for inputs < 2^53"
+)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "WR-04 cancel parameter; mirrors `pair_circular_shift_null_p` positional contract"
+)]
 pub(crate) fn pair_iaaft_phase_scramble_null_p<F>(
     values_a: &[f64],
     values_b: &[f64],

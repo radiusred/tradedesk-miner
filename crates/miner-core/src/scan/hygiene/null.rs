@@ -238,11 +238,18 @@ fn is_5_smooth(mut n: usize) -> bool {
 #[must_use]
 #[allow(
     clippy::cast_precision_loss,
-    reason = "n_resamples and more_extreme are u32 counts; the f64 conversion is exact for inputs < 2^53 (n_resamples << 2^31)"
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "n_resamples and rank/index counts are bounded by n (the IAAFT input length); all numeric casts are exact for realistic OHLCV slice sizes (n << 2^31)"
 )]
 #[allow(
     clippy::too_many_arguments,
     reason = "WR-04 cancel parameter + IAAFT tuning parameters (max_iter, convergence_tol); positional contract retained for byte-identical-rerun parity with `circular_shift_null_p`"
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "linear setup -> resample loop -> inner Theiler iteration walk; splitting hides the documented per-step contract"
 )]
 pub fn iaaft_phase_scramble_null_p<F>(
     values: &[f64],
