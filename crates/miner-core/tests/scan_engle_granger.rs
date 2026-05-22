@@ -311,7 +311,7 @@ fn scan_engle_granger_happy_path_via_engine_facade() {
 }
 
 // ---------------------------------------------------------------------------
-// Plan 04-11 Task 1 — golden cross-check (#[ignore]d until pinned regen)
+// Plan 04-11 Task 1 — golden cross-check (active; regen via CONTRIBUTING.md)
 // ---------------------------------------------------------------------------
 
 /// Phase 4 Plan 04-11 Task 1 golden cross-check — CROSS-05.
@@ -325,14 +325,10 @@ fn scan_engle_granger_happy_path_via_engine_facade() {
 /// - 1e-10 on `residual_std` (sample std, pure arithmetic)
 ///
 /// Pattern J Step 1 — provenance gate. The test refuses to run unless
-/// `provenance.statsmodels_version == "0.14.6"`. The stub golden checked
-/// in at Plan 04-11 has `provenance.statsmodels_version == "STUB"`;
-/// this test is `#[ignore]`d until a developer runs the regen recipe
-/// documented in `goldens/REFERENCE-VERSIONS.md`.
+/// `provenance.statsmodels_version == "0.14.6"`. Regen is documented in
+/// CONTRIBUTING.md `## Regenerating goldens`; the provenance gate below
+/// pins the expected version against REFERENCE-VERSIONS.md.
 #[test]
-#[ignore = "Phase 4 Plan 04-11: golden is a STUB until pinned Python 3.11 \
-            + statsmodels==0.14.6 venv regenerates \
-            cross.cointegration.engle_granger.jsonl"]
 fn engle_granger_matches_statsmodels_coint_golden() {
     const GOLDEN_JSON: &str = include_str!("goldens/cross.cointegration.engle_granger.jsonl");
     const TOL_BETA: f64 = 1e-10;
