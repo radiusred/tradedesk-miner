@@ -1,17 +1,24 @@
 name: Publish binaries
 
-# Fires when `prepare-release.yml` creates a GitHub Release.
-# Cross-compiles the `miner` CLI binary for each supported target triple and
-# attaches the tarballs to the Release page so users (notably the Quant
-# agent) can install without a Rust toolchain on the target machine.
+# Cross-compiles the `miner` CLI binary for each supported target triple,
+# attaches the tarballs to the draft GitHub Release prepared by
+# `prepare-release.yml`, then flips the draft to published so the Release
+# becomes immutable with all assets locked in.
+#
+# Trigger: `workflow_run` on completion of "Prepare Release" (success only).
+# Why not `release: types: [published]`? Because `prepare-release.yml`
+# creates the release as a DRAFT — and `release.published` doesn't fire
+# for drafts. With Settings → General → "Immutable releases" enabled,
+# uploading assets after the release is published is forbidden, so we
+# must (1) keep the release in draft state until all assets are attached,
+# then (2) publish it as the final step.
 #
 # This is the Cargo-workspace analog of the siblings' PyPI `publish.yml`.
-# Where Python ships wheels via Trusted Publishing, Rust ships pre-built
-# binaries via Release assets.
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Prepare Release"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -19,9 +26,13 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.target }}
+    # Only run when Prepare Release succeeded; ignore failed / cancelled runs.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ${{ matrix.os }}
     permissions:
-      contents: write  # for attaching artifacts to the Release
+      contents: write  # for attaching artifacts to the draft release
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -51,9 +62,28 @@ jobs:
             archive_ext: tar.gz
 
     steps:
+      - name: Resolve draft release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Find the draft release that prepare-release.yml just created.
+          # If there are multiple drafts (unlikely), use the most recently
+          # created one — prepare-release runs serially per workflow_run.
+          TAG=$(gh release list --limit 10 \
+                  --json tagName,isDraft,createdAt \
+                  --jq 'map(select(.isDraft == true)) | sort_by(.createdAt) | last | .tagName')
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "::error::No draft release found. Did prepare-release.yml create one?"
+            exit 1
+          fi
+          echo "::notice::Building artifacts for draft release ${TAG}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ steps.tag.outputs.tag }}
 
       - name: Install Rust toolchain (pinned 1.85 + matrix target)
         uses: dtolnay/rust-toolchain@stable
@@ -74,10 +104,11 @@ jobs:
       - name: Stage release tarball
         id: stage
         shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          version="${tag#v}"
+          version="${TAG#v}"
           archive_basename="miner-${version}-${{ matrix.target }}"
           staging="${RUNNER_TEMP}/${archive_basename}"
           mkdir -p "${staging}"
@@ -97,12 +128,13 @@ jobs:
             echo "archive_basename=${archive_basename}.${{ matrix.archive_ext }}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Upload artifacts to GitHub Release
+      - name: Upload artifacts to draft release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          gh release upload "${GITHUB_REF_NAME}" \
+          gh release upload "$TAG" \
             "${{ steps.stage.outputs.archive_path }}" \
             "${{ steps.stage.outputs.checksum_path }}" \
             --clobber
@@ -116,18 +148,43 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    outputs:
+      tag: ${{ needs.build.outputs.tag }}
     steps:
       - name: Download all release assets and build manifest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.build.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir -p assets && cd assets
-          gh release download "${GITHUB_REF_NAME}" --pattern '*.tar.gz' --pattern '*.zip'
+          gh release download "$TAG" --pattern '*.tar.gz' --pattern '*.zip'
           : > SHA256SUMS
           for f in *.tar.gz *.zip; do
             [ -e "$f" ] || continue
             sha=$(shasum -a 256 "$f" | awk '{print $1}')
             printf '%s  %s\n' "$sha" "$f" >> SHA256SUMS
           done
-          gh release upload "${GITHUB_REF_NAME}" SHA256SUMS --clobber
+          gh release upload "$TAG" SHA256SUMS --clobber
+
+  # Final step: flip the draft release to published so it becomes
+  # discoverable to users (it disappears from the "Drafts" view and
+  # shows up on the Releases page) AND becomes immutable per the repo's
+  # "Immutable releases" setting. After this step, no further asset
+  # modifications are possible — which is exactly the supply-chain
+  # guarantee we want for distributed binaries.
+  publish:
+    name: Publish release
+    needs: [build, manifest]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Flip draft to published
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.manifest.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --draft=false
+          echo "::notice::Released ${TAG}"

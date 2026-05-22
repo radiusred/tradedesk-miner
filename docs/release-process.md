@@ -27,13 +27,23 @@ execute ───── opens a `release/vX.Y.Z` branch with one
               reviewer to rebase-merge.
               Once merged: tags the merged SHA, generates
               release notes via git-cliff + cliff.toml,
-              creates the GitHub Release.
+              creates the GitHub Release as a DRAFT.
         │
-        ▼ (release.published event)
+        ▼ (workflow_run completed event)
 publish.yml — cross-compiles `miner` for each target triple,
               uploads tarballs + checksums + SHA256SUMS manifest
-              to the Release page
+              to the draft Release, then flips the draft to
+              published as the final step.
 ```
+
+**Why draft → upload → publish?** The repo has Settings → General →
+*Immutable releases* enabled, which forbids any asset modification once
+a release is published. Creating the release as a draft, attaching the
+matrix-built binaries while it's still a draft, then publishing as the
+last step satisfies immutability while still allowing the
+parallel-build pattern. After publish, no further asset modifications
+are possible — which is exactly the supply-chain guarantee binary
+consumers depend on.
 
 This is the Cargo analog of the sibling-repo pattern
 (`tradedesk` and `tradedesk-dukascopy` use the radiusred reusable

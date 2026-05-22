@@ -311,7 +311,16 @@ jobs:
         env:
           OUTPUT: RELEASE_NOTES.md
 
-      - name: Create GitHub Release
+      - name: Create draft GitHub Release
+        # Repo has Settings → General → "Immutable releases" enabled, which
+        # forbids modifying assets on a published release. Create as --draft
+        # so publish.yml can attach the cross-compiled tarballs from each
+        # matrix job, then publish.yml's final step flips the draft to
+        # published once all assets are in place. The `release.published`
+        # event fires at that flip, but we trigger publish.yml off
+        # `workflow_run` (this workflow's completion) instead, so the chain
+        # is: prepare-release ── workflow_run ──► publish ── draft=false ──►
+        # release.published (no downstream subscribers).
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           NEW_TAG:      ${{ needs.analyze.outputs.new_tag }}
@@ -323,7 +332,7 @@ jobs:
             exit 0
           fi
           if [ -s RELEASE_NOTES.md ]; then
-            gh release create "$NEW_TAG" --target "$TARGET_SHA" --notes-file RELEASE_NOTES.md
+            gh release create "$NEW_TAG" --target "$TARGET_SHA" --draft --notes-file RELEASE_NOTES.md
           else
-            gh release create "$NEW_TAG" --target "$TARGET_SHA" --generate-notes
+            gh release create "$NEW_TAG" --target "$TARGET_SHA" --draft --generate-notes
           fi
