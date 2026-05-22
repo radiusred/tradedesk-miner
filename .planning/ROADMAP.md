@@ -174,7 +174,7 @@ Plans:
 - [x] 07-05-PLAN.md — IAAFT phase-scramble kernel in null.rs + realfft workspace dep + noise-replay regression test + flip supports_null_method on 5 scans (HYG-02, HYG-05)
 - [x] 07-06-PLAN.md — Criterion microbenches (6 bench files under crates/miner-core/benches/) + [profile.release] debug = 1 + criterion + dhat workspace deps
 - [x] 07-07-PLAN.md — docs/data_sources.md (Dukascopy caveats deep ref) + README ## Data source caveats summary
-- [ ] 07-08-PLAN.md — miner-bench recipe runner (replaces placeholder) + dhat feature + hyperfine/dhat wrapper scripts + docs/bench-results.md + README ## Performance + CONTRIBUTING.md ## Profiling
+- [x] 07-08-PLAN.md — miner-bench recipe runner (replaces placeholder) + dhat feature + hyperfine/dhat wrapper scripts + docs/bench-results.md + README ## Performance + CONTRIBUTING.md ## Profiling
 - [x] 07-09-PLAN.md — Findings envelope snapshot test + golden (FOUND-02, FOUND-03, OUT-03)
 **UI hint**: No
 

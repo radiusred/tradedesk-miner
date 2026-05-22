@@ -87,6 +87,39 @@ tracked here so the phase verifier (or a follow-on plan) can address them.
 - **Risk if left:** None for Plan 07-06 acceptance. If a future plan tightens
   CI to `-D warnings` workspace-wide, this becomes a blocker for that plan.
 
+## From Plan 07-08 (miner-bench recipe runner + dhat profiling)
+
+### 5. Pre-existing clippy errors under `--all-features` confirmed still present
+
+- **Discovered while:** Plan 07-08 Task 1 verification — running
+  `cargo clippy -p miner-bench --all-targets --all-features -- -D warnings`
+  per the acceptance criteria.
+- **Status:** This is the SAME breakage logged in item 3 above
+  (`crates/miner-bench/src/bin/gen-fixtures.rs` — 4 errors: 2× `doc_markdown`
+  on line 8, 1× `cast_precision_loss` on line 98, 1× `format_collect` on
+  lines 193-196). Plan 07-08 did NOT introduce any of these; the new
+  `crates/miner-bench/src/main.rs` (recipe runner) is clean under both
+  `cargo clippy -p miner-bench --bin miner-bench -- -D warnings` and
+  `cargo clippy -p miner-bench --bin miner-bench --features dhat -- -D warnings`.
+- **Workspace-wide breakage also confirmed:** `cargo clippy --workspace
+  --all-targets -- -D warnings` (the CI gate from `.github/workflows/ci.yml`
+  line 43) also fails on main HEAD with:
+  - `crates/miner-core/tests/noise_replay_regression.rs:330` —
+    `clippy::len_zero` (`families.len() >= 1`)
+  - `crates/miner-core/tests/findings_envelope_snapshot.rs` —
+    `clippy::disallowed_macros` (`std::eprintln!` use from Plan 07-09)
+  - Plus the gen-fixtures.rs errors above.
+- **Scope:** None caused by 07-08. Per the GSD scope-boundary rule, 07-08
+  does not auto-fix these. The 07-08 acceptance criterion `cargo clippy
+  -p miner-bench --all-targets --all-features -- -D warnings` cannot pass
+  while item 3 above is outstanding; the SUMMARY documents this exception
+  and points at the 07-08 binary-scoped clippy invocations
+  (`cargo clippy -p miner-bench --bin miner-bench [--features dhat] --
+  -D warnings`) which DO pass cleanly.
+- **Proposed owner:** A follow-up `chore(07)` plan that batches all of items
+  3, 4, and 5 into a single clippy-cleanup PR, restoring the workspace-wide
+  `-D warnings` gate.
+
 ## From Plan 07-09 (locked findings-envelope snapshot test)
 
 ### 4. Pre-existing `cargo clippy -p miner-core --lib -- -D warnings` failures in hygiene modules

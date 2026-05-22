@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Plan 07-09 (locked findings-envelope snapshot test) complete; envelope_snapshot.jsonl golden + 3 active byte-determinism tests shipped
-last_updated: "2026-05-22T10:30:01.716Z"
+last_updated: "2026-05-22T11:01:23.905Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 50
-  completed_plans: 48
-  percent: 96
+  completed_plans: 50
+  percent: 100
 ---
 
 # Project State
@@ -25,14 +25,14 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 
 ## Current Position
 
-Phase: 07 (hardening-benchmarks-reproducibility) — EXECUTING
-Plan: 4 of 9
-Status: Ready to execute
+Phase: 07 (hardening-benchmarks-reproducibility) — COMPLETE
+Plan: 9 of 9
+Status: Phase complete (all 9 plans landed)
 Last activity: 2026-05-22
 
-Progress: [██████████] 96%
+Progress: [██████████] 100%
 
-Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, phase-scramble nulls, BH-FDR, sweep manifest. Begin with `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
+Next: Phase 7 closes the v1.0 milestone. The bench harness, fixture-cache regenerator, CHANGELOG, IAAFT closure, cargo-audit/deny gates, criterion microbenches, data_sources doc, recipe runner + dhat/hyperfine wrappers, and envelope snapshot golden are all shipped. First post-merge follow-up: a `chore(07): refresh bench numbers as of <sha>` PR populates the TBD cells in docs/bench-results.md from a reference workstation.
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, 
 | Phase 07 P03 | ~7min | 3 tasks tasks | 4 files files |
 | Phase 07 P07 | ~12min | 2 tasks | 2 files |
 | Phase 07 P09 | ~10min | - tasks | - files |
+| Phase 07 P08 | 16min | 3 tasks tasks | 13 files files |
 
 ## Accumulated Context
 
@@ -115,6 +116,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Plan 07-03: local cargo-deny verification skipped per plan's explicit fallback. cargo-deny 0.19.6 requires rustc 1.88+ but workspace pins 1.85; cargo-deny 0.18.3 trips on pre-existing Plan 07-06 [[bench]] entries and on a CVSS 4.0 RUSTSEC entry. CI gate (cargo-deny-action@v2) is canonical.
 - [Phase ?]: Plan 07-07 (D7-02): docs/data_sources.md uses '# Dukascopy data source caveats' title (source-specific) since the Reader trait is pluggable; README link target is file-level. Licensing-posture pin: tradedesk-dukascopy commit f218d41 (2026-05-13).
 - [Phase ?]: Plan 07-09: Hand-rolled byte-equal envelope snapshot test landed at crates/miner-core/tests/findings_envelope_snapshot.rs + crates/miner-core/tests/goldens/envelope_snapshot.jsonl. NOT insta (per 07-RESEARCH Pitfall 8). Replicates miner emit-fixture in-process via BufferSink because assert_cmd is not in miner-core dev-deps and Cargo.toml is off-limits (Plan 07-06 concurrent worktree). Closes ROADMAP Phase 7 success criterion #1 together with Plans 07-01 + 07-05.
+- [Phase ?]: Plan 07-08: D7-03 Layers 2 + 3 fully closed — miner-bench is now the recipe runner (replaces Phase 1 14-line placeholder); dhat 0.3.3 wired behind a miner-bench-only --features dhat Cargo gate (FOUND-04 preserved — miner-core stays dhat-free + tokio-free); benches/recipes/*.toml are plain SweepManifest TOML per RESEARCH Open Question 3 (no bench-wrapper type); scripts/run-bench.sh wraps hyperfine 1.20+, scripts/run-alloc-profile.sh wraps the dhat feature build.
+- [Phase ?]: Plan 07-08: docs/bench-results.md is the single canonical home for perf numbers per D7-07 — README intentionally avoids embedded benchmark numbers. README ## Performance one-line pointer + CONTRIBUTING ## Profiling subsection (samply 0.13.1 recipe targets cross.cointegration.engle_granger@1 per RESEARCH Open Question 5). How-to-reproduce content lives in docs/bench-results.md ## How to reproduce per RESEARCH Open Question 4.
 
 ### Pending Todos
 
@@ -139,7 +142,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-22T10:30:01.708Z
+Last session: 2026-05-22T11:01:16.944Z
 Stopped at: Plan 07-09 (locked findings-envelope snapshot test) complete; envelope_snapshot.jsonl golden + 3 active byte-determinism tests shipped
 Resume file: None
 Next action: Begin Phase 5 (Statistical Hygiene & Sweep Runner) via `/gsd-discuss-phase 5`. The Phase 5 plan in ROADMAP.md owns OP-04 (TOML sweep manifest fanout) + HYG-01..05 (effect sizes, BH-FDR, block bootstrap, phase-scrambled nulls, bit-for-bit reproducible RNG).

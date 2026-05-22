@@ -12,7 +12,7 @@ Requirements for initial release. Each maps to a roadmap phase.
 - [ ] **FOUND-01**: User can build a Rust workspace with `miner-core` library crate and `miner-cli` / `miner-mcp` / `miner-http` thin wrapper binaries
 - [x] **FOUND-02**: User can verify findings stream cleanly on stdout while structured logs route to stderr (enforced by lint in CI)
 - [x] **FOUND-03**: User can rely on a single locked `Finding` envelope JSON schema with `schema_version`, `scan@version`, `param_hash`, `code_revision`, `data_slice` reproducibility fields, and reserved DSR / FDR-q fields (null in v1, present from day 1)
-- [ ] **FOUND-04**: User can confirm the scan engine is pure sync + rayon; async is contained inside the HTTP/MCP wrappers via `spawn_blocking`
+- [x] **FOUND-04**: User can confirm the scan engine is pure sync + rayon; async is contained inside the HTTP/MCP wrappers via `spawn_blocking`
 - [ ] **FOUND-05**: User can configure cache root, derived-bar-cache root, and output destination via CLI flag > env var > config file precedence with no hardcoded paths
 
 ### Cache & Aggregation (CACHE)
@@ -140,7 +140,7 @@ Every v1 requirement maps to exactly one phase.
 | FOUND-01 | Phase 1 | Pending |
 | FOUND-02 | Phase 1 | Complete |
 | FOUND-03 | Phase 1 | Complete |
-| FOUND-04 | Phase 1 | Pending |
+| FOUND-04 | Phase 1 | Complete |
 | FOUND-05 | Phase 1 | Pending |
 | CACHE-01 | Phase 2 | Pending |
 | CACHE-02 | Phase 2 | Pending |
