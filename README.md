@@ -88,6 +88,12 @@ non-obvious conventions matter for interpreting findings:
 See [docs/data_sources.md](docs/data_sources.md) for the full reference, including
 the data licensing posture.
 
+## Performance
+
+Wall-clock numbers, allocation budget, and reference flamegraph live in
+[docs/bench-results.md](docs/bench-results.md). The README intentionally
+avoids embedded benchmark numbers — they go stale fast.
+
 ## Design principles
 
 - **Locked `Finding` envelope.** Seven-variant tagged enum (`run_start`,

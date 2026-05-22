@@ -109,6 +109,30 @@ adjacent code changes. Review the diff carefully and confirm the
 [`REFERENCE-VERSIONS.md`](crates/miner-core/tests/goldens/REFERENCE-VERSIONS.md)
 pins before committing.
 
+## Profiling
+
+For performance investigation, `samply` is the recommended profiler — a
+modern replacement for `cargo-flamegraph` whose output renders directly
+in the Firefox profiler UI:
+
+```sh
+cargo install samply@0.13.1
+cargo build --release --bin miner-bench
+MINER_CACHE_ROOT=./tests/fixtures/cache \
+MINER_BAR_CACHE_ROOT=/tmp/bar \
+MINER_OUTPUT=stdout \
+  samply record ./target/release/miner-bench \
+    --recipe benches/recipes/single-job.toml
+```
+
+For heap-allocation profiling, use the dhat wrapper at
+[`scripts/run-alloc-profile.sh`](scripts/run-alloc-profile.sh) (requires
+the `dhat` Cargo feature on `miner-bench`). For wall-clock benchmarks,
+use [`scripts/run-bench.sh`](scripts/run-bench.sh) (hyperfine wrapper).
+The full reproduction recipes — including how to refresh the
+`docs/bench-results.md` tables — live in
+[`docs/bench-results.md`](docs/bench-results.md) `## How to reproduce`.
+
 ## Pull request expectations
 
 - **One concern per PR.** Small, atomic commits beat one large rewrite.
