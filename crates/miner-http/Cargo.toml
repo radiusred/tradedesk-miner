@@ -11,6 +11,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+publish = false  # v1 stub; full impl deferred to v2 (PLAT-v2-08)
 
 [[bin]]
 name = "miner-http"

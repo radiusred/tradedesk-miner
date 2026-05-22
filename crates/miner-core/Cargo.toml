@@ -21,6 +21,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+# v1.0 ships via GitHub Releases binaries, not crates.io. Marking all
+# crates `publish = false` lets `[bans] allow-wildcard-paths = true` in
+# deny.toml exempt intra-workspace `{ path = "../foo" }` deps (which
+# cargo-deny treats as wildcards). Flip to `true` and add `version = "..."`
+# to every intra-workspace path dep when this crate is ready for crates.io.
+publish = false
 
 [lib]
 

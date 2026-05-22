@@ -22,6 +22,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+publish = false  # internal bench runner + gen-fixtures binary; not for crates.io
 
 [[bin]]
 name = "miner-bench"
