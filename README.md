@@ -49,13 +49,15 @@ Run a scan over a populated cache and stream NDJSON `Finding` envelopes to
 stdout:
 
 ```sh
-MINER_CACHE_ROOT=/path/to/cache \
+MINER_CACHE_ROOT=./tests/fixtures/cache \
 MINER_BAR_CACHE_ROOT=/tmp/bar \
 MINER_OUTPUT=stdout \
-cargo run -p miner-cli -- scan stats.autocorr.ljung_box@1 \
+cargo run -p miner-cli -- scan seas.bucket.hour_of_day@1 \
     --instrument EURUSD:bid --timeframe 15m \
-    --window 2024-01-01:2024-12-31
+    --window 2024-01-01:2024-01-31
 ```
+
+If you cloned the repo, this works as-is — no external download needed.
 
 Truncated `Result` envelope:
 

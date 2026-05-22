@@ -7,3 +7,11 @@ target/
 
 # Python venv used only by scripts/regen-goldens.sh — per-developer, never committed
 .venv-goldens
+
+# Plan 07-02: `tests/fixtures/cache/` MUST stay tracked — the committed
+# synthetic-stub bytes, the `.gitkeep` marker, and `SHA256SUMS` are the
+# clone-and-run quickstart's data foundation (CACHE-04 / OUT-03). Do NOT
+# add `tests/` here; only scratch artifacts inside the cache dir are
+# ignored.
+tests/fixtures/cache/**/*.tmp
+tests/fixtures/cache/**/*.bak
