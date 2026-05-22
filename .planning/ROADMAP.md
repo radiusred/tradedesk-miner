@@ -169,7 +169,7 @@ Plans:
 Plans:
 - [x] 07-01-PLAN.md — Goldens regen via uv-driven pinned Python 3.11 venv; un-ignore three #[ignore]d golden tests; CONTRIBUTING.md ## Regenerating goldens
 - [x] 07-02-PLAN.md — Synthetic fixture cache (tests/fixtures/cache/) + deterministic gen-fixtures binary + SHA256SUMS + README quickstart swap
-- [ ] 07-03-PLAN.md — deny.toml v2 schema + cargo audit + cargo deny CI gates + CONTRIBUTING.md Quality gates rows 7-8
+- [x] 07-03-PLAN.md — deny.toml v2 schema + cargo audit + cargo deny CI gates + CONTRIBUTING.md Quality gates rows 7-8
 - [x] 07-04-PLAN.md — CHANGELOG.md scaffold (Keep a Changelog 1.1.0; Unreleased + [1.0.0] placeholder)
 - [x] 07-05-PLAN.md — IAAFT phase-scramble kernel in null.rs + realfft workspace dep + noise-replay regression test + flip supports_null_method on 5 scans (HYG-02, HYG-05)
 - [ ] 07-06-PLAN.md — Criterion microbenches (6 bench files under crates/miner-core/benches/) + [profile.release] debug = 1 + criterion + dhat workspace deps

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 7 context gathered (Rust-ecosystem defaults applied)
-last_updated: "2026-05-21T23:55:15.605Z"
-last_activity: 2026-05-21 -- Phase 07 execution started
+stopped_at: Phase 07-03 (cargo audit + cargo deny CI gates) complete
+last_updated: "2026-05-22T10:02:19.144Z"
+last_activity: 2026-05-22
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 50
-  completed_plans: 41
-  percent: 82
+  completed_plans: 46
+  percent: 92
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 ## Current Position
 
 Phase: 07 (hardening-benchmarks-reproducibility) — EXECUTING
-Plan: 1 of 9
-Status: Executing Phase 07
-Last activity: 2026-05-21 -- Phase 07 execution started
+Plan: 2 of 9
+Status: Ready to execute
+Last activity: 2026-05-22
 
-Progress: [██████████] 100%
+Progress: [█████████░] 92%
 
 Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, phase-scramble nulls, BH-FDR, sweep manifest. Begin with `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
 
@@ -67,6 +67,7 @@ Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, 
 | Phase 06 P01 | ~8min | 2 tasks | 6 files |
 | Phase 6 P2 | 12min | 3 tasks | 3 files |
 | Phase 06 P03 | 25min | 3 tasks | 7 files |
+| Phase 07 P03 | ~7min | 3 tasks tasks | 4 files files |
 
 ## Accumulated Context
 
@@ -106,6 +107,10 @@ Recent decisions affecting current work:
 - [Phase ?]: D6-02-CATALOGUE: per-scan H3 block layout (5-10 lines each) over wide-table for scan_catalogue.md; matches indicator_guide.md depth without ballooning
 - [Phase ?]: [Phase 6 Plan 03] Phase 6 docs-only deliverable complete: docs/agent_integration.md + docs/future_mcp_http.md + docs/examples/* + README ## Documentation section + D6-08 placeholder-main retargeting. Zero new deps; cargo tree -p miner-core still zero async-deps; rustfmt expanded both mains to 14 lines vs the plan's 12-line target.
 - [Phase ?]: [Phase 6 Plan 03] 12 Open Questions dispositioned: #1 per-doc line counts hit; #2 per-scan compact-block applied (06-02); #3 + #4 example CI smoke-tests DEFERRED to Phase 7; #5 Pattern A applied (06-01); #6 bare URL footer (06-01); #7 success-criteria rewrite applied (06-01); #8 + #10 CONTRIBUTING.md DEFERRED; #9 doc-lint CI gate DEFERRED to Phase 7; #11 placeholder mains updated (D6-08); #12 SPDX one-liner applied.
+- [Phase ?]: Plan 07-03: deny.toml uses cargo-deny 0.19.6+ v2 schema; the older [advisories] keys (vulnerability, unsound, notice, severity-threshold) from CONTEXT.md D7-05 are REMOVED in 0.14+ and MUST NOT be reintroduced (RESEARCH §Pitfall 6). All advisories now emit errors by default.
+- [Phase ?]: Plan 07-03: cargo audit + cargo deny check land as CI-only gates via rustsec/audit-check@v2.0.0 and EmbarkStudios/cargo-deny-action@v2; major-version action refs match Phase 1's CI convention. SHA pinning is a separate hardening pass.
+- [Phase ?]: Plan 07-03: D7-05 allowlist-by-exception is dual — license extensions land as a separate commit in deny.toml with inline '# allowed-for: <crate>@<version> — <license> — <reason>'; temporary advisory ignores land in [advisories] ignore with inline 'RUSTSEC-YYYY-NNNN — <reason> — review by YYYY-MM-DD'.
+- [Phase ?]: Plan 07-03: local cargo-deny verification skipped per plan's explicit fallback. cargo-deny 0.19.6 requires rustc 1.88+ but workspace pins 1.85; cargo-deny 0.18.3 trips on pre-existing Plan 07-06 [[bench]] entries and on a CVSS 4.0 RUSTSEC entry. CI gate (cargo-deny-action@v2) is canonical.
 
 ### Pending Todos
 
@@ -130,7 +135,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-21T22:42:04.349Z
-Stopped at: Phase 7 context gathered (Rust-ecosystem defaults applied)
-Resume file: .planning/phases/07-hardening-benchmarks-reproducibility/07-CONTEXT.md
+Last session: 2026-05-22T10:02:19.090Z
+Stopped at: Phase 07-03 (cargo audit + cargo deny CI gates) complete
+Resume file: None
 Next action: Begin Phase 5 (Statistical Hygiene & Sweep Runner) via `/gsd-discuss-phase 5`. The Phase 5 plan in ROADMAP.md owns OP-04 (TOML sweep manifest fanout) + HYG-01..05 (effect sizes, BH-FDR, block bootstrap, phase-scrambled nulls, bit-for-bit reproducible RNG).
