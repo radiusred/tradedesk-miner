@@ -2,12 +2,23 @@ name: Prepare Release
 
 # Mirrors the radiusred sibling-repo release pattern (tradedesk + tradedesk-dukascopy):
 #   workflow_dispatch ONLY (never auto-fires) → analyze → approval gate
-#   (release-approval environment) → execute (version bump + GitHub Release).
+#   (release-approval environment) → execute (branch + PR + wait-for-merge
+#   + tag + GitHub Release).
 #
 # The siblings call radiusred/.github reusable-release.yml, which assumes
 # Python + Hatch and bumps pyproject.toml — incompatible with a Cargo
-# workspace. This file mirrors the same job structure, secrets, and
+# workspace. This file mirrors the same structure, secrets, and
 # environment-gating contract but inlines a Cargo-aware version bump.
+#
+# Branch-and-PR flow: the org-wide `protect-main` ruleset requires PRs +
+# ≥1 reviewer + linear history + rebase-only merges. Direct pushes to main
+# are blocked even for the release App's token. So the execute job:
+#   1. opens a `release/vX.Y.Z` branch with the version bump commit
+#   2. opens a PR to main and waits up to `merge_timeout_minutes` for it
+#      to be reviewed + merged
+#   3. once merged, tags the merged SHA + creates the GitHub Release
+# A reviewer must rebase-merge the PR for the workflow to continue past
+# the wait step. (Mirrors radiusred/.github reusable-release.yml.)
 #
 # Required repo settings (Settings → Secrets and variables → Actions):
 #   Variable  RELEASE_APP_CLIENT_ID    — radiusred-release GitHub App client id
@@ -20,6 +31,11 @@ name: Prepare Release
 
 on:
   workflow_dispatch:
+    inputs:
+      merge_timeout_minutes:
+        description: "Minutes to wait for the release PR to be merged before failing"
+        required: false
+        default: "60"
 
 permissions:
   contents: read
@@ -127,6 +143,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - name: Generate App token
         uses: actions/create-github-app-token@v3
@@ -141,16 +158,49 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
-      - name: Bump workspace version
+      - name: Configure Git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Detect existing bump on main (resume support)
+        # If main HEAD is already the release-bump commit for NEW_TAG,
+        # skip the branch+PR dance and tag/release directly. This makes
+        # the workflow safe to re-run after a PR merge that the wait
+        # step missed (e.g. workflow timeout).
+        id: detect
         env:
           NEW_TAG: ${{ needs.analyze.outputs.new_tag }}
         run: |
           set -euo pipefail
-          new_version="${NEW_TAG#v}"
+          LAST_MSG=$(git log -1 --pretty=%s)
+          if [ "$LAST_MSG" = "chore: release ${NEW_TAG}" ]; then
+            echo "already_bumped=true" >> "$GITHUB_OUTPUT"
+            echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release bump for ${NEW_TAG} already present on main; will tag and release directly."
+          else
+            echo "already_bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump workspace version on release branch
+        if: steps.detect.outputs.already_bumped != 'true'
+        id: bump
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW_TAG: ${{ needs.analyze.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          BRANCH="release/${NEW_TAG}"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "::error::Release branch $BRANCH already exists on origin. Delete it and retry." >&2
+            exit 1
+          fi
+          git checkout -b "$BRANCH"
 
           # Patch [workspace.package].version in the root Cargo.toml only.
           # Every crate inherits via `version.workspace = true`, so a single
           # write keeps the whole workspace in lockstep.
+          new_version="${NEW_TAG#v}"
           python3 - "$new_version" <<'PY'
           import re
           import sys
@@ -160,18 +210,10 @@ jobs:
           src = open(path, "r", encoding="utf-8").read()
 
           pattern = re.compile(
-              r'(\[workspace\.package\][^\[]*?\nversion[[:space:]]*=[[:space:]]*")[^"]*(")',
+              r'(\[workspace\.package\][^\[]*?\nversion\s*=\s*")[^"]*(")',
               re.DOTALL,
           )
           out, n = pattern.subn(rf'\g<1>{new}\g<2>', src, count=1)
-          if n != 1:
-              # Fall back to simpler match if [character class] notation
-              # tripped over Python's regex engine.
-              pattern2 = re.compile(
-                  r'(\[workspace\.package\][^\[]*?\nversion\s*=\s*")[^"]*(")',
-                  re.DOTALL,
-              )
-              out, n = pattern2.subn(rf'\g<1>{new}\g<2>', src, count=1)
           if n != 1:
               sys.stderr.write("ERROR: failed to locate [workspace.package].version\n")
               sys.exit(1)
@@ -181,21 +223,83 @@ jobs:
           PY
 
           # Refresh Cargo.lock so the bumped version is reflected in
-          # transitive resolution. `cargo metadata` re-resolves without
-          # network so this works in a hermetic CI environment.
+          # transitive resolution. `cargo metadata --no-deps` re-resolves
+          # without network so this works in a hermetic CI environment.
           cargo metadata --format-version=1 --no-deps >/dev/null
 
-      - name: Commit version bump
+          git add Cargo.toml Cargo.lock
+          if git diff --cached --quiet; then
+            echo "::error::Cargo.toml already at ${new_version} but main HEAD did not match the expected release commit. Manual intervention required." >&2
+            exit 1
+          fi
+          git commit -m "chore: release ${NEW_TAG}"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Open release PR
+        if: steps.detect.outputs.already_bumped != 'true'
+        id: pr
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           NEW_TAG: ${{ needs.analyze.outputs.new_tag }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
         run: |
           set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
-          git commit -m "chore: release ${NEW_TAG} [skip ci]"
-          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore: release ${NEW_TAG}" \
+            --body "Automated release bump for ${NEW_TAG}. Reviewer: please rebase-merge once CI is green; the calling workflow will then tag and create the GitHub Release.")
+          PR_NUMBER=$(gh pr view "$PR_URL" --json number --jq .number)
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "::notice::Opened release PR ${PR_URL}"
+
+      - name: Wait for release PR to merge
+        if: steps.detect.outputs.already_bumped != 'true'
+        id: wait
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          TIMEOUT_MINUTES: ${{ inputs.merge_timeout_minutes }}
+        run: |
+          set -euo pipefail
+          MAX_ATTEMPTS=$(( TIMEOUT_MINUTES * 2 ))  # poll every 30s
+          for i in $(seq 1 "$MAX_ATTEMPTS"); do
+            STATE=$(gh pr view "$PR_NUMBER" --json state --jq .state)
+            echo "attempt $i/$MAX_ATTEMPTS: state=$STATE"
+            if [ "$STATE" = "MERGED" ]; then
+              MERGE_SHA=$(gh pr view "$PR_NUMBER" --json mergeCommit --jq .mergeCommit.oid)
+              echo "release_sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$STATE" = "CLOSED" ]; then
+              echo "::error::PR #$PR_NUMBER closed without merging" >&2
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "::error::PR #$PR_NUMBER did not merge within ${TIMEOUT_MINUTES} minutes. PR remains open for manual merge; re-run this workflow to tag and release once merged." >&2
+          exit 1
+
+      - name: Resolve release SHA
+        id: release_sha
+        env:
+          ALREADY_BUMPED: ${{ steps.detect.outputs.already_bumped }}
+          EXISTING_SHA:   ${{ steps.detect.outputs.release_sha }}
+          MERGED_SHA:     ${{ steps.wait.outputs.release_sha }}
+        run: |
+          if [ "$ALREADY_BUMPED" = "true" ]; then
+            echo "sha=$EXISTING_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=$MERGED_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync main after merge
+        run: |
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
 
       - name: Generate release notes
         id: notes
@@ -210,11 +314,16 @@ jobs:
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          NEW_TAG: ${{ needs.analyze.outputs.new_tag }}
+          NEW_TAG:      ${{ needs.analyze.outputs.new_tag }}
+          TARGET_SHA:   ${{ steps.release_sha.outputs.sha }}
         run: |
           set -euo pipefail
+          if gh release view "$NEW_TAG" >/dev/null 2>&1; then
+            echo "::notice::Release ${NEW_TAG} already exists; skipping create."
+            exit 0
+          fi
           if [ -s RELEASE_NOTES.md ]; then
-            gh release create "${NEW_TAG}" --notes-file RELEASE_NOTES.md
+            gh release create "$NEW_TAG" --target "$TARGET_SHA" --notes-file RELEASE_NOTES.md
           else
-            gh release create "${NEW_TAG}" --generate-notes
+            gh release create "$NEW_TAG" --target "$TARGET_SHA" --generate-notes
           fi
