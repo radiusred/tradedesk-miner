@@ -100,7 +100,8 @@ fn run_one_emits_results_across_intra_minute_15m_gap() {
     // Hole at minute 720 (12:00 UTC). Post-gap subrange would start at 12:01,
     // which is NOT on a 15m boundary — exercises the alignment guard the
     // partitioner snap now compensates for.
-    let cache = SyntheticCache::new().with_day_holed("EURUSD", Side::Bid, day, 0xCAFE_F00D, 720..721);
+    let cache =
+        SyntheticCache::new().with_day_holed("EURUSD", Side::Bid, day, 0xCAFE_F00D, 720..721);
     let cfg = build_cfg(&cache);
     let reader = DukascopyReader::new(cache.cache_root());
 
@@ -168,8 +169,14 @@ fn run_one_emits_results_across_intra_minute_15m_gap() {
             m.gaps,
         );
         let gap = &m.gaps[0];
-        assert_eq!(gap.start_utc, Utc.with_ymd_and_hms(2024, 6, 12, 12, 0, 0).unwrap());
-        assert_eq!(gap.end_utc, Utc.with_ymd_and_hms(2024, 6, 12, 12, 1, 0).unwrap());
+        assert_eq!(
+            gap.start_utc,
+            Utc.with_ymd_and_hms(2024, 6, 12, 12, 0, 0).unwrap()
+        );
+        assert_eq!(
+            gap.end_utc,
+            Utc.with_ymd_and_hms(2024, 6, 12, 12, 1, 0).unwrap()
+        );
     }
 }
 
@@ -182,7 +189,8 @@ fn run_one_emits_results_across_intra_minute_15m_gap() {
 #[serial_test::serial]
 fn run_one_emits_results_across_intra_minute_1h_gap() {
     let day = open_day();
-    let cache = SyntheticCache::new().with_day_holed("EURUSD", Side::Bid, day, 0xBADC_0FFE, 720..721);
+    let cache =
+        SyntheticCache::new().with_day_holed("EURUSD", Side::Bid, day, 0xBADC_0FFE, 720..721);
     let cfg = build_cfg(&cache);
     let reader = DukascopyReader::new(cache.cache_root());
 

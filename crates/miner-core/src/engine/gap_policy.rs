@@ -638,7 +638,10 @@ mod tests {
         // 15m bucket boundary at 23:45 so the aggregator's
         // validate_range_alignment guard accepts it.
         let out = snap_subranges_to_timeframe(
-            vec![sub(ts(23, 39), Utc.with_ymd_and_hms(2024, 1, 3, 2, 0, 0).unwrap())],
+            vec![sub(
+                ts(23, 39),
+                Utc.with_ymd_and_hms(2024, 1, 3, 2, 0, 0).unwrap(),
+            )],
             Timeframe::Tf15m,
         );
         assert_eq!(
@@ -654,10 +657,7 @@ mod tests {
     #[test]
     fn snap_15m_rounds_end_down() {
         // [00:00, 23:53) → [00:00, 23:45) on 15m grid.
-        let out = snap_subranges_to_timeframe(
-            vec![sub(ts(0, 0), ts(23, 53))],
-            Timeframe::Tf15m,
-        );
+        let out = snap_subranges_to_timeframe(vec![sub(ts(0, 0), ts(23, 53))], Timeframe::Tf15m);
         assert_eq!(out, vec![sub(ts(0, 0), ts(23, 45))]);
     }
 
@@ -665,10 +665,7 @@ mod tests {
     fn snap_15m_drops_subrange_collapsing_to_empty() {
         // [23:50, 23:59) → snap_up(start) = 24:00 (next day 00:00),
         // snap_down(end) = 23:45 → start > end → DROP.
-        let out = snap_subranges_to_timeframe(
-            vec![sub(ts(23, 50), ts(23, 59))],
-            Timeframe::Tf15m,
-        );
+        let out = snap_subranges_to_timeframe(vec![sub(ts(23, 50), ts(23, 59))], Timeframe::Tf15m);
         assert!(out.is_empty(), "expected drop, got {out:?}");
     }
 
@@ -676,10 +673,7 @@ mod tests {
     fn snap_15m_drops_subrange_smaller_than_one_bucket() {
         // [10:07, 10:12) — both inside the same 15m bucket. snap_up(10:07) =
         // 10:15, snap_down(10:12) = 10:00 → DROP.
-        let out = snap_subranges_to_timeframe(
-            vec![sub(ts(10, 7), ts(10, 12))],
-            Timeframe::Tf15m,
-        );
+        let out = snap_subranges_to_timeframe(vec![sub(ts(10, 7), ts(10, 12))], Timeframe::Tf15m);
         assert!(out.is_empty(), "expected drop, got {out:?}");
     }
 
@@ -688,7 +682,7 @@ mod tests {
         // Post-gap shape from the issue: 21:45 → 22:00.
         let out = snap_subranges_to_timeframe(
             vec![
-                sub(ts(0, 0), ts(21, 30)), // pre-gap, snaps to [00:00, 21:00)
+                sub(ts(0, 0), ts(21, 30)),   // pre-gap, snaps to [00:00, 21:00)
                 sub(ts(21, 45), ts(23, 30)), // post-gap, snaps to [22:00, 23:00)
             ],
             Timeframe::Tf1h,
@@ -752,9 +746,9 @@ mod tests {
             for tr in &out {
                 // Both bounds must be on the timeframe grid.
                 let dur = tf.duration().num_minutes();
-                let mins_from_epoch = (tr.start_utc.timestamp() / 60) as i64;
+                let mins_from_epoch = tr.start_utc.timestamp() / 60;
                 prop_assert_eq!(mins_from_epoch % dur, 0, "snapped start not aligned: {:?}", tr);
-                let mins_end = (tr.end_utc.timestamp() / 60) as i64;
+                let mins_end = tr.end_utc.timestamp() / 60;
                 prop_assert_eq!(mins_end % dur, 0, "snapped end not aligned: {:?}", tr);
                 // Output sub-range must be non-empty.
                 prop_assert!(tr.start_utc < tr.end_utc, "snapped sub-range must be non-empty");
