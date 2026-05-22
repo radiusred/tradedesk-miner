@@ -5,8 +5,8 @@
 //! `tests/fixtures/cache/` from a deterministic seed (Plan 07-02).
 //!
 //! Output is byte-identical across machines: per-day closes come from the
-//! canonical Numerical Recipes LCG (constants 1_664_525 + 1_013_904_223 per
-//! PATTERNS Pattern C / `crates/miner-core/tests/byte_identical_rerun.rs:74-83`),
+//! canonical Numerical Recipes LCG (constants `1_664_525` + `1_013_904_223`
+//! per PATTERNS Pattern C / `crates/miner-core/tests/byte_identical_rerun.rs:74-83`),
 //! and zstd compression uses single-threaded level 3, matching the
 //! `tradedesk-dukascopy` producer (`export.py:442`) per RESEARCH Pitfall 4.
 //!
@@ -26,6 +26,7 @@
 //! summary line on stdout via `serde_json::to_writer(io::stdout().lock(), ...)`;
 //! all tracing logs go to stderr.
 
+use std::fmt::Write as _;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -73,7 +74,7 @@ fn per_day_seed(symbol: &str, date: NaiveDate) -> u64 {
 /// Build a full UTC day of 1440 1-minute CSV rows for `date` using
 /// `lcg_closes` seeded by `(symbol, date)`. Header + per-row format are
 /// byte-identical to `crates/miner-core/tests/common/synthetic_cache.rs:88-105`.
-#[allow(clippy::cast_possible_wrap)]
+#[allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)]
 fn build_day_csv(symbol: &str, date: NaiveDate) -> String {
     let seed = per_day_seed(symbol, date);
     let closes = lcg_closes(1440, seed);
@@ -113,13 +114,11 @@ fn write_csv_zst(path: &Path, csv_body: &str) -> Result<u64> {
         .with_context(|| format!("create_dir_all({})", parent.display()))?;
     let file = File::create(path).with_context(|| format!("create({})", path.display()))?;
     // Single-threaded zstd level 3 — byte-identical with `tradedesk-dukascopy/export.py:442`.
-    let mut encoder =
-        zstd::stream::write::Encoder::new(file, 3).context("zstd encoder init")?;
+    let mut encoder = zstd::stream::write::Encoder::new(file, 3).context("zstd encoder init")?;
     let mut src = csv_body.as_bytes();
     std::io::copy(&mut src, &mut encoder).context("zstd copy")?;
     encoder.finish().context("zstd finish")?;
-    let metadata = std::fs::metadata(path)
-        .with_context(|| format!("stat({})", path.display()))?;
+    let metadata = std::fs::metadata(path).with_context(|| format!("stat({})", path.display()))?;
     Ok(metadata.len())
 }
 
@@ -133,7 +132,9 @@ fn weekday_range(start: NaiveDate, end: NaiveDate) -> Vec<NaiveDate> {
         if !matches!(d.weekday(), Weekday::Sat | Weekday::Sun) {
             out.push(d);
         }
-        d = d.succ_opt().expect("next day always defined for in-range dates");
+        d = d
+            .succ_opt()
+            .expect("next day always defined for in-range dates");
     }
     out
 }
@@ -142,8 +143,7 @@ fn weekday_range(start: NaiveDate, end: NaiveDate) -> Vec<NaiveDate> {
 /// `crates/miner-bench/`). The two `..` components walk up to the workspace
 /// root.
 fn repo_root() -> Result<PathBuf> {
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").context("CARGO_MANIFEST_DIR not set")?;
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").context("CARGO_MANIFEST_DIR not set")?;
     let root = PathBuf::from(&manifest_dir)
         .join("..")
         .join("..")
@@ -185,15 +185,14 @@ fn write_sha256sums(fixture_root: &Path) -> Result<usize> {
         if file_name == "SHA256SUMS" || file_name == ".gitkeep" {
             continue;
         }
-        let bytes =
-            std::fs::read(path).with_context(|| format!("read({})", path.display()))?;
+        let bytes = std::fs::read(path).with_context(|| format!("read({})", path.display()))?;
         let mut hasher = Sha256::new();
         hasher.update(&bytes);
         let digest = hasher.finalize();
-        let digest_hex = digest
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>();
+        let mut digest_hex = String::with_capacity(digest.len() * 2);
+        for b in &digest {
+            write!(&mut digest_hex, "{b:02x}").expect("write to String never fails");
+        }
         let rel = path
             .strip_prefix(fixture_root)
             .with_context(|| format!("strip_prefix({})", path.display()))?
@@ -203,18 +202,16 @@ fn write_sha256sums(fixture_root: &Path) -> Result<usize> {
     // Re-sort by relative-path string for cross-platform stability — WalkDir's
     // `sort_by_file_name` sorts per-directory; this gives a single global order.
     entries.sort_by(|a, b| {
-        let a_s = a
-            .0
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join("/");
-        let b_s = b
-            .0
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join("/");
+        let a_s =
+            a.0.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/");
+        let b_s =
+            b.0.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/");
         a_s.cmp(&b_s)
     });
     let sha_path = fixture_root.join("SHA256SUMS");
@@ -243,9 +240,8 @@ fn main() -> Result<()> {
 
     let repo = repo_root()?;
     let fixture_root = repo.join("tests").join("fixtures").join("cache");
-    std::fs::create_dir_all(&fixture_root).with_context(|| {
-        format!("create_dir_all({})", fixture_root.display())
-    })?;
+    std::fs::create_dir_all(&fixture_root)
+        .with_context(|| format!("create_dir_all({})", fixture_root.display()))?;
 
     // Two symbols, bid side only, January 2024 weekdays only.
     let start = NaiveDate::from_ymd_opt(2024, 1, 1).expect("2024-01-01 valid");
