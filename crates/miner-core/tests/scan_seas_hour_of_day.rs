@@ -127,14 +127,10 @@ fn scan_seas_hour_of_day_happy_path() {
 /// CDFs).
 ///
 /// Pattern J Step 1 — provenance gate. The test refuses to run unless
-/// `provenance.scipy_version == "1.14.1"`. The stub golden checked in
-/// at Plan 04-11 has `provenance.scipy_version == "STUB"`; this test is
-/// `#[ignore]`d until a developer runs the regen recipe documented in
-/// `goldens/REFERENCE-VERSIONS.md`.
+/// `provenance.scipy_version == "1.14.1"`. Regen is documented in
+/// CONTRIBUTING.md `## Regenerating goldens`; the provenance gate below
+/// pins the expected version against REFERENCE-VERSIONS.md.
 #[test]
-#[ignore = "Phase 4 Plan 04-11: golden is a STUB until pinned Python 3.11 \
-            + scipy==1.14.1 / pandas==2.2.x venv regenerates \
-            seas.bucket.hour_of_day.jsonl"]
 fn hour_of_day_matches_pandas_groupby_golden() {
     const GOLDEN_JSON: &str = include_str!("goldens/seas.bucket.hour_of_day.jsonl");
     const TOL: f64 = 1e-12;

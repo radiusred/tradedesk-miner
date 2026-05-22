@@ -155,14 +155,10 @@ fn scan_summary_welford_happy_path() {
 /// but 1e-10 is the documented headline).
 ///
 /// Pattern J Step 1 — provenance gate. The test refuses to run unless
-/// `provenance.scipy_version == "1.14.1"`. The stub golden checked in
-/// at Plan 04-11 has `provenance.scipy_version == "STUB"`; this test
-/// is `#[ignore]`d until a developer runs the regen recipe documented
-/// in `goldens/REFERENCE-VERSIONS.md`.
+/// `provenance.scipy_version == "1.14.1"`. Regen is documented in
+/// CONTRIBUTING.md `## Regenerating goldens`; the provenance gate below
+/// pins the expected version against REFERENCE-VERSIONS.md.
 #[test]
-#[ignore = "Phase 4 Plan 04-11: golden is a STUB until pinned Python 3.11 \
-            + scipy==1.14.1 venv regenerates stats.summary.welford.jsonl \
-            (see crates/miner-core/tests/goldens/REFERENCE-VERSIONS.md)"]
 fn summary_welford_matches_scipy_describe_golden() {
     const GOLDEN_JSON: &str = include_str!("goldens/stats.summary.welford.jsonl");
     const TOL: f64 = 1e-10;

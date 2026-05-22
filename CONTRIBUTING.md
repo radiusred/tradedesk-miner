@@ -51,6 +51,45 @@ gates 1 and 2; run the others locally before pushing.
    committed schema is the contract — if you change a Rust type that affects
    the envelope, re-run the gen and commit the diff in the same PR.
 
+## Regenerating goldens
+
+The three family goldens
+(`crates/miner-core/tests/goldens/stats.summary.welford.jsonl`,
+`crates/miner-core/tests/goldens/cross.cointegration.engle_granger.jsonl`,
+`crates/miner-core/tests/goldens/seas.bucket.hour_of_day.jsonl`) are
+bit-for-bit pinned against the Python reference versions documented in
+[`crates/miner-core/tests/goldens/REFERENCE-VERSIONS.md`](crates/miner-core/tests/goldens/REFERENCE-VERSIONS.md).
+Regen is required only when `REFERENCE-VERSIONS.md` is bumped or when one of
+the `generate_*.py` scripts themselves changes; otherwise the committed
+goldens are the source of truth and the integration tests run against them
+unchanged.
+
+The canonical recipe is a single command:
+
+```sh
+./scripts/regen-goldens.sh
+```
+
+The script uses [`uv`](https://docs.astral.sh/uv/) to materialise an
+isolated Python 3.11 venv at `.venv-goldens/` (gitignored), installs the
+exact wheel set from
+`crates/miner-core/tests/goldens/python-requirements.lock` with `--no-deps`
+(so the lockfile is the single source of truth for every transitive
+version), and runs the three `generate_*.py` scripts. Re-running the
+script must produce a no-op diff against the committed goldens
+(idempotency check) — any unexpected drift indicates a `REFERENCE-VERSIONS.md`
+mismatch or a generator-script change.
+
+**Commit discipline.** The resulting diff must land as a single
+`chore: regen goldens after <reason>` commit (for example,
+`chore(07): regenerate family goldens after scipy bump`) — never mix a
+golden regen with behavioural changes in the same commit, because the
+golden diff is large, machine-generated, and obscures the intent of
+adjacent code changes. Review the diff carefully and confirm the
+`provenance.*_version` values match the new
+[`REFERENCE-VERSIONS.md`](crates/miner-core/tests/goldens/REFERENCE-VERSIONS.md)
+pins before committing.
+
 ## Pull request expectations
 
 - **One concern per PR.** Small, atomic commits beat one large rewrite.

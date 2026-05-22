@@ -4,3 +4,6 @@ target/
 
 # Claude Code agent state (per-developer; never committed)
 .claude/
+
+# Python venv used only by scripts/regen-goldens.sh — per-developer, never committed
+.venv-goldens

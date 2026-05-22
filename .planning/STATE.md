@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 7 context gathered (Rust-ecosystem defaults applied)
-last_updated: "2026-05-21T23:51:35.046Z"
-last_activity: 2026-05-21 -- Phase 07 planning complete
+last_updated: "2026-05-21T23:55:15.605Z"
+last_activity: 2026-05-21 -- Phase 07 execution started
 progress:
   total_phases: 7
   completed_phases: 6
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-15)
 
 **Core value:** Surface raw statistical candidates from years of OHLCV data fast enough that a quant agent can run wide sweeps and targeted queries interactively, without waiting on Python data pipelines.
-**Current focus:** Phase 06 — mcp-http-wrappers
+**Current focus:** Phase 07 — hardening-benchmarks-reproducibility
 
 ## Current Position
 
-Phase: 7
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-21 -- Phase 07 planning complete
+Phase: 07 (hardening-benchmarks-reproducibility) — EXECUTING
+Plan: 1 of 9
+Status: Executing Phase 07
+Last activity: 2026-05-21 -- Phase 07 execution started
 
 Progress: [██████████] 100%
 
