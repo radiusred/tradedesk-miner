@@ -173,7 +173,7 @@ Plans:
 - [x] 07-04-PLAN.md — CHANGELOG.md scaffold (Keep a Changelog 1.1.0; Unreleased + [1.0.0] placeholder)
 - [x] 07-05-PLAN.md — IAAFT phase-scramble kernel in null.rs + realfft workspace dep + noise-replay regression test + flip supports_null_method on 5 scans (HYG-02, HYG-05)
 - [ ] 07-06-PLAN.md — Criterion microbenches (6 bench files under crates/miner-core/benches/) + [profile.release] debug = 1 + criterion + dhat workspace deps
-- [ ] 07-07-PLAN.md — docs/data_sources.md (Dukascopy caveats deep ref) + README ## Data source caveats summary
+- [x] 07-07-PLAN.md — docs/data_sources.md (Dukascopy caveats deep ref) + README ## Data source caveats summary
 - [ ] 07-08-PLAN.md — miner-bench recipe runner (replaces placeholder) + dhat feature + hyperfine/dhat wrapper scripts + docs/bench-results.md + README ## Performance + CONTRIBUTING.md ## Profiling
 - [ ] 07-09-PLAN.md — Findings envelope snapshot test + golden (FOUND-02, FOUND-03, OUT-03)
 **UI hint**: No
@@ -191,4 +191,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 4. Scan Catalogue (ANOM, CROSS, SEAS) | 7/11 | In Progress|  |
 | 5. Statistical Hygiene & Sweep Runner | 0/TBD | Not started | - |
 | 6. MCP & HTTP Wrappers (Docs-Only) | 2/3 | In Progress|  |
-| 7. Hardening, Benchmarks & Reproducibility | 0/9 | Planned | - |
+| 7. Hardening, Benchmarks & Reproducibility | 6/9 | In Progress|  |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 07-03 (cargo audit + cargo deny CI gates) complete
-last_updated: "2026-05-22T10:02:19.144Z"
+stopped_at: "Plan 07-07 (D7-02 Dukascopy data-source caveats) complete; docs/data_sources.md + README ## Data source caveats summary shipped"
+last_updated: "2026-05-22T10:14:14.321Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 50
-  completed_plans: 46
-  percent: 92
+  completed_plans: 47
+  percent: 94
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 ## Current Position
 
 Phase: 07 (hardening-benchmarks-reproducibility) — EXECUTING
-Plan: 2 of 9
+Plan: 3 of 9
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [█████████░] 92%
+Progress: [█████████░] 94%
 
 Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, phase-scramble nulls, BH-FDR, sweep manifest. Begin with `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
 
@@ -68,6 +68,7 @@ Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, 
 | Phase 6 P2 | 12min | 3 tasks | 3 files |
 | Phase 06 P03 | 25min | 3 tasks | 7 files |
 | Phase 07 P03 | ~7min | 3 tasks tasks | 4 files files |
+| Phase 07 P07 | ~12min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,7 @@ Recent decisions affecting current work:
 - [Phase ?]: Plan 07-03: cargo audit + cargo deny check land as CI-only gates via rustsec/audit-check@v2.0.0 and EmbarkStudios/cargo-deny-action@v2; major-version action refs match Phase 1's CI convention. SHA pinning is a separate hardening pass.
 - [Phase ?]: Plan 07-03: D7-05 allowlist-by-exception is dual — license extensions land as a separate commit in deny.toml with inline '# allowed-for: <crate>@<version> — <license> — <reason>'; temporary advisory ignores land in [advisories] ignore with inline 'RUSTSEC-YYYY-NNNN — <reason> — review by YYYY-MM-DD'.
 - [Phase ?]: Plan 07-03: local cargo-deny verification skipped per plan's explicit fallback. cargo-deny 0.19.6 requires rustc 1.88+ but workspace pins 1.85; cargo-deny 0.18.3 trips on pre-existing Plan 07-06 [[bench]] entries and on a CVSS 4.0 RUSTSEC entry. CI gate (cargo-deny-action@v2) is canonical.
+- [Phase ?]: Plan 07-07 (D7-02): docs/data_sources.md uses '# Dukascopy data source caveats' title (source-specific) since the Reader trait is pluggable; README link target is file-level. Licensing-posture pin: tradedesk-dukascopy commit f218d41 (2026-05-13).
 
 ### Pending Todos
 
@@ -135,7 +137,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-22T10:02:19.090Z
-Stopped at: Phase 07-03 (cargo audit + cargo deny CI gates) complete
+Last session: 2026-05-22T10:14:10.391Z
+Stopped at: Plan 07-07 (D7-02 Dukascopy data-source caveats) complete; docs/data_sources.md + README ## Data source caveats summary shipped
 Resume file: None
 Next action: Begin Phase 5 (Statistical Hygiene & Sweep Runner) via `/gsd-discuss-phase 5`. The Phase 5 plan in ROADMAP.md owns OP-04 (TOML sweep manifest fanout) + HYG-01..05 (effect sizes, BH-FDR, block bootstrap, phase-scrambled nulls, bit-for-bit reproducible RNG).
