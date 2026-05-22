@@ -60,8 +60,7 @@ nalgebra.workspace      = true
 # - `rand_xoshiro`   — `Xoshiro256PlusPlus` portable PRNG for bootstrap + null
 #                      resampling (HYG-05 bit-for-bit reproducible RNG)
 # - `toml`           — TOML deserialiser for the sweep manifest (Plan 05-04 / OP-04)
-# All three are sync-only — FOUND-04 invariant preserved. `realfft` is INTENTIONALLY
-# NOT added here — Plan 05-02 conditionally adds it if IAAFT phase-scramble ships.
+# All three are sync-only — FOUND-04 invariant preserved.
 rand.workspace          = true
 rand_xoshiro.workspace  = true
 toml.workspace          = true
@@ -69,6 +68,10 @@ toml.workspace          = true
 # parallel job fanout (D5-04 / OP-04). Work-stealing thread pool;
 # FOUND-04 invariant preserved (rayon is sync-only — no tokio creep).
 rayon.workspace         = true
+# Phase 7 (Plan 07-05) addition — `realfft` for IAAFT phase-scramble null
+# kernel (Plan 05-02 deferred). Real-input FFT only; transitively pulls
+# rustfft. Both verified sync-only — FOUND-04 invariant preserved.
+realfft.workspace       = true
 
 [dev-dependencies]
 jsonschema.workspace = true
