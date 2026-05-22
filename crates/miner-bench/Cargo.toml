@@ -1,13 +1,20 @@
-# miner-bench: scan-recipe benchmark harness. Phase 7 lands the real criterion + hyperfine
-# harness; Phase 1 ships an empty crate per D-23 with only tracing for the placeholder
-# main(). NO println! anywhere — that is what the disallowed-macros lint (Plan 04) will
-# catch in CI.
+# miner-bench: scan-recipe benchmark harness.
 #
-# Plan 07-02 addition: `gen-fixtures` binary writes the synthetic Dukascopy-shape
-# fixture cache at `tests/fixtures/cache/` deterministically from seed (single-threaded
-# zstd level 3 per RESEARCH Pitfall 4 + Numerical Recipes LCG per PATTERNS Pattern C).
-# Plan 07-08 makes the full bench-harness replacement; THIS plan adds only the deps
-# `gen-fixtures` needs.
+# Phase 1 shipped a 14-line placeholder per D-23 — tracing-only `main()`, NO
+# `println!` (the disallowed-macros clippy gate from Plan 04 catches accidental
+# stdout writes from this crate).
+#
+# Plan 07-02 added the `gen-fixtures` binary: writes the synthetic
+# Dukascopy-shape fixture cache at `tests/fixtures/cache/` deterministically
+# from seed (single-threaded zstd level 3 per RESEARCH Pitfall 4 + Numerical
+# Recipes LCG per PATTERNS Pattern C).
+#
+# Plan 07-08 makes the full bench-harness replacement: the `miner-bench`
+# binary becomes the recipe runner (reads a TOML SweepManifest, drives
+# `miner_core::sweep::run_sweep` in-process, emits one JSON timing object on
+# stdout). The `dhat` Cargo feature swaps the global allocator to
+# `dhat::Alloc` for heap profiling — FOUND-04 still holds because the feature
+# lives ONLY on this crate (miner-core stays dhat-free + tokio-free).
 
 [package]
 name = "miner-bench"
@@ -23,10 +30,18 @@ path = "src/main.rs"
 name = "gen-fixtures"
 path = "src/bin/gen-fixtures.rs"
 
+[features]
+default = []
+# The `dhat` feature is an opt-in heap profiler. With `--features dhat`, the
+# miner-bench binary installs `dhat::Alloc` as the global allocator and writes
+# `dhat-heap.json` to CWD at process exit (RESEARCH §"Pattern 6"). Off by
+# default; CI runs the standard `cargo test --workspace` path without dhat.
+dhat = ["dep:dhat"]
+
 [dependencies]
 tracing.workspace            = true
 tracing-subscriber.workspace  = true
-# Plan 07-02 (gen-fixtures) only:
+# Plan 07-02 (gen-fixtures) deps — preserved verbatim:
 miner-core             = { path = "../miner-core" }
 miner-reader-dukascopy = { path = "../miner-reader-dukascopy" }
 chrono.workspace                 = true
@@ -37,6 +52,11 @@ serde_json.workspace             = true
 anyhow.workspace                 = true
 blake3.workspace                 = true
 sha2                             = "0.10"
+# Plan 07-08 (miner-bench recipe runner) additions:
+clap.workspace                   = true
+toml.workspace                   = true
+ctrlc.workspace                  = true
+dhat                             = { workspace = true, optional = true }
 
 [lints]
 workspace = true
