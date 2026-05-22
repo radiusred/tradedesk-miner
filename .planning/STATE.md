@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Plan 07-07 (D7-02 Dukascopy data-source caveats) complete; docs/data_sources.md + README ## Data source caveats summary shipped"
-last_updated: "2026-05-22T10:14:14.321Z"
+stopped_at: Plan 07-09 (locked findings-envelope snapshot test) complete; envelope_snapshot.jsonl golden + 3 active byte-determinism tests shipped
+last_updated: "2026-05-22T10:30:01.716Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 50
-  completed_plans: 47
-  percent: 94
+  completed_plans: 48
+  percent: 96
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 ## Current Position
 
 Phase: 07 (hardening-benchmarks-reproducibility) — EXECUTING
-Plan: 3 of 9
+Plan: 4 of 9
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [█████████░] 94%
+Progress: [██████████] 96%
 
 Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, phase-scramble nulls, BH-FDR, sweep manifest. Begin with `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
 
@@ -69,6 +69,7 @@ Next: Phase 5 (Statistical Hygiene & Sweep Runner) — effect sizes, bootstrap, 
 | Phase 06 P03 | 25min | 3 tasks | 7 files |
 | Phase 07 P03 | ~7min | 3 tasks tasks | 4 files files |
 | Phase 07 P07 | ~12min | 2 tasks | 2 files |
+| Phase 07 P09 | ~10min | - tasks | - files |
 
 ## Accumulated Context
 
@@ -113,6 +114,7 @@ Recent decisions affecting current work:
 - [Phase ?]: Plan 07-03: D7-05 allowlist-by-exception is dual — license extensions land as a separate commit in deny.toml with inline '# allowed-for: <crate>@<version> — <license> — <reason>'; temporary advisory ignores land in [advisories] ignore with inline 'RUSTSEC-YYYY-NNNN — <reason> — review by YYYY-MM-DD'.
 - [Phase ?]: Plan 07-03: local cargo-deny verification skipped per plan's explicit fallback. cargo-deny 0.19.6 requires rustc 1.88+ but workspace pins 1.85; cargo-deny 0.18.3 trips on pre-existing Plan 07-06 [[bench]] entries and on a CVSS 4.0 RUSTSEC entry. CI gate (cargo-deny-action@v2) is canonical.
 - [Phase ?]: Plan 07-07 (D7-02): docs/data_sources.md uses '# Dukascopy data source caveats' title (source-specific) since the Reader trait is pluggable; README link target is file-level. Licensing-posture pin: tradedesk-dukascopy commit f218d41 (2026-05-13).
+- [Phase ?]: Plan 07-09: Hand-rolled byte-equal envelope snapshot test landed at crates/miner-core/tests/findings_envelope_snapshot.rs + crates/miner-core/tests/goldens/envelope_snapshot.jsonl. NOT insta (per 07-RESEARCH Pitfall 8). Replicates miner emit-fixture in-process via BufferSink because assert_cmd is not in miner-core dev-deps and Cargo.toml is off-limits (Plan 07-06 concurrent worktree). Closes ROADMAP Phase 7 success criterion #1 together with Plans 07-01 + 07-05.
 
 ### Pending Todos
 
@@ -137,7 +139,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-22T10:14:10.391Z
-Stopped at: Plan 07-07 (D7-02 Dukascopy data-source caveats) complete; docs/data_sources.md + README ## Data source caveats summary shipped
+Last session: 2026-05-22T10:30:01.708Z
+Stopped at: Plan 07-09 (locked findings-envelope snapshot test) complete; envelope_snapshot.jsonl golden + 3 active byte-determinism tests shipped
 Resume file: None
 Next action: Begin Phase 5 (Statistical Hygiene & Sweep Runner) via `/gsd-discuss-phase 5`. The Phase 5 plan in ROADMAP.md owns OP-04 (TOML sweep manifest fanout) + HYG-01..05 (effect sizes, BH-FDR, block bootstrap, phase-scrambled nulls, bit-for-bit reproducible RNG).

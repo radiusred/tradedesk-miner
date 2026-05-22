@@ -10,8 +10,8 @@ Requirements for initial release. Each maps to a roadmap phase.
 ### Foundation (FOUND)
 
 - [ ] **FOUND-01**: User can build a Rust workspace with `miner-core` library crate and `miner-cli` / `miner-mcp` / `miner-http` thin wrapper binaries
-- [ ] **FOUND-02**: User can verify findings stream cleanly on stdout while structured logs route to stderr (enforced by lint in CI)
-- [ ] **FOUND-03**: User can rely on a single locked `Finding` envelope JSON schema with `schema_version`, `scan@version`, `param_hash`, `code_revision`, `data_slice` reproducibility fields, and reserved DSR / FDR-q fields (null in v1, present from day 1)
+- [x] **FOUND-02**: User can verify findings stream cleanly on stdout while structured logs route to stderr (enforced by lint in CI)
+- [x] **FOUND-03**: User can rely on a single locked `Finding` envelope JSON schema with `schema_version`, `scan@version`, `param_hash`, `code_revision`, `data_slice` reproducibility fields, and reserved DSR / FDR-q fields (null in v1, present from day 1)
 - [ ] **FOUND-04**: User can confirm the scan engine is pure sync + rayon; async is contained inside the HTTP/MCP wrappers via `spawn_blocking`
 - [ ] **FOUND-05**: User can configure cache root, derived-bar-cache root, and output destination via CLI flag > env var > config file precedence with no hardcoded paths
 
@@ -78,7 +78,7 @@ Requirements for initial release. Each maps to a roadmap phase.
 
 - [ ] **OUT-01**: User can consume findings as newline-delimited JSON (NDJSON / JSONL) on stdout
 - [ ] **OUT-02**: User can rely on every finding carrying: schema_version, scan@version, code_revision, instrument(s), side, timeframe, window, params, param_hash, effect (statistic + value + effect_size + p_value + p_value_null + ci_95), raw arrays used, optional notes, reserved DSR + FDR-q fields
-- [ ] **OUT-03**: User can rely on deterministic output ordering for any given (scan × params × data slice) so that golden-file diffing works as a regression gate
+- [x] **OUT-03**: User can rely on deterministic output ordering for any given (scan × params × data slice) so that golden-file diffing works as a regression gate
 - [ ] **OUT-04**: User can read, on every finding, the **actual continuous range used** (post-gap-partitioning) in `data_slice` and a reference to the gap manifest for that scan run; under `strict` policy the run emits a single error record containing the gap manifest and no findings
 
 ## v2 Requirements
@@ -138,8 +138,8 @@ Every v1 requirement maps to exactly one phase.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | FOUND-01 | Phase 1 | Pending |
-| FOUND-02 | Phase 1 | Pending |
-| FOUND-03 | Phase 1 | Pending |
+| FOUND-02 | Phase 1 | Complete |
+| FOUND-03 | Phase 1 | Complete |
 | FOUND-04 | Phase 1 | Pending |
 | FOUND-05 | Phase 1 | Pending |
 | CACHE-01 | Phase 2 | Pending |
@@ -187,7 +187,7 @@ Every v1 requirement maps to exactly one phase.
 | HYG-05 | Phase 5 | Pending |
 | OUT-01 | Phase 1 | Pending |
 | OUT-02 | Phase 1 | Pending |
-| OUT-03 | Phase 1 | Pending |
+| OUT-03 | Phase 1 | Complete |
 | OUT-04 | Phase 3 | Pending |
 
 **Phase 7 (Hardening, Benchmarks & Reproducibility)** carries no new v1 REQ-IDs; it closes verification debt for FOUND-02, FOUND-03, FOUND-04, CACHE-04, OUT-03, HYG-02, and HYG-05 via golden-file regression tests, noise-replay sweep test, flamegraph profiling, the `miner-bench` + hyperfine bench harness, `cargo audit` / `cargo deny` clean runs, and the README data-source caveats section.
