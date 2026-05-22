@@ -15,21 +15,25 @@ seed = 0xDEADBEEF
 scan = "stats.autocorr.ljung_box@1"
 instruments = ["EURUSD:bid", "GBPUSD:bid"]
 timeframes = ["15m"]
-windows = ["2024-06-12:2024-06-13"]
+windows = ["2024-01-15:2024-01-29"]
 params = { lags = 5 }
 
 [[jobs]]
 scan = "stats.autocorr.ljung_box_sq@1"
 instruments = ["EURUSD:bid", "GBPUSD:bid"]
 timeframes = ["15m"]
-windows = ["2024-06-12:2024-06-13"]
+windows = ["2024-01-15:2024-01-29"]
 params = { lags = 5 }
 
+# Hygiene runs a lightweight bootstrap + null on each finding. The 99/99
+# draw counts are deliberately small so the demo exercises the grammar
+# end-to-end without stress-testing the kernels — bump to 999 for real
+# research sweeps.
 [hygiene]
 bootstrap = "stationary"
-bootstrap_n = 999
+bootstrap_n = 99
 null = "circular_shift"
-null_n = 999
+null_n = 99
 
 [fdr]
 family = "scan_id"
