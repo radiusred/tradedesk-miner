@@ -66,12 +66,15 @@ jobs:
         id: tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           # Find the draft release that prepare-release.yml just created.
           # If there are multiple drafts (unlikely), use the most recently
           # created one — prepare-release runs serially per workflow_run.
-          TAG=$(gh release list --limit 10 \
+          # NOTE: this step runs BEFORE actions/checkout, so we pass --repo
+          # explicitly (gh otherwise tries to autodetect from CWD's .git).
+          TAG=$(gh release list --repo "$REPO" --limit 10 \
                   --json tagName,isDraft,createdAt \
                   --jq 'map(select(.isDraft == true)) | sort_by(.createdAt) | last | .tagName')
           if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
@@ -131,10 +134,11 @@ jobs:
       - name: Upload artifacts to draft release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          gh release upload "$TAG" \
+          gh release upload --repo "$REPO" "$TAG" \
             "${{ steps.stage.outputs.archive_path }}" \
             "${{ steps.stage.outputs.checksum_path }}" \
             --clobber
@@ -154,18 +158,21 @@ jobs:
       - name: Download all release assets and build manifest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           TAG: ${{ needs.build.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir -p assets && cd assets
-          gh release download "$TAG" --pattern '*.tar.gz' --pattern '*.zip'
+          # No checkout in this job — pass --repo so gh doesn't try to
+          # autodetect from CWD's .git (which doesn't exist).
+          gh release download --repo "$REPO" "$TAG" --pattern '*.tar.gz' --pattern '*.zip'
           : > SHA256SUMS
           for f in *.tar.gz *.zip; do
             [ -e "$f" ] || continue
             sha=$(shasum -a 256 "$f" | awk '{print $1}')
             printf '%s  %s\n' "$sha" "$f" >> SHA256SUMS
           done
-          gh release upload "$TAG" SHA256SUMS --clobber
+          gh release upload --repo "$REPO" "$TAG" SHA256SUMS --clobber
 
   # Final step: flip the draft release to published so it becomes
   # discoverable to users (it disappears from the "Drafts" view and
@@ -183,8 +190,10 @@ jobs:
       - name: Flip draft to published
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           TAG: ${{ needs.manifest.outputs.tag }}
         run: |
           set -euo pipefail
-          gh release edit "$TAG" --draft=false
+          # No checkout in this job — pass --repo explicitly.
+          gh release edit --repo "$REPO" "$TAG" --draft=false
           echo "::notice::Released ${TAG}"
