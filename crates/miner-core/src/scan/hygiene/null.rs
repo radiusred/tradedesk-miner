@@ -220,7 +220,7 @@ fn is_5_smooth(mut n: usize) -> bool {
 ///
 /// `seed` propagates from `derive_job_seed` (HYG-05). The kernel uses
 /// `Xoshiro256PlusPlus::seed_from_u64(seed)` and a STABLE rank-shuffle
-/// sort (`sort_by` with index tiebreaker — never `sort_unstable`) so
+/// sort (`sort_by` with index tiebreaker — never an unstable sort) so
 /// byte-identical re-runs are guaranteed.
 ///
 /// FFT length is padded to the next 5-smooth integer ≥ `n` via
@@ -295,13 +295,16 @@ where
 
     // Sorted input values + their inverse rank lookup for the rank-shuffle
     // step. STABLE sort with explicit `(idx, val)` tiebreaker — RESEARCH
-    // §"Anti-Patterns": `sort_unstable` would produce non-deterministic
-    // output on ties (e.g. integer-valued inputs).
+    // §"Anti-Patterns" forbids unstable sorts here because they would
+    // produce non-deterministic output on tied inputs (e.g. integer-
+    // valued series).
     let mut sorted_values: Vec<f64> = values.to_vec();
     // f64 lacks Ord; `partial_cmp.unwrap_or(Equal)` gives a total order
-    // over the non-NaN finite inputs we expect. A stable sort
-    // preserves the original index order on ties — the determinism
-    // property we need for HYG-05.
+    // over the non-NaN finite inputs we expect. `sort_by` is a stable
+    // sort and preserves the original index order on ties — the
+    // determinism property we need for HYG-05. (Using an unstable sort
+    // here would defeat the byte-identical-rerun contract on tied
+    // inputs — see RESEARCH §"Anti-Patterns".)
     sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     // --- Resample loop ------------------------------------------------------
@@ -779,8 +782,8 @@ mod tests {
 
     /// Test 6 (T-07-05-01 mitigation): stable rank-shuffle anti-pattern
     /// check. With tied input values, two runs with the same seed must
-    /// produce bit-identical p-values — `sort_unstable` (the anti-pattern)
-    /// would produce non-deterministic output on ties.
+    /// produce bit-identical p-values — using an unstable sort (the
+    /// anti-pattern) would produce non-deterministic output on ties.
     #[test]
     fn iaaft_uses_stable_rank_shuffle() {
         // Repeated ties: every value appears exactly twice.
