@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: milestone_complete
 stopped_at: Plan 07-09 (locked findings-envelope snapshot test) complete; envelope_snapshot.jsonl golden + 3 active byte-determinism tests shipped
 last_updated: "2026-05-22T11:01:23.905Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 7
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 50
   completed_plans: 50
-  percent: 100
+  percent: 114
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 
 ## Current Position
 
-Phase: 07 (hardening-benchmarks-reproducibility) — COMPLETE
-Plan: 9 of 9
-Status: Phase complete (all 9 plans landed)
+Phase: 07
+Plan: Not started
+Status: Milestone complete
 Last activity: 2026-05-22
 
 Progress: [██████████] 100%
@@ -38,7 +38,7 @@ Next: Phase 7 closes the v1.0 milestone. The bench harness, fixture-cache regene
 
 **Velocity:**
 
-- Total plans completed: 21
+- Total plans completed: 30
 - Average duration: -
 - Total execution time: -
 
@@ -51,6 +51,7 @@ Next: Phase 7 closes the v1.0 milestone. The bench harness, fixture-cache regene
 | 03 | 7 | - | - |
 | 05 | 5 | - | - |
 | 06 | 3 | - | - |
+| 07 | 9 | - | - |
 
 **Recent Trend:**
 
