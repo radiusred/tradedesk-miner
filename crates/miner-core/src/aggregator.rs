@@ -256,7 +256,7 @@ where
 /// single component-wise form removes the need to justify a per-tf branch in
 /// code review, and a workspace grep gate enforces this discipline.
 #[inline]
-fn align_down(ts: DateTime<Utc>, tf: Timeframe) -> DateTime<Utc> {
+pub(crate) fn align_down(ts: DateTime<Utc>, tf: Timeframe) -> DateTime<Utc> {
     let t0 = ts
         .with_second(0)
         .and_then(|t| t.with_nanosecond(0))
@@ -272,6 +272,23 @@ fn align_down(ts: DateTime<Utc>, tf: Timeframe) -> DateTime<Utc> {
             .with_minute(0)
             .and_then(|t| t.with_hour(0))
             .expect("zeroing minute and hour is always valid"),
+    }
+}
+
+/// Snap `ts` UP to the nearest timeframe boundary at or after `ts`. If `ts` is
+/// already on a boundary, returns `ts` unchanged; otherwise returns
+/// [`align_down`]`(ts, tf) + tf.duration()`.
+///
+/// Used by [`crate::engine::gap_policy::snap_subranges_to_timeframe`] to round
+/// `continuous_only` sub-range starts forward to the next bucket boundary
+/// after the gap partitioner emits a minute-resolution start (RAD-2351).
+#[inline]
+pub(crate) fn align_up(ts: DateTime<Utc>, tf: Timeframe) -> DateTime<Utc> {
+    let floor = align_down(ts, tf);
+    if floor == ts {
+        ts
+    } else {
+        floor + tf.duration()
     }
 }
 

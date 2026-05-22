@@ -21,6 +21,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::aggregator::{Timeframe, align_down, align_up};
 use crate::findings::TimeRange;
 use crate::gap::GapManifest;
 use crate::reader::ClosedRangeUtc;
@@ -181,6 +182,60 @@ pub fn dispatch(
         });
     }
     GapDispatch::SubRanges(subs)
+}
+
+// ---------------------------------------------------------------------------
+// snap_subranges_to_timeframe — RAD-2351 partitioner/aggregator alignment fix.
+// ---------------------------------------------------------------------------
+
+/// Snap each sub-range to the requested timeframe's bucket boundary.
+///
+/// `start_utc` is rounded UP to the next bucket boundary; `end_utc` is rounded
+/// DOWN to the previous bucket boundary. Sub-ranges that collapse to empty
+/// (`snapped_start >= snapped_end`) are dropped. The relative order of the
+/// surviving sub-ranges is preserved.
+///
+/// ## Why this exists (RAD-2351)
+///
+/// Under `--gap-policy continuous_only`, [`dispatch`] partitions the requested
+/// window into maximal gap-free sub-ranges at the **gap detector's**
+/// resolution — currently 1-minute. The aggregator
+/// ([`crate::aggregator::aggregate`]) validates that `range.start` is aligned
+/// to the target timeframe's bucket boundary (15m, 1h, 1d) and rejects
+/// unaligned starts with [`crate::aggregator::AggregateError::MisalignedRange`].
+///
+/// On real data the *next* sub-range after a single-minute intra-day gap
+/// starts at the minute immediately following the gap (e.g.
+/// `2024-01-02 23:39:00 UTC` after a 23:38→23:39 hole) — which is NOT on a
+/// 15-minute boundary. Before this snap the aggregator rejected every
+/// post-gap sub-range with `cache: aggregator error: range.start ... is not
+/// aligned to ... boundary`, dropping every continuous slice except the
+/// first.
+///
+/// ## Trade-off
+///
+/// Bars in the partial-coverage bucket at each gap edge are dropped. This is
+/// the correct semantics: a 15-minute bar cannot be computed from <15
+/// minutes of coverage. Use `--timeframe 1m` to retain the partial slices.
+///
+/// ## Determinism
+///
+/// Pure function: no IO, no clock reads. Given the same `(subs, tf)` pair the
+/// output is byte-stable across re-runs (CACHE-04).
+#[must_use]
+pub fn snap_subranges_to_timeframe(subs: Vec<TimeRange>, tf: Timeframe) -> Vec<TimeRange> {
+    let mut out = Vec::with_capacity(subs.len());
+    for sub in subs {
+        let snapped_start = align_up(sub.start_utc, tf);
+        let snapped_end = align_down(sub.end_utc, tf);
+        if snapped_start < snapped_end {
+            out.push(TimeRange {
+                start_utc: snapped_start,
+                end_utc: snapped_end,
+            });
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -549,6 +604,163 @@ mod tests {
                 }
             } else {
                 panic!("ContinuousOnly must always return SubRanges");
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // snap_subranges_to_timeframe (RAD-2351)
+    // -----------------------------------------------------------------------
+
+    fn ts(h: u32, m: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2024, 1, 2, h, m, 0).unwrap()
+    }
+
+    fn sub(start: DateTime<Utc>, end: DateTime<Utc>) -> TimeRange {
+        TimeRange {
+            start_utc: start,
+            end_utc: end,
+        }
+    }
+
+    #[test]
+    fn snap_15m_already_aligned_passthrough() {
+        // [00:00, 23:45) on a 15m grid — both bounds already on boundary.
+        let subs = vec![sub(ts(0, 0), ts(23, 45))];
+        let out = snap_subranges_to_timeframe(subs.clone(), Timeframe::Tf15m);
+        assert_eq!(out, subs);
+    }
+
+    #[test]
+    fn snap_15m_rounds_start_up_after_gap() {
+        // RAD-2351 repro shape: a post-gap sub-range starting at 23:39 (the
+        // minute after a single-minute hole) must snap forward to the next
+        // 15m bucket boundary at 23:45 so the aggregator's
+        // validate_range_alignment guard accepts it.
+        let out = snap_subranges_to_timeframe(
+            vec![sub(ts(23, 39), Utc.with_ymd_and_hms(2024, 1, 3, 2, 0, 0).unwrap())],
+            Timeframe::Tf15m,
+        );
+        assert_eq!(
+            out,
+            vec![sub(
+                ts(23, 45),
+                Utc.with_ymd_and_hms(2024, 1, 3, 2, 0, 0).unwrap(),
+            )],
+            "post-gap start must snap UP to next 15m boundary"
+        );
+    }
+
+    #[test]
+    fn snap_15m_rounds_end_down() {
+        // [00:00, 23:53) → [00:00, 23:45) on 15m grid.
+        let out = snap_subranges_to_timeframe(
+            vec![sub(ts(0, 0), ts(23, 53))],
+            Timeframe::Tf15m,
+        );
+        assert_eq!(out, vec![sub(ts(0, 0), ts(23, 45))]);
+    }
+
+    #[test]
+    fn snap_15m_drops_subrange_collapsing_to_empty() {
+        // [23:50, 23:59) → snap_up(start) = 24:00 (next day 00:00),
+        // snap_down(end) = 23:45 → start > end → DROP.
+        let out = snap_subranges_to_timeframe(
+            vec![sub(ts(23, 50), ts(23, 59))],
+            Timeframe::Tf15m,
+        );
+        assert!(out.is_empty(), "expected drop, got {out:?}");
+    }
+
+    #[test]
+    fn snap_15m_drops_subrange_smaller_than_one_bucket() {
+        // [10:07, 10:12) — both inside the same 15m bucket. snap_up(10:07) =
+        // 10:15, snap_down(10:12) = 10:00 → DROP.
+        let out = snap_subranges_to_timeframe(
+            vec![sub(ts(10, 7), ts(10, 12))],
+            Timeframe::Tf15m,
+        );
+        assert!(out.is_empty(), "expected drop, got {out:?}");
+    }
+
+    #[test]
+    fn snap_1h_rounds_around_gap() {
+        // Post-gap shape from the issue: 21:45 → 22:00.
+        let out = snap_subranges_to_timeframe(
+            vec![
+                sub(ts(0, 0), ts(21, 30)), // pre-gap, snaps to [00:00, 21:00)
+                sub(ts(21, 45), ts(23, 30)), // post-gap, snaps to [22:00, 23:00)
+            ],
+            Timeframe::Tf1h,
+        );
+        assert_eq!(
+            out,
+            vec![sub(ts(0, 0), ts(21, 0)), sub(ts(22, 0), ts(23, 0)),],
+            "1h snap must round both bounds: pre-gap end down, post-gap start up"
+        );
+    }
+
+    #[test]
+    fn snap_preserves_relative_order() {
+        // Three sub-ranges with varied (un)alignments; surviving outputs keep
+        // their original order.
+        let out = snap_subranges_to_timeframe(
+            vec![
+                sub(ts(0, 0), ts(0, 30)),  // already aligned → unchanged
+                sub(ts(1, 7), ts(2, 53)),  // → [01:15, 02:45)
+                sub(ts(3, 0), ts(3, 5)),   // collapses → dropped
+                sub(ts(4, 30), ts(5, 30)), // already aligned → unchanged
+            ],
+            Timeframe::Tf15m,
+        );
+        assert_eq!(
+            out,
+            vec![
+                sub(ts(0, 0), ts(0, 30)),
+                sub(ts(1, 15), ts(2, 45)),
+                sub(ts(4, 30), ts(5, 30)),
+            ]
+        );
+    }
+
+    #[test]
+    fn snap_empty_input_returns_empty() {
+        let out = snap_subranges_to_timeframe(Vec::new(), Timeframe::Tf15m);
+        assert!(out.is_empty());
+    }
+
+    proptest! {
+        #[test]
+        fn snap_output_always_aligned_or_dropped(
+            // Two minute offsets within a day, lower first; timeframe enum index.
+            a in 0u32..1440,
+            len in 1u32..1440,
+            tf_idx in 0u8..3,
+        ) {
+            let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap()
+                + chrono::Duration::minutes(a as i64);
+            let end = start + chrono::Duration::minutes(len as i64);
+            let tf = match tf_idx {
+                0 => Timeframe::Tf15m,
+                1 => Timeframe::Tf1h,
+                _ => Timeframe::Tf1d,
+            };
+            let out = snap_subranges_to_timeframe(
+                vec![TimeRange { start_utc: start, end_utc: end }],
+                tf,
+            );
+            for tr in &out {
+                // Both bounds must be on the timeframe grid.
+                let dur = tf.duration().num_minutes();
+                let mins_from_epoch = (tr.start_utc.timestamp() / 60) as i64;
+                prop_assert_eq!(mins_from_epoch % dur, 0, "snapped start not aligned: {:?}", tr);
+                let mins_end = (tr.end_utc.timestamp() / 60) as i64;
+                prop_assert_eq!(mins_end % dur, 0, "snapped end not aligned: {:?}", tr);
+                // Output sub-range must be non-empty.
+                prop_assert!(tr.start_utc < tr.end_utc, "snapped sub-range must be non-empty");
+                // Snapped sub-range is contained in the input range.
+                prop_assert!(tr.start_utc >= start);
+                prop_assert!(tr.end_utc <= end);
             }
         }
     }

@@ -465,6 +465,13 @@ pub fn run_one_with_registry<R: Reader>(
                 .gap_aborted += 1;
         }
         GapDispatch::SubRanges(sub_ranges) => {
+            // RAD-2351: snap each sub-range UP/DOWN to the requested
+            // timeframe's bucket boundary before handing to the aggregator.
+            // `dispatch` partitions at the 1-minute gap-detector resolution;
+            // the aggregator validates that `range.start` is aligned to the
+            // target timeframe and rejects unaligned starts. See
+            // `gap_policy::snap_subranges_to_timeframe` for rationale.
+            let sub_ranges = gap_policy::snap_subranges_to_timeframe(sub_ranges, req.timeframe);
             let cache = BarCache::new(&cfg.bar_cache_root);
             for sub_range in sub_ranges {
                 // Step 6a — cancel-before-subrange yield site
@@ -830,6 +837,12 @@ fn dispatch_pair_arity_body<R: Reader>(
                 .gap_aborted += 1;
         }
         GapDispatch::SubRanges(sub_ranges) => {
+            // RAD-2351: snap each sub-range UP/DOWN to the requested
+            // timeframe's bucket boundary before handing to the aggregator.
+            // Mirrors the single-arity path; `dispatch_pair` joins the per-
+            // leg gap manifests but the resulting sub-range bounds are still
+            // at the 1-minute gap-detector resolution.
+            let sub_ranges = gap_policy::snap_subranges_to_timeframe(sub_ranges, req.timeframe);
             let cache = BarCache::new(&cfg.bar_cache_root);
             for sub_range in sub_ranges {
                 if cancel.load(Ordering::Relaxed) {
