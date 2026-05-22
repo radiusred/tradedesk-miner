@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Radius Red Ltd.
+#
+# benches/recipes/full-sweep.toml — D7-03 Layer 2 reference workload.
+#
+# Production-scale sweep target for the `hyperfine` wall-clock harness
+# (scripts/run-bench.sh). Three scan families exercised:
+#
+#   1. stats.autocorr.ljung_box@1            (single-arity, stats family)
+#   2. cross.cointegration.engle_granger@1   (pair-arity, cross family — the
+#                                             hottest scan per RESEARCH Open
+#                                             Question 5: full ADF + OLS +
+#                                             half-life inner loop)
+#   3. seas.bucket.hour_of_day@1             (single-arity, seasonality family)
+#
+# Axis cardinality:
+#   * 28 instruments — FX majors + crosses + commodity pairs. The exact list
+#     mirrors the production-deployment convention used by `tradedesk-dukascopy`
+#     consumers; the shape (28 distinct symbol:side identifiers) is what
+#     matters for benchmarking, not the specific symbols. Bid side only —
+#     ask-side fingerprints are the same shape and the wall-clock numbers
+#     would simply double.
+#   * 3 timeframes per the D7-03 spec: 15m / 1h / 1d.
+#   * 6 years: 2019-01-01..2024-12-31 (inclusive end-date per
+#     SweepManifest window grammar).
+#
+# Per RESEARCH Open Question 3: recipes are PLAIN `SweepManifest` TOML — no
+# bench-wrapper type. Bench knobs (`--warmup`, `--runs`) live on the
+# hyperfine command line, not in this file.
+#
+# Per RESEARCH Open Question 5: the engle_granger job is the source of the
+# reference flamegraph captured via `samply record` (see
+# docs/bench-results.md ## Reference flamegraph).
+#
+# This recipe expects a real production-shape Dukascopy cache at
+# MINER_CACHE_ROOT — the checked-in fixture cache covers only 2 symbols × 1
+# month and is sized for the single-job.toml dhat target. Running this
+# recipe against the fixture will produce many ScanError envelopes (cache
+# misses on absent instrument/year combinations) which is the expected
+# behaviour but not a useful benchmark workload.
+
+[sweep]
+# Deterministic master seed (same as single-job.toml so the two recipes are
+# byte-stable across regen and feed the same HYG-05 determinism gate).
+seed = 0xBEEFCAFE
+# Cap above 28 × 3 × 6 = 504 per job × 3 jobs = 1512 maximum estimated jobs.
+# Default would be 100_000; pinning explicitly here documents the upper
+# bound the recipe is sized for and short-circuits the
+# `PreflightCode::SweepTooLarge` gate at a known cardinality.
+max_jobs = 5000
+
+[fdr]
+family = "scan_id"
+alpha = 0.05
+
+# Job 1 — stats family: Ljung-Box single-arity autocorrelation test.
+[[jobs]]
+scan = "stats.autocorr.ljung_box@1"
+instruments = [
+  # FX majors (G7 + USD crosses)
+  "EURUSD:bid", "GBPUSD:bid", "USDJPY:bid", "USDCHF:bid",
+  "AUDUSD:bid", "NZDUSD:bid", "USDCAD:bid",
+  # EUR crosses
+  "EURGBP:bid", "EURJPY:bid", "EURCHF:bid", "EURAUD:bid", "EURNZD:bid",
+  "EURCAD:bid",
+  # GBP crosses
+  "GBPJPY:bid", "GBPCHF:bid", "GBPAUD:bid", "GBPCAD:bid", "GBPNZD:bid",
+  # JPY crosses
+  "AUDJPY:bid", "CADJPY:bid", "CHFJPY:bid", "NZDJPY:bid",
+  # AUD / NZD / CAD crosses
+  "AUDCAD:bid", "AUDCHF:bid", "AUDNZD:bid", "NZDCAD:bid", "NZDCHF:bid",
+  "CADCHF:bid",
+]
+timeframes = ["15m", "1h", "1d"]
+windows = ["2019-01-01:2024-12-31"]
+params = { lags = 10 }
+
+# Job 2 — cross family: Engle-Granger cointegration pair-arity scan. Five
+# representative pairs (cardinality kept modest because pair-arity scans are
+# the hottest workload — RESEARCH Open Question 5).
+[[jobs]]
+scan = "cross.cointegration.engle_granger@1"
+instruments = [
+  ["EURUSD:bid", "GBPUSD:bid"],
+  ["AUDUSD:bid", "NZDUSD:bid"],
+  ["USDJPY:bid", "USDCHF:bid"],
+  ["EURGBP:bid", "EURCHF:bid"],
+  ["GBPJPY:bid", "GBPCHF:bid"],
+]
+timeframes = ["15m", "1h", "1d"]
+windows = ["2019-01-01:2024-12-31"]
+params = {}
+
+# Job 3 — seasonality family: hour-of-day bucket scan across all 28
+# instruments (same axis as Job 1).
+[[jobs]]
+scan = "seas.bucket.hour_of_day@1"
+instruments = [
+  "EURUSD:bid", "GBPUSD:bid", "USDJPY:bid", "USDCHF:bid",
+  "AUDUSD:bid", "NZDUSD:bid", "USDCAD:bid",
+  "EURGBP:bid", "EURJPY:bid", "EURCHF:bid", "EURAUD:bid", "EURNZD:bid",
+  "EURCAD:bid",
+  "GBPJPY:bid", "GBPCHF:bid", "GBPAUD:bid", "GBPCAD:bid", "GBPNZD:bid",
+  "AUDJPY:bid", "CADJPY:bid", "CHFJPY:bid", "NZDJPY:bid",
+  "AUDCAD:bid", "AUDCHF:bid", "AUDNZD:bid", "NZDCAD:bid", "NZDCHF:bid",
+  "CADCHF:bid",
+]
+timeframes = ["15m", "1h", "1d"]
+windows = ["2019-01-01:2024-12-31"]
+params = {}

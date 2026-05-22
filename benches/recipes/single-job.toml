@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Radius Red Ltd.
+#
+# benches/recipes/single-job.toml — D7-03 Layer 2 dhat profiling target.
+#
+# Single instrument, single scan family, single 1-month window. Fits inside
+# the synthetic fixture cache produced by `scripts/generate-fixture-cache.sh`
+# (EURUSD + GBPUSD, bid side, January 2024 weekdays only — January is the
+# month gen-fixtures.rs::FIXTURE_END_DATE caps at).
+#
+# Consumed by:
+#   * `scripts/run-alloc-profile.sh` (dhat heap profiling — sets
+#     MINER_CACHE_ROOT=./tests/fixtures/cache and builds with --features dhat).
+#   * `cargo run -p miner-bench --bin miner-bench -- --recipe ...` for the
+#     end-to-end smoke check that the recipe-runner contract holds against
+#     the checked-in fixture cache.
+#
+# Per RESEARCH Open Question 3: recipes are PLAIN `SweepManifest` TOML — no
+# bench-wrapper type. Bench knobs (`--warmup`, `--runs`) come from CLI args
+# on the `miner-bench` binary, NOT from this file.
+#
+# Per RESEARCH Open Question 5: the reference flamegraph recipe in
+# `docs/bench-results.md` ## Reference flamegraph uses this same TOML file
+# with `samply record` for the hot-path capture.
+
+[sweep]
+# Deterministic master seed. Identical hex value to the Phase 5 example at
+# docs/examples/sample_sweep.toml so the bench recipe is byte-stable across
+# regen runs and the determinism gate (HYG-05) is exercised the same way.
+seed = 0xBEEFCAFE
+
+[fdr]
+family = "scan_id"
+alpha = 0.05
+
+[[jobs]]
+# Hour-of-day seasonality bucket scan (SEAS-01). Single-arity, Single
+# instrument, supports `bootstrap` hygiene — appropriate for the single-job
+# dhat profiling target because the kernel's allocation surface (24-bucket
+# stats, log-returns vec, bucket-keys vec) is small and predictable.
+scan = "seas.bucket.hour_of_day@1"
+instruments = ["EURUSD:bid"]
+timeframes = ["15m"]
+# January 2024 — fits inside the fixture cache (gen-fixtures.rs covers
+# January 2024 weekdays only). Inclusive end date per the SweepManifest
+# `YYYY-MM-DD:YYYY-MM-DD` window grammar.
+windows = ["2024-01-01:2024-01-31"]
+params = {}

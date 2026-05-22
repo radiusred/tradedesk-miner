@@ -15,3 +15,8 @@ target/
 # ignored.
 tests/fixtures/cache/**/*.tmp
 tests/fixtures/cache/**/*.bak
+
+# Plan 07-08: `scripts/run-alloc-profile.sh` writes `dhat-heap.json` to CWD
+# (the dhat global allocator's destructor emits the JSON on process exit).
+# This is per-run profiling output — never committed.
+dhat-heap.json
