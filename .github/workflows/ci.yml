@@ -86,3 +86,23 @@ jobs:
             echo "::error::schema drifted from Rust types — re-run \`cargo xtask gen-schema\` and commit"
             exit 1
           fi
+
+      # Gate 7 (Phase 07 Plan 07-03 / D7-05) — cargo audit against the RustSec
+      # advisory database. Runs on every push and PR; zero days tolerance.
+      # Temporary advisory ignores live in `deny.toml`'s `[advisories] ignore`
+      # array with an inline `RUSTSEC-YYYY-NNNN — <reason> — review by
+      # YYYY-MM-DD` comment per the allowlist-by-exception policy in
+      # CONTRIBUTING.md ## Quality gates.
+      - name: cargo audit
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Gate 8 (Phase 07 Plan 07-03 / D7-05) — cargo deny check. Runs all four
+      # sub-checks against `deny.toml` at the repo root: licenses (D7-05
+      # allowlist of 9 permissive licenses), bans (wildcards denied, multi-
+      # version warned), advisories (mirrors cargo audit), sources
+      # (unknown-registry + unknown-git denied). The action force-refreshes the
+      # advisory database before each run (RESEARCH §Pitfall 5).
+      - name: cargo deny check
+        uses: EmbarkStudios/cargo-deny-action@v2
