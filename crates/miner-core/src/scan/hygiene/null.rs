@@ -349,7 +349,10 @@ where
         for (i, slot) in spectrum_scratch.iter_mut().enumerate() {
             let phi: f64 = rng.gen_range(0.0..std::f64::consts::TAU);
             let (sin_phi, cos_phi) = phi.sin_cos();
-            *slot = Complex::new(target_amplitudes[i] * cos_phi, target_amplitudes[i] * sin_phi);
+            *slot = Complex::new(
+                target_amplitudes[i] * cos_phi,
+                target_amplitudes[i] * sin_phi,
+            );
         }
         // Hermitian symmetry is handled automatically by realfft's
         // real-output API (the DC and Nyquist bins must be real-valued).
@@ -380,12 +383,8 @@ where
             // Stable rank computation: pair (idx, value), sort_by with
             // explicit index tiebreaker on equal values — the anti-pattern
             // check from Test 6 / threat T-07-05-01.
-            let mut idx_val: Vec<(usize, f64)> = time_scratch
-                .iter()
-                .take(n)
-                .copied()
-                .enumerate()
-                .collect();
+            let mut idx_val: Vec<(usize, f64)> =
+                time_scratch.iter().take(n).copied().enumerate().collect();
             idx_val.sort_by(|a, b| {
                 a.1.partial_cmp(&b.1)
                     .unwrap_or(std::cmp::Ordering::Equal)
@@ -439,7 +438,10 @@ where
             // amplitudes with target amplitudes (preserves spectrum),
             // keep new phases. Skipped on the convergence break above
             // because the surrogate is already captured in surrogate_out.
-            if r2c.process(&mut time_scratch, &mut spectrum_scratch).is_err() {
+            if r2c
+                .process(&mut time_scratch, &mut spectrum_scratch)
+                .is_err()
+            {
                 return f64::NAN;
             }
             for (i, slot) in spectrum_scratch.iter_mut().enumerate() {
@@ -830,17 +832,8 @@ mod tests {
     fn iaaft_cancel_aborts_resampling() {
         let s = iaaft_test_series();
         let cancel = AtomicBool::new(true);
-        let p = iaaft_phase_scramble_null_p(
-            &s,
-            0.0,
-            mean,
-            100,
-            42,
-            Tail::TwoSided,
-            &cancel,
-            10,
-            1.0,
-        );
+        let p =
+            iaaft_phase_scramble_null_p(&s, 0.0, mean, 100, 42, Tail::TwoSided, &cancel, 10, 1.0);
         assert!(p.is_nan(), "cancel-before-call must return NaN; got {p}");
     }
 
@@ -852,7 +845,11 @@ mod tests {
     #[test]
     fn iaaft_padding_uses_5_smooth_length() {
         assert_eq!(next_5_smooth(1024), 1024, "1024 = 2^10 is 5-smooth");
-        assert_eq!(next_5_smooth(1009), 1024, "1009 is prime; next 5-smooth = 1024");
+        assert_eq!(
+            next_5_smooth(1009),
+            1024,
+            "1009 is prime; next 5-smooth = 1024"
+        );
         assert_eq!(
             next_5_smooth(100_000),
             100_000,

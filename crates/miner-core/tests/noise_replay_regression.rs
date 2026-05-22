@@ -79,7 +79,7 @@ use miner_reader_dukascopy::DukascopyReader;
 use common::{BufferSink, synthetic_cache::SyntheticCache};
 
 /// Master GBM seed from D7-04 §"Null dataset construction".
-const GBM_SEED: u64 = 0xC0FFEE_C0FFEE;
+const GBM_SEED: u64 = 0xC0FF_EEC0_FFEE;
 
 /// Number of synthetic-null instruments (NULL_00 .. NULL_99).
 const N_INSTRUMENTS: usize = 100;
@@ -258,7 +258,7 @@ fn count_false_positives(summary: &serde_json::Value, alpha: f64) -> usize {
         .and_then(|v| v.as_object())
         .expect("fdr_by_family is an object");
     let mut count = 0_usize;
-    for (_family_key, family) in families.iter() {
+    for (_family_key, family) in families {
         let per_finding = family
             .get("per_finding")
             .and_then(|v| v.as_array())
@@ -317,7 +317,10 @@ fn noise_replay_300_jobs_at_alpha_005_caps_false_positives_at_30() {
         "totals.jobs_run must equal 250 (100 ljung_box + 50 engle_granger + 100 hour_of_day)"
     );
     assert_eq!(scan_errors, 0, "no scan errors expected on synthetic null");
-    assert_eq!(gap_aborted, 0, "no gap aborts expected on contiguous synthetic data");
+    assert_eq!(
+        gap_aborted, 0,
+        "no gap aborts expected on contiguous synthetic data"
+    );
 
     // Verify the BH-FDR families: one per scan_id under the
     // `[fdr] family = "scan_id"` config (Plan 05-01 / D5-02 default).
@@ -327,7 +330,7 @@ fn noise_replay_300_jobs_at_alpha_005_caps_false_positives_at_30() {
         .expect("fdr_by_family map");
     // Three scans → three families (the v1 scope key is `scan_id@version`).
     assert!(
-        families.len() >= 1 && families.len() <= 3,
+        !families.is_empty() && families.len() <= 3,
         "expected 1..3 FDR families; got {} ({})",
         families.len(),
         families.keys().cloned().collect::<Vec<_>>().join(", ")

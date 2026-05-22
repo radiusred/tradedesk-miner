@@ -86,7 +86,11 @@ fn biased_acf(x: &[f64], max_lag: usize) -> Vec<f64> {
 // - `clippy::needless_range_loop`: `acf[k]` is the index-aware access we want;
 //   `enumerate` would obscure the cumsum-style summation order that pins
 //   statsmodels' `np.cumsum` equality (see kernel.rs:115 — same allow).
-#[allow(clippy::cast_precision_loss, clippy::similar_names, clippy::needless_range_loop)]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::similar_names,
+    clippy::needless_range_loop
+)]
 fn ljung_box_q_and_p(returns_n: usize, acf: &[f64], max_lag: usize) -> (Vec<f64>, Vec<f64>) {
     debug_assert!(max_lag >= 1);
     debug_assert!(acf.len() > max_lag);

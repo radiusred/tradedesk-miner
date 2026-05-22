@@ -52,7 +52,9 @@ fn ols_fit_4d(design: &DMatrix<f64>, y: &DVector<f64>) -> [f64; 4] {
     let x_transpose = design.transpose();
     let xtx = &x_transpose * design;
     let xty = &x_transpose * y;
-    let xtx_inv = xtx.try_inverse().expect("non-singular for synthetic LCG inputs");
+    let xtx_inv = xtx
+        .try_inverse()
+        .expect("non-singular for synthetic LCG inputs");
     let coeffs = xtx_inv * xty;
     [
         coeffs[(0, 0)],
