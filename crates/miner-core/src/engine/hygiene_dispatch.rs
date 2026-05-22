@@ -566,6 +566,107 @@ where
     (f64::from(more_extreme) + 1.0) / (f64::from(n_resamples) + 1.0)
 }
 
+/// Pair-arity IAAFT phase-scramble null (Plan 07-05).
+///
+/// Mirrors [`pair_circular_shift_null_p`] but the surrogate for leg B is
+/// produced by the IAAFT (Theiler 1992) phase-scramble kernel rather than
+/// a circular rotation — preserves leg B's marginal AND power spectrum
+/// across resamples while leg A is held fixed. Use for pair-arity scans
+/// that opt into PhaseScramble (lead_lag, engle_granger). The deterministic-
+/// seeding contract is preserved by deriving a per-resample sub-seed via a
+/// single `Xoshiro256PlusPlus::next_u64()` call.
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "n_resamples / more_extreme are u32 counts; f64 conversion exact for inputs < 2^53"
+)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "WR-04 cancel parameter; mirrors `pair_circular_shift_null_p` positional contract"
+)]
+pub(crate) fn pair_iaaft_phase_scramble_null_p<F>(
+    values_a: &[f64],
+    values_b: &[f64],
+    observed_stat: f64,
+    stat: F,
+    n_resamples: u32,
+    seed: u64,
+    tail: crate::scan::hygiene::null::Tail,
+    cancel: &AtomicBool,
+) -> f64
+where
+    F: Fn(&[f64], &[f64]) -> f64,
+{
+    use crate::scan::hygiene::bootstrap::BOOTSTRAP_CANCEL_POLL_CADENCE;
+    use crate::scan::hygiene::null::{Tail, iaaft_phase_scramble_null_p};
+    debug_assert_eq!(
+        values_a.len(),
+        values_b.len(),
+        "pair_iaaft_phase_scramble_null_p: pair length mismatch"
+    );
+    let n = values_a.len();
+    if n < 4 || n_resamples == 0 {
+        return f64::NAN;
+    }
+    // For pair-arity, the simplest deterministic shape is: build ONE
+    // IAAFT surrogate of leg B per resample (using a sub-seed derived
+    // from the master `seed`), then apply the pair stat against the
+    // unchanged leg A and the surrogate leg B.
+    //
+    // To remain consistent with the iaaft_phase_scramble_null_p single-
+    // arity contract (which generates n_resamples surrogates internally)
+    // we call it ONCE with n_resamples = 1 per pair-resample, using a
+    // deterministic sub-seed each time. This keeps the kernel surface
+    // narrow without duplicating the IAAFT inner loop.
+    let n_resamples = n_resamples.min(crate::engine::HYGIENE_RESAMPLE_CEILING);
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
+    let mut more_extreme: u32 = 0;
+    let obs_abs = observed_stat.abs();
+    use std::cell::RefCell;
+    let captured: RefCell<Option<Vec<f64>>> = RefCell::new(None);
+    for resample in 0..n_resamples {
+        if resample % BOOTSTRAP_CANCEL_POLL_CADENCE == 0 && cancel.load(Ordering::Relaxed) {
+            return f64::NAN;
+        }
+        let sub_seed: u64 = rng.next_u64();
+        captured.replace(None);
+        // Invoke the single-arity kernel with n_resamples=1 and a stat
+        // closure that captures the surrogate via `RefCell`. The returned
+        // p-value is discarded; we only need the surrogate.
+        let _ = iaaft_phase_scramble_null_p(
+            values_b,
+            0.0,
+            |x: &[f64]| -> f64 {
+                let mut slot = captured.borrow_mut();
+                if slot.is_none() {
+                    *slot = Some(x.to_vec());
+                }
+                0.0
+            },
+            1,
+            sub_seed,
+            Tail::TwoSided,
+            cancel,
+            10,
+            1.0,
+        );
+        let surrogate_b = match captured.borrow().clone() {
+            Some(s) => s,
+            None => return f64::NAN,
+        };
+        let surr_stat = stat(values_a, &surrogate_b);
+        let is_more_extreme = match tail {
+            Tail::TwoSided => surr_stat.abs() >= obs_abs,
+            Tail::OneSidedPos => surr_stat >= observed_stat,
+            Tail::OneSidedNeg => surr_stat <= observed_stat,
+        };
+        if is_more_extreme {
+            more_extreme += 1;
+        }
+    }
+    (f64::from(more_extreme) + 1.0) / (f64::from(n_resamples) + 1.0)
+}
+
 // ---------------------------------------------------------------------------
 // ANOM closures (Single-arity)
 // ---------------------------------------------------------------------------

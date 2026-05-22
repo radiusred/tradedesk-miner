@@ -1255,16 +1255,27 @@ fn apply_hygiene_mutations(
                     )
                 }
                 NullMethod::PhaseScramble => {
-                    // IAAFT phase-scramble defers to Phase 7 per Plan
-                    // 05-02 SUMMARY; preflight (validate_hygiene_support)
-                    // rejects PhaseScramble on every scan whose
-                    // `supports_null_method(PhaseScramble)` is false, but
-                    // belt-and-braces: the kernel is unavailable, so
-                    // skip the mutation and let the scan keep its
-                    // analytic p-value. The repro envelope still echoes
-                    // the requested method so the consumer sees what
-                    // the engine attempted.
-                    f64::NAN
+                    // Plan 07-05 / HYG-02: IAAFT phase-scramble lands as
+                    // a sibling to `circular_shift_null_p`. Preserves
+                    // BOTH the marginal distribution and the power
+                    // spectrum of the input series — the gold-standard
+                    // null for autocorrelation / spectral tests where
+                    // circular-shift is insufficient. Tuning constants
+                    // (`max_iter = 10`, `convergence_tol = 1.0`) are
+                    // pinned from Plan 05-02 SUMMARY §"IAAFT DECISION"
+                    // (Theiler 1992; Schreiber & Schmitz 2000).
+                    let tail = hygiene_dispatch::tail_for(&scan_id_at_version);
+                    hygiene_null::iaaft_phase_scramble_null_p(
+                        &values,
+                        observed_stat,
+                        stat_fn,
+                        n,
+                        job_seed,
+                        tail,
+                        cancel.as_ref(),
+                        10,
+                        1.0,
+                    )
                 }
             };
             if p.is_finite() && (0.0..=1.0).contains(&p) {
@@ -1417,11 +1428,22 @@ fn apply_pair_hygiene(
                 )
             }
             NullMethod::PhaseScramble => {
-                // IAAFT phase-scramble defers to Phase 7. Preflight
-                // rejects PhaseScramble on every Pair-arity scan whose
-                // `supports_null_method(PhaseScramble)` is false. Belt-
-                // and-braces: skip the mutation here too.
-                f64::NAN
+                // Plan 07-05 / HYG-02: pair-arity IAAFT phase-scramble.
+                // Mirrors `pair_circular_shift_null_p` shape (scramble
+                // leg B only, hold leg A fixed); uses the IAAFT
+                // surrogate generator under the hood for
+                // marginal+spectrum preservation.
+                let tail = hygiene_dispatch::tail_for(&result.scan_id_at_version);
+                hygiene_dispatch::pair_iaaft_phase_scramble_null_p(
+                    values_a,
+                    values_b,
+                    observed_stat,
+                    pair_stat,
+                    n,
+                    job_seed,
+                    tail,
+                    cancel.as_ref(),
+                )
             }
         };
         if p.is_finite() && (0.0..=1.0).contains(&p) {
