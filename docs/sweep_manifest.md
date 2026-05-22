@@ -15,6 +15,8 @@ The sweep runner emits the same locked `Finding` envelopes as `miner scan` — s
 
 ## Basic Usage
 
+The shipped manifest at [`docs/examples/sample_sweep.toml`](examples/sample_sweep.toml) — tested against the EURUSD/GBPUSD `:bid` Jan-2024 cache — runs clean (0 hygiene-induced `scan_error` envelopes) under `miner sweep`.
+
 The canonical 2-job manifest used by the smoke test at `crates/miner-core/tests/sweep_smoke.rs` lines 58-75:
 
 ```toml
