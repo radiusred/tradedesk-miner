@@ -65,17 +65,32 @@ use crate::sweep::manifest::{SweepManifest, validate};
 /// and returns `RunOutcome::Ok` without invoking any scan bodies (per
 /// RESEARCH Pattern 5).
 ///
-/// `sleep_after_first_finding_ms` is the SIGINT-race hook threaded through
-/// `job_to_scan_request` onto every per-job
-/// `ScanRequest.sleep_after_first_finding_ms`. Plan 05-05's `sigint_mid_sweep`
-/// integration test uses it to make the cancel race deterministic. The field
-/// itself is plain `Option<u64>` (always present) because callers may need
-/// to forward `None` even from a release build; the cfg gate lives on the
-/// **kernel-side** sleep loop (`ScanCtx.sleep_after_first_finding_ms` /
-/// `LjungBoxScan::run`), which is the actual "test-only behaviour" boundary.
-/// Setting this field from a release-built binary is a no-op because the
-/// downstream `ScanRequest.sleep_after_first_finding_ms` field is itself
-/// `#[cfg(any(test, feature = "test-internal"))]`-gated.
+/// `sleep_after_first_finding_ms` is the SIGINT-race hook used by Plan 05-05's
+/// `sigint_mid_sweep` integration test to make the cancel race deterministic.
+/// It is consumed in two places, both `#[cfg(any(test, feature =
+/// "test-internal"))]`-gated:
+///
+/// 1. **Per-job kernel side** — forwarded into each job's
+///    `ScanRequest.sleep_after_first_finding_ms` so the in-kernel
+///    cancel-aware sleep loop (e.g. `LjungBoxScan::run`) fires after the
+///    first per-job `Finding::Result` is written to the in-memory
+///    `JobSink`. This pauses the rayon worker but is NOT visible on stdout
+///    (the sweep buffers per-job findings before draining).
+///
+/// 2. **Sweep drain side (RAD-2353)** — fires *inside* the deterministic
+///    drain loop, after the first finding has been written through to the
+///    real `FindingSink`. Without this hook the drain emits every buffered
+///    finding plus the trailing `SweepSummary` and `RunEnd` envelopes back
+///    to stdout in microseconds, so on a fast host the test's SIGINT
+///    delivery loses the race against the `SweepSummary` write. The
+///    drain-level pause gives the test (and any other mid-sweep cancel
+///    source) a deterministic window between the first stdout finding and
+///    the `SweepSummary` cutoff in HYG-05 / D5-04.
+///
+/// The field itself is plain `Option<u64>` (always present) so the
+/// `SweepOptions { .. }` struct literal in the CLI compiles uniformly
+/// across feature sets. Setting this field from a release-built binary is
+/// a no-op: both consumption sites are cfg-gated out of release.
 #[derive(Debug, Clone, Default)]
 pub struct SweepOptions {
     pub dry_run: bool,
@@ -321,6 +336,16 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
     // envelope. The cleanup label below emits RunEnd before bailing
     // in BOTH the cancel-during-drain and sink-write-error paths.
     let mut sink_error: Option<MinerError> = None;
+    // RAD-2353 drain-level slow-down hook tracker. Gated symmetrically with
+    // the consuming sleep block below so release builds (no `test-internal`)
+    // do not carry the dead binding. The pause fires exactly once —
+    // between the first stdout-visible finding and the rest of the drain
+    // (subsequent findings + SweepSummary + RunEnd). The per-job kernel
+    // hook fires inside the in-memory JobSink and is therefore invisible
+    // to stdout-reading test consumers; this drain-level hook is what
+    // gives the SIGINT-mid-sweep test a deterministic delivery window.
+    #[cfg(any(test, feature = "test-internal"))]
+    let mut first_sink_write_done = false;
     'drain: for (_idx, findings) in buffered {
         totals.jobs_run = totals.jobs_run.saturating_add(1);
         for finding in findings {
@@ -369,6 +394,28 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
             if let Err(e) = sink.write_envelope(&finding) {
                 sink_error = Some(e);
                 break 'drain;
+            }
+
+            // RAD-2353 — cancel-aware sleep hook on the sweep runner,
+            // symmetric to the kernel-side hook (Plan 03-02 /
+            // `LjungBoxScan::run`). Fires exactly once, after the first
+            // successful write to the real sink. Polls cancel every
+            // ~10ms so a SIGINT during the pause exits within one tick
+            // and the outer loop's cancel check trips on the next
+            // iteration, breaking into the SweepSummary-suppression path
+            // at Step 8.
+            #[cfg(any(test, feature = "test-internal"))]
+            if !first_sink_write_done {
+                first_sink_write_done = true;
+                if let Some(total_ms) = opts.sleep_after_first_finding_ms {
+                    let step = std::time::Duration::from_millis(10);
+                    let mut remaining = std::time::Duration::from_millis(total_ms);
+                    while !cancel.load(Ordering::Relaxed) && !remaining.is_zero() {
+                        let pause = remaining.min(step);
+                        std::thread::sleep(pause);
+                        remaining = remaining.saturating_sub(pause);
+                    }
+                }
             }
         }
     }
