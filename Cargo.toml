@@ -104,17 +104,34 @@ toml               = "0.8"
 # `sweep::executor::run_sweep` via the deterministic-order buffered drain
 # pattern (RESEARCH §"Pattern 4").
 rayon              = "1.10"
-# Phase 7 (Plan 07-05) additions per 07-RESEARCH.md §"Standard Stack":
-# - `realfft` 3.5 — real-input FFT for IAAFT phase-scramble (Plan 05-02 deferred).
+# Phase 7 (Plans 07-05, 07-06) additions per 07-RESEARCH.md §"Standard Stack":
+# - `realfft` 3.5 — real-input FFT for IAAFT phase-scramble (Plan 05-02 deferred, Plan 07-05 landed).
 #   Transitively pulls rustfft 6.x; both verified sync-only via crates.io README inspection
 #   and `cargo tree -p miner-core --edges normal,build` post-add. FOUND-04 invariant
-#   re-checked in `crates/miner-core/src/scan/hygiene/null.rs` Task 1 acceptance.
-#   `criterion`, `dhat`, and `[profile.release] debug = 1` are intentionally NOT added
-#   here — Plan 07-06 owns those.
-realfft            = "3.5"
+#   re-checked in `crates/miner-core/src/scan/hygiene/null.rs` Plan 07-05 Task 1 acceptance.
+# - `criterion` 0.8 — microbench harness; `html_reports` feature enables
+#   `target/criterion/<bench>/index.html` reports. Wired as a `[dev-dependencies]` entry
+#   on `miner-core` (Plan 07-06); bench-only, so it does NOT leak into the production
+#   `--edges normal,build` graph (FOUND-04 invariant preserved).
+# - `dhat` 0.3 — heap profiler. Declared at workspace scope so the lockfile entry
+#   lands in a single coherent step with the criterion add; the `#[global_allocator]`
+#   wiring lives BEHIND the `dhat` feature on `miner-bench` only (Plan 07-08). The
+#   FOUND-04 invariant requires miner-core to remain dhat-free; this workspace-dep
+#   declaration is reuse-only and does NOT add dhat to miner-core's dependency graph.
+realfft            = "3.5"   # added by Plan 07-05
+criterion          = { version = "0.8", features = ["html_reports"] }
+dhat               = "0.3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+
+# Phase 7 (Plan 07-06) — `debug = 1` (line-tables-only) is required for `dhat-rs` symbol
+# attribution per 07-RESEARCH.md §"Pitfall 1". MUST NOT be `debug = true` (full DWARF
+# would bloat release binaries ~5x). A one-time `cargo clean` may be required after
+# this change because cached release artifacts won't have the debug-info build flag set;
+# Plan 07-08 owns the dhat-profiling consumer that depends on this setting.
+[profile.release]
+debug = 1
