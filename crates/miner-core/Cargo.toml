@@ -119,6 +119,12 @@ miner-core           = { path = ".", features = ["test-internal"] }
 # link errors). NOTE: `dhat` is deliberately NOT added as a miner-core dep here
 # (07-RESEARCH §"Anti-Patterns"); dhat is gated to `miner-bench` only via Plan 07-08.
 criterion.workspace  = true
+# Phase 7 (Plan 07-06) — `csv` is needed by `benches/bench_csv_parse_1day.rs` to
+# mirror the production CSV-parse callsite in `crates/miner-reader-dukascopy/src/reader.rs`.
+# The bench measures the same `csv::ReaderBuilder::new().has_headers(true).from_reader(...)`
+# pipeline against an in-memory decompressed buffer; dev-dep keeps it out of the
+# production graph.
+csv.workspace        = true
 
 [lints]
 workspace = true

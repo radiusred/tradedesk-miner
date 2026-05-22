@@ -109,7 +109,7 @@ rayon              = "1.10"
 #   Transitively pulls rustfft 6.x; both verified sync-only via crates.io README inspection
 #   and `cargo tree -p miner-core --edges normal,build` post-add. FOUND-04 invariant
 #   re-checked in `crates/miner-core/src/scan/hygiene/null.rs` Plan 07-05 Task 1 acceptance.
-# - `criterion` 0.8 — microbench harness; `html_reports` feature enables
+# - `criterion` 0.7 — microbench harness; `html_reports` feature enables
 #   `target/criterion/<bench>/index.html` reports. Wired as a `[dev-dependencies]` entry
 #   on `miner-core` (Plan 07-06); bench-only, so it does NOT leak into the production
 #   `--edges normal,build` graph (FOUND-04 invariant preserved).
@@ -119,7 +119,7 @@ rayon              = "1.10"
 #   FOUND-04 invariant requires miner-core to remain dhat-free; this workspace-dep
 #   declaration is reuse-only and does NOT add dhat to miner-core's dependency graph.
 realfft            = "3.5"   # added by Plan 07-05
-criterion          = { version = "0.8", features = ["html_reports"] }
+criterion          = { version = "0.7", features = ["html_reports"] }
 dhat               = "0.3"
 
 [workspace.lints.rust]
