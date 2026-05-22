@@ -50,6 +50,25 @@ gates 1 and 2; run the others locally before pushing.
    `schemas/findings-v1.schema.json` from the `schemars` derives. The
    committed schema is the contract — if you change a Rust type that affects
    the envelope, re-run the gen and commit the diff in the same PR.
+7. **cargo audit.** CI runs `rustsec/audit-check@v2.0.0` against the
+   [RustSec advisory database](https://rustsec.org/) on every push and PR.
+   Fails the build on any advisory hit. Zero days tolerance. If a CVE
+   genuinely needs a temporary ignore — for example, upstream has not
+   released a fix yet — document it in `deny.toml`'s `[advisories] ignore`
+   array with an inline `RUSTSEC-YYYY-NNNN — <one-line reason> — review by
+   YYYY-MM-DD` comment so the ignore is auditable and time-boxed.
+8. **cargo deny check.** CI runs `EmbarkStudios/cargo-deny-action@v2`
+   against the [`deny.toml`](deny.toml) at the repo root. Four sub-checks
+   run as one gate: licenses (the locked allowlist of permissive licenses
+   in `deny.toml`'s `[licenses] allow`), bans (`wildcards = "deny"`,
+   `multiple-versions = "warn"`), advisories (mirrors the cargo audit gate
+   so a single config controls the policy), and sources
+   (`unknown-registry = "deny"`, `unknown-git = "deny"`). New dependencies
+   must satisfy the license allowlist out of the box; the policy is
+   **allowlist-by-exception**, meaning if a contributor needs a license
+   outside the current allowlist, the PR explains why and the allowlist
+   extension lands as a separate commit in `deny.toml` with an inline
+   `# allowed-for: <crate>@<version> — <license> — <reason>` comment.
 
 ## Regenerating goldens
 
