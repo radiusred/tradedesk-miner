@@ -15,10 +15,19 @@ name: Publish binaries
 #
 # This is the Cargo-workspace analog of the siblings' PyPI `publish.yml`.
 
+# Manual escape hatch: `workflow_dispatch` lets us re-run this workflow at
+# the current HEAD SHA against an existing draft release (e.g. when an
+# earlier run was cancelled and `gh run rerun` would replay a stale SHA).
 on:
   workflow_run:
     workflows: ["Prepare Release"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Draft release tag to publish (e.g. v1.0.2)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -26,8 +35,8 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.target }}
-    # Only run when Prepare Release succeeded; ignore failed / cancelled runs.
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Run on manual dispatch OR when Prepare Release succeeded; ignore failed / cancelled workflow_run events.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write  # for attaching artifacts to the draft release
@@ -67,16 +76,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          # Find the draft release that prepare-release.yml just created.
-          # If there are multiple drafts (unlikely), use the most recently
-          # created one — prepare-release runs serially per workflow_run.
-          # NOTE: this step runs BEFORE actions/checkout, so we pass --repo
-          # explicitly (gh otherwise tries to autodetect from CWD's .git).
-          TAG=$(gh release list --repo "$REPO" --limit 10 \
-                  --json tagName,isDraft,createdAt \
-                  --jq 'map(select(.isDraft == true)) | sort_by(.createdAt) | last | .tagName')
+          # On manual dispatch, the operator names the draft tag directly —
+          # skip auto-detection so an out-of-order draft can't be picked.
+          if [ -n "${INPUT_TAG:-}" ]; then
+            TAG="${INPUT_TAG}"
+          else
+            # Find the draft release that prepare-release.yml just created.
+            # If there are multiple drafts (unlikely), use the most recently
+            # created one — prepare-release runs serially per workflow_run.
+            # NOTE: this step runs BEFORE actions/checkout, so we pass --repo
+            # explicitly (gh otherwise tries to autodetect from CWD's .git).
+            TAG=$(gh release list --repo "$REPO" --limit 10 \
+                    --json tagName,isDraft,createdAt \
+                    --jq 'map(select(.isDraft == true)) | sort_by(.createdAt) | last | .tagName')
+          fi
           if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
             echo "::error::No draft release found. Did prepare-release.yml create one?"
             exit 1
