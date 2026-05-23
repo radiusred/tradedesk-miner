@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 Phase: 07
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-05-22
+Last activity: 2026-05-23 - Completed quick task 260523-vnk: Add workflow_dispatch trigger to publish.yml so it can be re-run manually against an existing draft release
 
 Progress: [██████████] 100%
 
@@ -128,6 +128,12 @@ None yet.
 
 - **Phase 6 deferred (now docs-only):** design documented in docs/future_mcp_http.md; v2 owns the rmcp re-research + implementation (tracked as PLAT-v2-07 + PLAT-v2-08).
 - **Phase 4 implementation risk:** ADF, KPSS, Engle-Granger, block bootstrap, BH-FDR, and DSR are not covered by any comprehensive Rust stats crate. Plan time for hand-rolled implementations validated against scipy/statsmodels golden outputs.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260523-vnk | Add workflow_dispatch trigger to publish.yml so it can be re-run manually against an existing draft release | 2026-05-23 | 153943c | [260523-vnk-add-workflow-dispatch-trigger-to-publish](./quick/260523-vnk-add-workflow-dispatch-trigger-to-publish/) |
 
 Resolved this phase:
 
