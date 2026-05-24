@@ -971,7 +971,12 @@ mod tests {
             .collect();
         let m = manifest_with_gaps(runs);
         let eff = effective_manifest_for_timeframe(&m, Timeframe::Tf15m);
-        assert_eq!(eff.gaps.len(), 1, "expected one effective bucket-gap, got {:?}", eff.gaps);
+        assert_eq!(
+            eff.gaps.len(),
+            1,
+            "expected one effective bucket-gap, got {:?}",
+            eff.gaps
+        );
         assert_eq!(eff.gaps[0].start_utc, ts(10, 0));
         assert_eq!(eff.gaps[0].end_utc, ts(10, 15));
         match eff.gaps[0].reason {
@@ -1005,9 +1010,20 @@ mod tests {
         let m = manifest_with_gaps(vec![missing.clone(), corrupt.clone()]);
         for tf in [Timeframe::Tf15m, Timeframe::Tf1h, Timeframe::Tf1d] {
             let eff = effective_manifest_for_timeframe(&m, tf);
-            assert_eq!(eff.gaps.len(), 2, "whole-day reasons must survive at tf={tf:?}, got {:?}", eff.gaps);
-            assert_eq!(eff.gaps[0], missing, "MissingSourceFile dropped at tf={tf:?}");
-            assert_eq!(eff.gaps[1], corrupt, "CorruptSourceFile dropped at tf={tf:?}");
+            assert_eq!(
+                eff.gaps.len(),
+                2,
+                "whole-day reasons must survive at tf={tf:?}, got {:?}",
+                eff.gaps
+            );
+            assert_eq!(
+                eff.gaps[0], missing,
+                "MissingSourceFile dropped at tf={tf:?}"
+            );
+            assert_eq!(
+                eff.gaps[1], corrupt,
+                "CorruptSourceFile dropped at tf={tf:?}"
+            );
         }
     }
 
@@ -1030,11 +1046,14 @@ mod tests {
             Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
             Utc.with_ymd_and_hms(2024, 2, 1, 0, 0, 0).unwrap(),
         );
-        let d =
-            dispatch_at_timeframe(&m, req, GapPolicyKind::ContinuousOnly, Timeframe::Tf1d);
+        let d = dispatch_at_timeframe(&m, req, GapPolicyKind::ContinuousOnly, Timeframe::Tf1d);
         match d {
             GapDispatch::SubRanges(v) => {
-                assert_eq!(v.len(), 1, "all scattered 1-min holes must collapse at 1d, got {v:?}");
+                assert_eq!(
+                    v.len(),
+                    1,
+                    "all scattered 1-min holes must collapse at 1d, got {v:?}"
+                );
                 assert_eq!(v[0].start_utc, req.start);
                 assert_eq!(v[0].end_utc, req.end);
             }
@@ -1059,7 +1078,11 @@ mod tests {
         let d = dispatch_at_timeframe(&m, req, GapPolicyKind::Strict, Timeframe::Tf15m);
         match d {
             GapDispatch::SubRanges(v) => {
-                assert_eq!(v.len(), 1, "strict must not abort on sub-bar holes; got {v:?}");
+                assert_eq!(
+                    v.len(),
+                    1,
+                    "strict must not abort on sub-bar holes; got {v:?}"
+                );
                 assert_eq!(v[0].start_utc, req.start);
                 assert_eq!(v[0].end_utc, req.end);
             }
@@ -1102,7 +1125,12 @@ mod tests {
             .collect();
         let m = manifest_with_gaps(runs);
         let eff = effective_manifest_for_timeframe(&m, Timeframe::Tf15m);
-        assert_eq!(eff.gaps.len(), 1, "expected single merged bucket-gap, got {:?}", eff.gaps);
+        assert_eq!(
+            eff.gaps.len(),
+            1,
+            "expected single merged bucket-gap, got {:?}",
+            eff.gaps
+        );
         assert_eq!(eff.gaps[0].start_utc, ts(10, 0));
         assert_eq!(eff.gaps[0].end_utc, ts(10, 30));
     }
