@@ -1,21 +1,27 @@
-//! RAD-2352 regression — gap-continuation alignment fix end-to-end.
+//! RAD-2352 + RAD-2642 regression — gap-continuation handling end-to-end.
 //!
-//! Drives [`engine::run_one`] against a synthetic Dukascopy cache that contains
-//! a single intra-minute hole during open hours, with `--gap-policy
-//! continuous_only` and a 15-minute target timeframe. The pre-fix engine
-//! handed the aggregator a post-gap `range.start` of `12:01:00` (one minute
-//! after the hole), which the aggregator's alignment guard rejected with
-//! `range.start ... is not aligned to Tf15m boundary`, short-circuiting the
-//! whole post-gap slice into a `Finding::ScanError`.
+//! Drives [`engine::run_one`] against a synthetic Dukascopy cache that
+//! contains a hole during open hours, with `--gap-policy continuous_only`
+//! and a target timeframe, then asserts the engine emits well-formed
+//! `Result` envelopes around the hole with zero `ScanError` envelopes.
 //!
-//! After the fix in `gap_policy::snap_subranges_to_timeframe` the engine
-//! snaps the post-gap start UP to `12:15:00` (the next 15m bucket boundary)
-//! before handing the range to `BarCache::get_or_build`, and the scan emits
-//! one `Finding::Result` envelope per gap-free sub-range with zero
-//! `Finding::ScanError` envelopes.
+//! Two regressions converge here:
 //!
-//! Acceptance criteria 1 of RAD-2352 (the unit/integration test that
-//! reproduces the bug pre-fix and passes post-fix).
+//! 1. **RAD-2352 (gap-continuation alignment)**: the pre-fix engine handed
+//!    the aggregator a post-gap `range.start` that was not aligned to the
+//!    requested timeframe. After the fix in
+//!    `gap_policy::snap_subranges_to_timeframe`, the partitioner snaps
+//!    sub-range bounds onto the timeframe grid before dispatching.
+//! 2. **RAD-2642 (timeframe-aware gap projection)**: the pre-fix engine
+//!    partitioned around *every* intra-minute hole — so a single missing
+//!    minute mid-bucket shredded a multi-week window. After the fix in
+//!    `gap_policy::effective_manifest_for_timeframe`, the engine projects
+//!    the manifest onto the requested timeframe before dispatching, so
+//!    sub-bucket holes (one missing minute inside a 15m bucket) are
+//!    invisible to partitioning. To exercise the RAD-2352 partition path
+//!    end-to-end we therefore use a **full-bucket hole** here — 15
+//!    consecutive missing minutes at a Tf15m boundary (and 60 consecutive
+//!    missing minutes at a Tf1h boundary).
 
 mod common;
 
@@ -86,22 +92,28 @@ fn build_cfg(cache: &SyntheticCache) -> MinerConfig {
     }
 }
 
-/// Run the engine against a 1-day synthetic Dukascopy fixture with a single
-/// missing minute and assert: exit OK, at least two `Result` envelopes, zero
-/// `ScanError` envelopes, exactly one `IntraDayGap` in the inlined manifest.
+/// Run the engine against a 1-day synthetic Dukascopy fixture with a
+/// 15-minute hole exactly covering one Tf15m bucket (`[12:00, 12:15)`) and
+/// assert: exit OK, two `Result` envelopes (one per side of the bucket),
+/// zero `ScanError` envelopes, all 15 `IntraDayGap` minutes preserved in
+/// the inlined raw manifest.
 ///
-/// Pre-fix this asserted `assert!(scan_errors.is_empty())` would fail with
-/// one `cache: aggregator error: range.start ... is not aligned to Tf15m
-/// boundary` line per intra-minute hole.
+/// Pre-RAD-2352 the post-gap sub-range started at `12:15:00`, but the
+/// aggregator alignment guard rejected anything off the timeframe grid.
+/// The `snap_subranges_to_timeframe` fix rounded the post-gap start up to
+/// the next 15m boundary, eliminating the ScanError. RAD-2642 leaves that
+/// snap path in place but only invokes it when the (now timeframe-aware)
+/// effective manifest produces a non-empty partition — full-bucket holes
+/// still partition; sub-bucket holes are absorbed.
 #[test]
 #[serial_test::serial]
 fn run_one_emits_results_across_intra_minute_15m_gap() {
     let day = open_day();
-    // Hole at minute 720 (12:00 UTC). Post-gap subrange would start at 12:01,
-    // which is NOT on a 15m boundary — exercises the alignment guard the
-    // partitioner snap now compensates for.
+    // Full-bucket hole: minutes 720..735 = [12:00, 12:15) — exactly one
+    // 15m bucket. Under RAD-2642 this is the smallest hole that still
+    // forces partition at Tf15m.
     let cache =
-        SyntheticCache::new().with_day_holed("EURUSD", Side::Bid, day, 0xCAFE_F00D, 720..721);
+        SyntheticCache::new().with_day_holed("EURUSD", Side::Bid, day, 0xCAFE_F00D, 720..735);
     let cfg = build_cfg(&cache);
     let reader = DukascopyReader::new(cache.cache_root());
 
@@ -149,9 +161,11 @@ fn run_one_emits_results_across_intra_minute_15m_gap() {
         sink.as_str()
     );
 
-    // Each Result must carry the inlined gap manifest with exactly one
-    // IntraDayGap span. The manifest is the FULL queried-window manifest
-    // (not the per-sub-range one) per the engine's `ctx_gap_manifest` rule.
+    // Each Result must carry the inlined gap manifest with all 15
+    // `IntraDayGap` minutes. The inlined manifest is the FULL raw
+    // queried-window manifest (not the per-sub-range or timeframe-projected
+    // view) per the engine's `ctx_gap_manifest` rule — data-quality info
+    // must round-trip even when dispatch absorbs sub-bucket holes.
     for f in &results {
         let Finding::Result(r) = f else {
             unreachable!("filtered to Result above")
@@ -163,34 +177,36 @@ fn run_one_emits_results_across_intra_minute_15m_gap() {
             .expect("ContinuousOnly inlines a manifest in data_slice.gap_manifest");
         assert_eq!(
             m.gaps.len(),
-            1,
-            "expected one IntraDayGap in inlined manifest, got {} ({:?})",
+            15,
+            "expected 15 IntraDayGap minutes in inlined manifest, got {} ({:?})",
             m.gaps.len(),
             m.gaps,
         );
-        let gap = &m.gaps[0];
+        // First and last gap minutes pin the window.
+        let first = &m.gaps[0];
+        let last = &m.gaps[m.gaps.len() - 1];
         assert_eq!(
-            gap.start_utc,
+            first.start_utc,
             Utc.with_ymd_and_hms(2024, 6, 12, 12, 0, 0).unwrap()
         );
         assert_eq!(
-            gap.end_utc,
-            Utc.with_ymd_and_hms(2024, 6, 12, 12, 1, 0).unwrap()
+            last.end_utc,
+            Utc.with_ymd_and_hms(2024, 6, 12, 12, 15, 0).unwrap()
         );
     }
 }
 
 /// Same shape as [`run_one_emits_results_across_intra_minute_15m_gap`] but
-/// drives a 1-hour timeframe across a hole whose post-gap start (12:01) is
-/// also not aligned to a 1h boundary. Mirrors step-6 of the v1.0 smoke
-/// (cross.cointegration, Tf1h) at the single-leg layer — the same snap
-/// powers both single- and pair-arity dispatch under RAD-2352.
+/// drives a 1-hour timeframe across a hole exactly covering one Tf1h
+/// bucket (`[12:00, 13:00)`). Mirrors step-6 of the v1.0 smoke
+/// (cross.cointegration, Tf1h) at the single-leg layer.
 #[test]
 #[serial_test::serial]
 fn run_one_emits_results_across_intra_minute_1h_gap() {
     let day = open_day();
+    // Full Tf1h bucket: minutes 720..780 = [12:00, 13:00).
     let cache =
-        SyntheticCache::new().with_day_holed("EURUSD", Side::Bid, day, 0xBADC_0FFE, 720..721);
+        SyntheticCache::new().with_day_holed("EURUSD", Side::Bid, day, 0xBADC_0FFE, 720..780);
     let cfg = build_cfg(&cache);
     let reader = DukascopyReader::new(cache.cache_root());
 
@@ -228,5 +244,85 @@ fn run_one_emits_results_across_intra_minute_1h_gap() {
         results.len() >= 2,
         "expected at least two Result envelopes (one per side of the gap) on Tf1h, got {}",
         results.len(),
+    );
+}
+
+/// RAD-2642 — sub-bucket holes are absorbed by the timeframe-aware gap
+/// projection. A single 1-minute hole at `12:00` inside a Tf15m window
+/// must produce ONE pass-through `Result` envelope (no partition), with
+/// the raw 1-minute `IntraDayGap` preserved in the inlined data_slice
+/// manifest for data-quality auditing.
+///
+/// This is the regression that locks the v1.0.2 → v1.0.3 semantics shift
+/// in place. Pre-fix this produced 2+ `Result` envelopes (one per side
+/// of the hole). Post-fix it produces exactly one.
+#[test]
+#[serial_test::serial]
+fn run_one_absorbs_sub_bucket_hole_at_15m() {
+    let day = open_day();
+    // 1-minute hole at 12:00 — fully inside [12:00, 12:15) Tf15m bucket.
+    let cache =
+        SyntheticCache::new().with_day_holed("EURUSD", Side::Bid, day, 0xCAFE_F00D, 720..721);
+    let cfg = build_cfg(&cache);
+    let reader = DukascopyReader::new(cache.cache_root());
+
+    let req = ljung_box_request(day_window(day), Timeframe::Tf15m);
+
+    let mut sink = BufferSink::new();
+    let outcome = run_one(
+        &req,
+        &cfg,
+        &reader,
+        &mut sink,
+        Arc::new(AtomicBool::new(false)),
+    )
+    .expect("run_one ok");
+
+    assert_eq!(outcome, RunOutcome::Ok, "expected RunOutcome::Ok");
+
+    let findings = parse_findings(&sink.0);
+    let scan_errors: Vec<&Finding> = findings
+        .iter()
+        .filter(|f| matches!(f, Finding::ScanError(_)))
+        .collect();
+    assert!(
+        scan_errors.is_empty(),
+        "expected zero ScanError envelopes; got {} — full stream:\n{}",
+        scan_errors.len(),
+        sink.as_str()
+    );
+
+    let results: Vec<&Finding> = findings
+        .iter()
+        .filter(|f| matches!(f, Finding::Result(_)))
+        .collect();
+    assert_eq!(
+        results.len(),
+        1,
+        "sub-bucket hole must NOT partition the window; expected one \
+         pass-through Result, got {}; full stream:\n{}",
+        results.len(),
+        sink.as_str()
+    );
+
+    // The single Result's inlined manifest still carries the raw 1-min hole
+    // — data quality info is preserved even though dispatch ignored it.
+    let Finding::Result(r) = results[0] else {
+        unreachable!("filtered above")
+    };
+    let m = r
+        .data_slice
+        .gap_manifest
+        .as_ref()
+        .expect("inlined manifest required under ContinuousOnly");
+    assert_eq!(m.gaps.len(), 1, "raw manifest preserved, got {:?}", m.gaps);
+    let gap = &m.gaps[0];
+    assert_eq!(
+        gap.start_utc,
+        Utc.with_ymd_and_hms(2024, 6, 12, 12, 0, 0).unwrap()
+    );
+    assert_eq!(
+        gap.end_utc,
+        Utc.with_ymd_and_hms(2024, 6, 12, 12, 1, 0).unwrap()
     );
 }

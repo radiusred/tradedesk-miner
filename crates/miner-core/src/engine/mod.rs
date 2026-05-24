@@ -415,7 +415,15 @@ pub fn run_one_with_registry<R: Reader>(
             return Ok(RunOutcome::HadScanErrors);
         }
     };
-    let dispatch_result = gap_policy::dispatch(&manifest, req.window, req.gap_policy);
+    // RAD-2642: project the manifest onto the requested timeframe before
+    // dispatching, so that `continuous_only` (and `strict`) reflect the
+    // user's natural notion of "gap at the requested aggregation
+    // resolution" rather than the 1-minute gap-detector resolution. The
+    // full, unfiltered `manifest` continues to flow into the result
+    // envelope's `data_slice.gap_manifest` so data-quality information
+    // is preserved.
+    let dispatch_result =
+        gap_policy::dispatch_at_timeframe(&manifest, req.window, req.gap_policy, req.timeframe);
 
     // -----------------------------------------------------------------------
     // Step 6 — Dispatch.
@@ -793,8 +801,15 @@ fn dispatch_pair_arity_body<R: Reader>(
     // with the Single-arity path).
     let joint_manifest =
         crate::scan::primitives::time_alignment::intersect_gaps(&manifest_a, &manifest_b);
-    let dispatch_result =
-        gap_policy::dispatch_pair(&manifest_a, &manifest_b, req.window, req.gap_policy);
+    // RAD-2642: project the joint manifest onto the requested timeframe
+    // before dispatching. Mirrors the single-leg call-site.
+    let dispatch_result = gap_policy::dispatch_pair_at_timeframe(
+        &manifest_a,
+        &manifest_b,
+        req.window,
+        req.gap_policy,
+        req.timeframe,
+    );
 
     match dispatch_result {
         GapDispatch::Aborted(m) => {
@@ -1922,13 +1937,15 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
         let req = sample_request("EURUSD", start, end, GapPolicyKind::Strict, false);
-        // Day has a 10-minute hole at minutes 60..70 -> intra-day gap.
+        // Day has a 15-minute hole at minutes 60..75 -> fully covers the
+        // 15m bucket [01:00, 01:15). RAD-2642: strict only aborts when at
+        // least one bucket at the requested timeframe has zero coverage.
         let mut reader = FakeReader::new();
         reader.insert_day(
             "EURUSD",
             Side::Bid,
             NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            build_day_1m_bars_with_hole(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1, 60..70),
+            build_day_1m_bars_with_hole(NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(), 1, 60..75),
         );
         let tmp = tempfile::TempDir::new().unwrap();
         let cfg = tmp_config(&tmp);
