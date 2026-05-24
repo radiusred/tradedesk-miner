@@ -6,8 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **`continuous_only` (and `strict`) gap policies are now timeframe-aware.** Previously, every sub-minute hole during open hours split the requested window into a separate sub-range — so a multi-week scan at `--timeframe 1d` was shredded into hundreds of single-day sub-ranges, most of which `snap_subranges_to_timeframe` then dropped for being shorter than one bucket. The engine now projects the gap manifest onto the requested aggregation timeframe via the new `engine::gap_policy::effective_manifest_for_timeframe` helper before dispatching: a hole counts as a gap only when it fully covers at least one bucket at the requested `tf`. The raw 1-minute manifest is still preserved in `Finding::Result.data_slice.gap_manifest` and `Finding::GapAborted.gap_manifest` so data-quality information is not lost. (RAD-2642.)
+
 ### Added
 
+- `engine::gap_policy::effective_manifest_for_timeframe(&GapManifest, Timeframe) -> GapManifest` projects a 1-minute-resolution gap manifest onto a requested aggregation timeframe; documented in module docs with the RAD-2642 rationale.
+- `engine::gap_policy::dispatch_at_timeframe` and `dispatch_pair_at_timeframe` — thin wrappers that compose `effective_manifest_for_timeframe` with the existing `dispatch` / `dispatch_pair` primitives. The engine's single-leg and pair-arity facade now route through these wrappers.
+- New regression tests in `engine::gap_policy::tests` (six unit tests + one proptest) and one new integration test (`run_one_absorbs_sub_bucket_hole_at_15m`).
 - Bench harness — six criterion microbenches under `crates/miner-core/benches/`, the `miner-bench` recipe runner replacing the Phase 1 placeholder, `scripts/run-bench.sh` hyperfine wrapper, and `scripts/run-alloc-profile.sh` dhat wrapper.
 - IAAFT phase-scramble null kernel (`iaaft_phase_scramble_null_p` in `crates/miner-core/src/scan/hygiene/null.rs`); `Scan::supports_null_method(NullMethod::PhaseScramble)` now returns `true` for the five scans documented in 07-RESEARCH.md Pattern 4.
 - Clone-and-run fixture cache at `tests/fixtures/cache/` (synthetic-stub bytes; no Dukascopy-licensed bytes); deterministic generator at `scripts/generate-fixture-cache.sh` + `crates/miner-bench/src/bin/gen-fixtures.rs`; byte-identity gated by `tests/fixtures/cache/SHA256SUMS`.
