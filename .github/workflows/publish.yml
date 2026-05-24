@@ -97,12 +97,25 @@ jobs:
             echo "::error::No draft release found. Did prepare-release.yml create one?"
             exit 1
           fi
-          echo "::notice::Building artifacts for draft release ${TAG}"
+          # Resolve the draft's targetCommitish — `gh release create --draft`
+          # does NOT push a git tag (the tag is only created when the draft
+          # is flipped to published at the end of this workflow), so we must
+          # check out the target SHA directly. The tag string is still used
+          # downstream for `gh release upload`, manifest naming, and the
+          # final `gh release edit --draft=false` flip.
+          SHA=$(gh release view --repo "$REPO" "$TAG" \
+                  --json targetCommitish --jq .targetCommitish)
+          if [ -z "$SHA" ] || [ "$SHA" = "null" ]; then
+            echo "::error::Draft release ${TAG} has no targetCommitish."
+            exit 1
+          fi
+          echo "::notice::Building artifacts for draft release ${TAG} @ ${SHA}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v6
         with:
-          ref: ${{ steps.tag.outputs.tag }}
+          ref: ${{ steps.tag.outputs.sha }}
 
       - name: Install Rust toolchain (pinned 1.85 + matrix target)
         uses: dtolnay/rust-toolchain@stable
