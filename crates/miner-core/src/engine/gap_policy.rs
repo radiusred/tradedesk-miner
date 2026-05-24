@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::aggregator::{Timeframe, align_down, align_up};
 use crate::findings::TimeRange;
-use crate::gap::GapManifest;
+use crate::gap::{GapManifest, GapReason, GapSpan};
 use crate::reader::ClosedRangeUtc;
 
 // ---------------------------------------------------------------------------
@@ -239,6 +239,163 @@ pub fn snap_subranges_to_timeframe(subs: Vec<TimeRange>, tf: Timeframe) -> Vec<T
 }
 
 // ---------------------------------------------------------------------------
+// effective_manifest_for_timeframe — RAD-2642 timeframe-aware gap filter.
+// ---------------------------------------------------------------------------
+
+/// Project a 1-minute-resolution [`GapManifest`] onto the requested
+/// aggregation timeframe.
+///
+/// The returned manifest contains only the gaps that are **visible at the
+/// requested timeframe** — i.e. the gaps that leave at least one fully
+/// uncovered bucket at `tf`. The original manifest is preserved in the
+/// caller's hand for use in `Finding::Result.data_slice.gap_manifest`
+/// (and in `Finding::GapAborted`), so data-quality information is not lost;
+/// only **dispatch decisions** are filtered.
+///
+/// ## Why this exists (RAD-2642)
+///
+/// `GapDetector::detect` emits one `IntraDayGap { affected_minutes: 1 }`
+/// entry per missing open-hour minute (`gap.rs:253-262`). On real
+/// Dukascopy data this produces ~5-15 entries per FX trading day from
+/// the low-liquidity 22:00-04:00 UTC window. Pre-RAD-2642, every one of
+/// those entries split the requested window — so a 4-year `--timeframe 1d`
+/// scan was shredded into a few thousand sub-ranges, then
+/// `snap_subranges_to_timeframe` (RAD-2351) dropped every one shorter than
+/// one bucket, yielding ~zero useful results.
+///
+/// Aggregation at `tf` is well-defined whenever **at least one 1-minute
+/// bar** falls inside the bucket — OHLC are first/max/min/last over the
+/// surviving ticks. So the user-facing notion of a "gap at `tf`" is "a
+/// `tf`-bucket whose 1-minute coverage is zero." This function computes
+/// that set.
+///
+/// ## Algorithm
+///
+/// 1. **Whole-day gaps are unconditionally retained.** A
+///    `MissingSourceFile` / `CorruptSourceFile` span covers
+///    `[day 00:00, day+1 00:00)` — at least 24 hours — which already
+///    covers ≥1 bucket at every supported timeframe (15m / 1h / 1d).
+/// 2. **Intra-day gaps are coalesced and snapped.** Contiguous runs of
+///    `IntraDayGap` entries (sorted by `start_utc`) are merged into a
+///    single half-open interval `[run_start, run_end)`. For each run
+///    the fully-covered `tf`-bucket span is computed as
+///    `[align_up(run_start, tf), align_down(run_end, tf))`. When this
+///    span is non-empty it is retained as a single `IntraDayGap` whose
+///    `affected_minutes` equals the span length in minutes. When it is
+///    empty the run is **dropped** — it touched no full bucket at `tf`,
+///    so the aggregator will silently absorb it.
+///
+/// ## Properties
+///
+/// - Pure function: no IO, no clock reads, deterministic.
+/// - Whole-day reasons are preserved verbatim, so the original
+///   `MissingSourceFile { date }` / `CorruptSourceFile { date, detail }`
+///   payload survives.
+/// - Output `gaps` are sorted by `start_utc` ascending — the same
+///   invariant `GapDetector::detect` guarantees.
+/// - For `tf = Tf1m` (not currently a supported wire form, but the
+///   function is defined for completeness) the projection is the
+///   identity on `IntraDayGap` minutes (`align_up`/`align_down` are
+///   identity on minute timestamps; runs collapse back to per-minute
+///   spans — semantically equivalent to the original manifest from
+///   the dispatch perspective).
+#[must_use]
+pub fn effective_manifest_for_timeframe(manifest: &GapManifest, tf: Timeframe) -> GapManifest {
+    let mut whole_day: Vec<GapSpan> = Vec::new();
+    let mut intraday: Vec<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> =
+        Vec::new();
+
+    for span in &manifest.gaps {
+        match span.reason {
+            GapReason::MissingSourceFile { .. } | GapReason::CorruptSourceFile { .. } => {
+                whole_day.push(span.clone());
+            }
+            GapReason::IntraDayGap { .. } => {
+                intraday.push((span.start_utc, span.end_utc));
+            }
+        }
+    }
+
+    // Coalesce contiguous (and adjacent) intra-day spans into half-open runs.
+    intraday.sort_by_key(|(s, _)| *s);
+    let mut coalesced: Vec<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> =
+        Vec::with_capacity(intraday.len());
+    for (s, e) in intraday {
+        match coalesced.last_mut() {
+            Some(prev) if s <= prev.1 => {
+                if e > prev.1 {
+                    prev.1 = e;
+                }
+            }
+            _ => coalesced.push((s, e)),
+        }
+    }
+
+    // For each coalesced run, retain only the fully-covered tf-bucket span.
+    let mut effective_intraday: Vec<GapSpan> = Vec::with_capacity(coalesced.len());
+    for (run_start, run_end) in coalesced {
+        let bucket_start = align_up(run_start, tf);
+        let bucket_end = align_down(run_end, tf);
+        if bucket_start >= bucket_end {
+            // Run does not fully cover any tf-bucket — the aggregator will
+            // absorb it. Drop.
+            continue;
+        }
+        let affected_minutes = (bucket_end - bucket_start).num_minutes();
+        let affected_minutes = u32::try_from(affected_minutes).unwrap_or(u32::MAX);
+        effective_intraday.push(GapSpan {
+            start_utc: bucket_start,
+            end_utc: bucket_end,
+            reason: GapReason::IntraDayGap { affected_minutes },
+        });
+    }
+
+    let mut gaps = whole_day;
+    gaps.extend(effective_intraday);
+    gaps.sort_by(|a, b| {
+        a.start_utc
+            .cmp(&b.start_utc)
+            .then_with(|| a.end_utc.cmp(&b.end_utc))
+            .then_with(|| {
+                a.reason
+                    .discriminant_ord()
+                    .cmp(&b.reason.discriminant_ord())
+            })
+    });
+
+    GapManifest {
+        source_id: manifest.source_id.clone(),
+        symbol: manifest.symbol.clone(),
+        side: manifest.side,
+        queried_range: manifest.queried_range.clone(),
+        gaps,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// dispatch_at_timeframe — RAD-2642 single-leg timeframe-aware dispatch.
+// ---------------------------------------------------------------------------
+
+/// Timeframe-aware single-leg dispatch — projects the manifest through
+/// [`effective_manifest_for_timeframe`] before delegating to [`dispatch`].
+///
+/// New engine call-sites should prefer this entry point over the raw
+/// `dispatch` so that `continuous_only` (and `strict`) reflect the user's
+/// natural notion of "gap at the requested timeframe" instead of the
+/// 1-minute gap-detector resolution. The raw `dispatch` remains the pure
+/// primitive that the unit tests pin.
+#[must_use]
+pub fn dispatch_at_timeframe(
+    manifest: &GapManifest,
+    requested: ClosedRangeUtc,
+    policy: GapPolicyKind,
+    tf: Timeframe,
+) -> GapDispatch {
+    let effective = effective_manifest_for_timeframe(manifest, tf);
+    dispatch(&effective, requested, policy)
+}
+
+// ---------------------------------------------------------------------------
 // dispatch_pair — Phase 4 (Plan 04-02 / D4-04). Two-leg gap-policy dispatch.
 // ---------------------------------------------------------------------------
 
@@ -269,6 +426,27 @@ pub fn dispatch_pair(
 }
 
 // ---------------------------------------------------------------------------
+// dispatch_pair_at_timeframe — RAD-2642 two-leg timeframe-aware dispatch.
+// ---------------------------------------------------------------------------
+
+/// Timeframe-aware two-leg dispatch — mirror of [`dispatch_at_timeframe`]
+/// for CROSS scans (Plan 04-07). Computes the joint manifest via
+/// `intersect_gaps`, projects it through [`effective_manifest_for_timeframe`],
+/// then delegates to [`dispatch`].
+#[must_use]
+pub fn dispatch_pair_at_timeframe(
+    manifest_a: &GapManifest,
+    manifest_b: &GapManifest,
+    requested: ClosedRangeUtc,
+    policy: GapPolicyKind,
+    tf: Timeframe,
+) -> GapDispatch {
+    let joint = crate::scan::primitives::time_alignment::intersect_gaps(manifest_a, manifest_b);
+    let effective = effective_manifest_for_timeframe(&joint, tf);
+    dispatch(&effective, requested, policy)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -279,7 +457,7 @@ mod tests {
     use crate::findings::TimeRange;
     use crate::gap::{GapReason, GapSpan};
     use crate::reader::Side;
-    use chrono::{DateTime, TimeZone, Utc};
+    use chrono::{DateTime, Duration, TimeZone, Utc};
     use proptest::prelude::*;
 
     fn t(h: u32) -> DateTime<Utc> {
@@ -755,6 +933,237 @@ mod tests {
                 // Snapped sub-range is contained in the input range.
                 prop_assert!(tr.start_utc >= start);
                 prop_assert!(tr.end_utc <= end);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // effective_manifest_for_timeframe + dispatch_at_timeframe (RAD-2642)
+    // -----------------------------------------------------------------------
+
+    /// One-minute intra-day hole at 12:00 with `--timeframe 1d` is invisible
+    /// at the requested resolution — the day's OHLC is computable from the
+    /// remaining 1439 ticks. Effective manifest drops the entry.
+    #[test]
+    fn effective_manifest_drops_single_minute_intra_day_gap_at_1d() {
+        let hole = ts(12, 0);
+        let m = manifest_with_gaps(vec![gap(hole, hole + Duration::minutes(1))]);
+        let eff = effective_manifest_for_timeframe(&m, Timeframe::Tf1d);
+        assert!(
+            eff.gaps.is_empty(),
+            "1-min intra-day hole must not survive projection to 1d, got: {:?}",
+            eff.gaps
+        );
+        // Original manifest must be untouched (caller still needs it for envelopes).
+        assert_eq!(m.gaps.len(), 1, "original manifest must not be mutated");
+    }
+
+    /// 16-minute contiguous run at `[10:00, 10:16)` fully covers exactly one
+    /// 15m bucket at `[10:00, 10:15)` — that bucket has zero source bars.
+    /// Effective manifest retains the bucket.
+    #[test]
+    fn effective_manifest_retains_full_bucket_run_at_15m() {
+        let runs: Vec<GapSpan> = (0..16)
+            .map(|i| {
+                let s = ts(10, 0) + Duration::minutes(i);
+                gap(s, s + Duration::minutes(1))
+            })
+            .collect();
+        let m = manifest_with_gaps(runs);
+        let eff = effective_manifest_for_timeframe(&m, Timeframe::Tf15m);
+        assert_eq!(eff.gaps.len(), 1, "expected one effective bucket-gap, got {:?}", eff.gaps);
+        assert_eq!(eff.gaps[0].start_utc, ts(10, 0));
+        assert_eq!(eff.gaps[0].end_utc, ts(10, 15));
+        match eff.gaps[0].reason {
+            GapReason::IntraDayGap { affected_minutes } => {
+                assert_eq!(affected_minutes, 15);
+            }
+            ref other => panic!("expected IntraDayGap, got {other:?}"),
+        }
+    }
+
+    /// Missing-source-file / corrupt-source-file spans are unconditionally
+    /// retained — they cover ≥ 1 full day, which is ≥ 1 bucket at any
+    /// supported timeframe (15m / 1h / 1d).
+    #[test]
+    fn effective_manifest_preserves_whole_day_reasons_at_all_timeframes() {
+        let date = chrono::NaiveDate::from_ymd_opt(2024, 1, 3).unwrap();
+        let day_start = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let missing = GapSpan {
+            start_utc: day_start,
+            end_utc: day_start + Duration::hours(24),
+            reason: GapReason::MissingSourceFile { date },
+        };
+        let corrupt = GapSpan {
+            start_utc: day_start + Duration::hours(24),
+            end_utc: day_start + Duration::hours(48),
+            reason: GapReason::CorruptSourceFile {
+                date: chrono::NaiveDate::from_ymd_opt(2024, 1, 4).unwrap(),
+                detail: "synthetic".into(),
+            },
+        };
+        let m = manifest_with_gaps(vec![missing.clone(), corrupt.clone()]);
+        for tf in [Timeframe::Tf15m, Timeframe::Tf1h, Timeframe::Tf1d] {
+            let eff = effective_manifest_for_timeframe(&m, tf);
+            assert_eq!(eff.gaps.len(), 2, "whole-day reasons must survive at tf={tf:?}, got {:?}", eff.gaps);
+            assert_eq!(eff.gaps[0], missing, "MissingSourceFile dropped at tf={tf:?}");
+            assert_eq!(eff.gaps[1], corrupt, "CorruptSourceFile dropped at tf={tf:?}");
+        }
+    }
+
+    /// RAD-2642 repro shape: dozens of scattered 1-min holes across a
+    /// trading week, dispatched at `--timeframe 1d`, must produce ONE
+    /// pass-through sub-range covering the whole requested window.
+    #[test]
+    fn dispatch_at_timeframe_collapses_scattered_1min_holes_at_1d() {
+        // Make 100 random-looking 1-min holes scattered through Jan 2-31.
+        let mut spans = Vec::with_capacity(100);
+        let anchor = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        for i in 0..100 {
+            // Stagger each hole by ~7 hours so they are not contiguous.
+            let offset_min = (i as i64) * 7 * 60 + (i as i64) * 13;
+            let s = anchor + Duration::minutes(offset_min);
+            spans.push(gap(s, s + Duration::minutes(1)));
+        }
+        let m = manifest_with_gaps(spans);
+        let req = requested(
+            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2024, 2, 1, 0, 0, 0).unwrap(),
+        );
+        let d =
+            dispatch_at_timeframe(&m, req, GapPolicyKind::ContinuousOnly, Timeframe::Tf1d);
+        match d {
+            GapDispatch::SubRanges(v) => {
+                assert_eq!(v.len(), 1, "all scattered 1-min holes must collapse at 1d, got {v:?}");
+                assert_eq!(v[0].start_utc, req.start);
+                assert_eq!(v[0].end_utc, req.end);
+            }
+            other => panic!("expected SubRanges, got {other:?}"),
+        }
+    }
+
+    /// `strict + zero effective gaps` must NOT abort, even when the raw
+    /// manifest has noise that the requested timeframe absorbs. Avoids
+    /// the historical "strict aborts on every multi-day window" trap.
+    #[test]
+    fn dispatch_at_timeframe_strict_passes_when_only_subbar_holes_present() {
+        // A run of 5 consecutive 1-min holes — does not cover a 15m bucket.
+        let runs: Vec<GapSpan> = (0..5)
+            .map(|i| {
+                let s = ts(10, 0) + Duration::minutes(i);
+                gap(s, s + Duration::minutes(1))
+            })
+            .collect();
+        let m = manifest_with_gaps(runs);
+        let req = requested(t(0), t(6));
+        let d = dispatch_at_timeframe(&m, req, GapPolicyKind::Strict, Timeframe::Tf15m);
+        match d {
+            GapDispatch::SubRanges(v) => {
+                assert_eq!(v.len(), 1, "strict must not abort on sub-bar holes; got {v:?}");
+                assert_eq!(v[0].start_utc, req.start);
+                assert_eq!(v[0].end_utc, req.end);
+            }
+            other => panic!("expected SubRanges, got {other:?}"),
+        }
+    }
+
+    /// A run that crosses a bucket boundary but does not fully cover any
+    /// bucket is dropped. Run `[10:13, 10:18)` covers minutes 13,14 of
+    /// `[10:00, 10:15)` and minutes 15,16,17 of `[10:15, 10:30)` — neither
+    /// bucket is fully missing, so the aggregator absorbs the 1m holes.
+    #[test]
+    fn effective_manifest_drops_run_that_partially_covers_two_buckets() {
+        let runs: Vec<GapSpan> = (13..18)
+            .map(|i| {
+                let s = ts(10, 0) + Duration::minutes(i);
+                gap(s, s + Duration::minutes(1))
+            })
+            .collect();
+        let m = manifest_with_gaps(runs);
+        let eff = effective_manifest_for_timeframe(&m, Timeframe::Tf15m);
+        assert!(
+            eff.gaps.is_empty(),
+            "partial-coverage run must not produce an effective bucket-gap, got: {:?}",
+            eff.gaps
+        );
+    }
+
+    /// 31-minute contiguous run starting at `[10:00, 10:31)` fully covers
+    /// bucket `[10:00, 10:15)` AND bucket `[10:15, 10:30)` (minute 30 spills
+    /// into the next bucket but doesn't complete it). Effective manifest
+    /// must emit one merged 30-minute span.
+    #[test]
+    fn effective_manifest_merges_adjacent_full_buckets_at_15m() {
+        let runs: Vec<GapSpan> = (0..31)
+            .map(|i| {
+                let s = ts(10, 0) + Duration::minutes(i);
+                gap(s, s + Duration::minutes(1))
+            })
+            .collect();
+        let m = manifest_with_gaps(runs);
+        let eff = effective_manifest_for_timeframe(&m, Timeframe::Tf15m);
+        assert_eq!(eff.gaps.len(), 1, "expected single merged bucket-gap, got {:?}", eff.gaps);
+        assert_eq!(eff.gaps[0].start_utc, ts(10, 0));
+        assert_eq!(eff.gaps[0].end_utc, ts(10, 30));
+    }
+
+    proptest! {
+        /// Effective manifest is a subset of the original at the time-axis
+        /// level: every effective intra-day span is contained inside the
+        /// union of the original intra-day spans. Whole-day spans are
+        /// preserved verbatim. (Strong invariant: the projection can only
+        /// drop or shrink intra-day spans, never grow them.)
+        #[test]
+        fn effective_manifest_is_subset_of_original_proptest(
+            offsets in proptest::collection::vec(0u32..1440, 0..32),
+            tf_idx in 0u8..3,
+        ) {
+            let tf = match tf_idx {
+                0 => Timeframe::Tf15m,
+                1 => Timeframe::Tf1h,
+                _ => Timeframe::Tf1d,
+            };
+            let anchor = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+            let mut sorted: Vec<u32> = offsets;
+            sorted.sort_unstable();
+            sorted.dedup();
+            let spans: Vec<GapSpan> = sorted
+                .iter()
+                .map(|&m_off| {
+                    let s = anchor + Duration::minutes(m_off as i64);
+                    gap(s, s + Duration::minutes(1))
+                })
+                .collect();
+            let manifest = manifest_with_gaps(spans.clone());
+            let eff = effective_manifest_for_timeframe(&manifest, tf);
+
+            // Build the original intra-day union as a flat minute set.
+            let mut original_min: std::collections::BTreeSet<DateTime<Utc>> =
+                std::collections::BTreeSet::new();
+            for s in &spans {
+                let mut cur = s.start_utc;
+                while cur < s.end_utc {
+                    original_min.insert(cur);
+                    cur += Duration::minutes(1);
+                }
+            }
+
+            for g in &eff.gaps {
+                // Every effective intra-day minute must have been in the original union.
+                if matches!(g.reason, GapReason::IntraDayGap { .. }) {
+                    let mut cur = g.start_utc;
+                    while cur < g.end_utc {
+                        prop_assert!(
+                            original_min.contains(&cur),
+                            "effective minute {cur} not in original intra-day union"
+                        );
+                        cur += Duration::minutes(1);
+                    }
+                    // Effective intra-day spans are tf-aligned.
+                    let dur = tf.duration().num_minutes();
+                    prop_assert_eq!(g.start_utc.timestamp() / 60 % dur, 0);
+                    prop_assert_eq!(g.end_utc.timestamp() / 60 % dur, 0);
+                }
             }
         }
     }
