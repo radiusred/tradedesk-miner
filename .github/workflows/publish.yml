@@ -60,14 +60,12 @@ jobs:
             archive_ext: tar.gz
 
           # macOS arm64 (Apple Silicon) — for local-dev workstations.
+          # Intel macOS (x86_64-apple-darwin / macos-13) is intentionally
+          # omitted: macos-13 runners never scheduled in practice and stalled
+          # every publish run. Add back only if a Quant team Intel-Mac use
+          # case actually surfaces.
           - target: aarch64-apple-darwin
             os: macos-14
-            archive_ext: tar.gz
-
-          # macOS x86_64 — older Intel Macs; remove once Apple drops Intel
-          # support, currently still in the Quant team's mix.
-          - target: x86_64-apple-darwin
-            os: macos-13
             archive_ext: tar.gz
 
     steps:
