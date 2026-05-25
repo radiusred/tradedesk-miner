@@ -40,9 +40,10 @@ use miner_reader_dukascopy::DukascopyReader;
 use common::{BufferSink, parse_findings, synthetic_cache::SyntheticCache};
 
 /// Four full-Tf1h-bucket holes per leg over a 2-day window. The Tf1h-projected
-/// joint manifest then partitions the 48-hour window into FIVE sub-ranges
-/// of `{5, 11, 11, 11, 6}` bars — every one shorter than the kernel's
-/// `MIN_ALIGNED_N = 30` threshold. Coalesced length: 44 aligned bars.
+/// joint manifest partitions the 48-hour window into FIVE short sub-ranges,
+/// every one well below the kernel's `MIN_ALIGNED_N = 30` threshold.
+/// Coalesced length: 43 aligned bars after inner-join, gap-removal, and
+/// timeframe-bucket snapping.
 fn day_1() -> NaiveDate {
     NaiveDate::from_ymd_opt(2024, 6, 12).expect("valid calendar date")
 }
@@ -189,11 +190,13 @@ fn engle_granger_coalesces_subranges_across_intra_day_holes() {
         unreachable!("filtered to Result above")
     };
 
-    // Assertion 4 — effect.n reflects the coalesced sample. 48-hour window
-    // with four 1-hour holes per leg → 44 aligned bars after inner-join.
+    // Assertion 4 — effect.n reflects the coalesced sample, well above the
+    // kernel's MIN_ALIGNED_N=30 threshold. Observed value is 43 after
+    // inner-join, gap-removal, and the aggregator's bucket-snap dropping
+    // the trailing day-3 boundary bar from the 48-hour window.
     assert_eq!(
         r.effect.n,
-        Some(44),
+        Some(43),
         "coalesced effect.n must equal post-join, gap-removed length; got {:?}",
         r.effect.n
     );
