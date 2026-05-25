@@ -859,19 +859,34 @@ fn dispatch_pair_arity_body<R: Reader>(
             // at the 1-minute gap-detector resolution.
             let sub_ranges = gap_policy::snap_subranges_to_timeframe(sub_ranges, req.timeframe);
             let cache = BarCache::new(&cfg.bar_cache_root);
-            for sub_range in sub_ranges {
+
+            // RAD-2397: whole-sample CROSS scans (engle_granger) opt into
+            // `Scan::coalesce_subranges`: the engine fuses the per-sub-range
+            // frames emitted by `gap_policy::dispatch_pair_at_timeframe` into
+            // a single (leg_a, leg_b) frame pair before dispatching to the
+            // kernel so the kernel's min-sample check evaluates the
+            // post-join, gap-removed series length, not per-sub-range
+            // slices. Rolling cross scans (corr/ols rolling, lead-lag) keep
+            // the default per-sub-range dispatch (a rolling window must not
+            // span a gap).
+            let coalesce = scan.coalesce_subranges() && sub_ranges.len() > 1;
+
+            // Phase 1: load (sub_range, leg_a_bars, leg_b_bars) tuples for
+            // every snapped sub-range. Cache-error short-circuit matches the
+            // pre-RAD-2397 behaviour: emit ScanError, emit RunEnd, return.
+            let mut loaded: Vec<(
+                TimeRange,
+                crate::aggregator::BarFrame,
+                crate::aggregator::BarFrame,
+            )> = Vec::with_capacity(sub_ranges.len());
+            for sub_range in &sub_ranges {
                 if cancel.load(Ordering::Relaxed) {
                     break;
                 }
-
-                let mut per_sub_req = req.clone();
-                per_sub_req.sub_range = sub_range.clone();
-
                 let sub_range_utc = ClosedRangeUtc {
                     start: sub_range.start_utc,
                     end: sub_range.end_utc,
                 };
-
                 // Load leg A bars.
                 let bars_a = match cache.get_or_build(
                     reader,
@@ -903,7 +918,6 @@ fn dispatch_pair_arity_body<R: Reader>(
                         return Ok(RunOutcome::HadScanErrors);
                     }
                 };
-
                 // Load leg B bars.
                 let bars_b = match cache.get_or_build(
                     reader,
@@ -935,6 +949,47 @@ fn dispatch_pair_arity_body<R: Reader>(
                         return Ok(RunOutcome::HadScanErrors);
                     }
                 };
+                loaded.push((sub_range.clone(), bars_a, bars_b));
+            }
+
+            // Phase 2: collapse `loaded` into the dispatch units actually
+            // handed to `scan.run`. Coalesce-mode flattens every per-sub-
+            // range frame into ONE (range, leg_a, leg_b) unit whose range
+            // spans the union of loaded sub-ranges; non-coalesce keeps the
+            // original 1:1 mapping.
+            let units: Vec<(
+                TimeRange,
+                crate::aggregator::BarFrame,
+                crate::aggregator::BarFrame,
+            )> = if coalesce && !loaded.is_empty() {
+                let logical_start = loaded.first().expect("non-empty above").0.start_utc;
+                let logical_end = loaded.last().expect("non-empty above").0.end_utc;
+                let mut iter = loaded.into_iter();
+                let (_, mut concat_a, mut concat_b) =
+                    iter.next().expect("non-empty above");
+                for (_, a, b) in iter {
+                    concat_a.append_frame(&a);
+                    concat_b.append_frame(&b);
+                }
+                vec![(
+                    TimeRange {
+                        start_utc: logical_start,
+                        end_utc: logical_end,
+                    },
+                    concat_a,
+                    concat_b,
+                )]
+            } else {
+                loaded
+            };
+
+            for (sub_range, bars_a, bars_b) in units {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                let mut per_sub_req = req.clone();
+                per_sub_req.sub_range = sub_range;
 
                 let ctx_gap_manifest: Option<&crate::gap::GapManifest> =
                     if matches!(req.gap_policy, GapPolicyKind::ContinuousOnly) {
