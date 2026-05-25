@@ -701,6 +701,168 @@ pub fn run_one_with_registry<R: Reader>(
     }
 }
 
+/// Control flow returned by [`dispatch_pair_unit`] back to the per-sub-range
+/// dispatch loop in [`dispatch_pair_arity_body`].
+///
+/// Mirrors the inline `match` arms that lived in the per-sub-range loop
+/// pre-RAD-2397: most cases let the loop advance, `ScanError::Cancelled`
+/// breaks out, and the two fatal arms (`ScanError::Io` / `ScanError::Miner`)
+/// signal the caller to emit `RunEnd` and bail with `HadScanErrors`.
+enum PairDispatchControl {
+    /// Continue to the next sub-range (or, in coalesce mode, finish the loop).
+    Continue,
+    /// `ScanError::Cancelled` — stop iterating but let the caller emit `RunEnd`
+    /// in the normal way.
+    Break,
+    /// Fatal scan I/O / `MinerError` — caller must emit `RunEnd` and return
+    /// `RunOutcome::HadScanErrors` so earlier successful sub-range Results
+    /// remain on the wire with valid framing.
+    Bail,
+}
+
+/// Dispatch ONE `(sub_range, leg_a_bars, leg_b_bars)` unit through `scan.run`
+/// and feed the result back into the caller's `summary` / `sink`.
+///
+/// Extracted from `dispatch_pair_arity_body` so both the non-coalesce path
+/// (incremental per-sub-range load + dispatch — pre-RAD-2397 streaming
+/// semantics) and the coalesce path (one fused dispatch over the union of
+/// loaded sub-ranges — RAD-2397 whole-sample fix) can share the same hygiene
+/// + 5-arm scan-error handling without duplication.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "All inputs come from the caller's stack frame; a wrapper struct would only obscure the data flow"
+)]
+fn dispatch_pair_unit(
+    sub_range: TimeRange,
+    bars_a: &crate::aggregator::BarFrame,
+    bars_b: &crate::aggregator::BarFrame,
+    sink: &mut dyn FindingSink,
+    summary: &mut RunSummary,
+    cancel: &Arc<AtomicBool>,
+    req: &ScanRequest,
+    joint_manifest: &crate::gap::GapManifest,
+    scan: &dyn crate::scan::Scan,
+    reader_source_id: &str,
+    run_id: RunId,
+    scan_id_at_version: &str,
+) -> Result<PairDispatchControl, MinerError> {
+    let mut per_sub_req = req.clone();
+    per_sub_req.sub_range = sub_range;
+
+    let ctx_gap_manifest: Option<&crate::gap::GapManifest> =
+        if matches!(req.gap_policy, GapPolicyKind::ContinuousOnly) {
+            Some(joint_manifest)
+        } else {
+            None
+        };
+    let ctx = make_scan_ctx(
+        bars_a,
+        Some((bars_a, bars_b)),
+        ctx_gap_manifest,
+        run_id,
+        crate::CODE_REVISION,
+        Arc::clone(cancel),
+        req,
+    );
+
+    // Plan 05-03 continuation: same buffering-sink wrapping as the
+    // single-arity path. Pair-arity hygiene dispatch (joint per-leg
+    // resampling) is DEFERRED to Phase 7 — `apply_hygiene_mutations` returns
+    // the envelope unchanged for Pair-arity scan ids today.
+    let hygiene_active =
+        per_sub_req.bootstrap_method.is_some() || per_sub_req.null_method.is_some();
+    let (scan_res, buffered) = {
+        let mut buf_sink = HygieneBufferingSink::new(sink, hygiene_active);
+        let scan_res = scan.run(&ctx, &per_sub_req, &mut buf_sink);
+        let (buffered, _inner) = buf_sink.into_parts();
+        (scan_res, buffered)
+    };
+    match scan_res {
+        Ok(()) => {
+            if hygiene_active {
+                for raw_result in buffered {
+                    let mutated = apply_hygiene_mutations(
+                        raw_result,
+                        &per_sub_req,
+                        bars_a,
+                        Some(bars_b),
+                        cancel,
+                    );
+                    sink.write_envelope(&Finding::Result(mutated))?;
+                    summary.results_emitted += 1;
+                    summary
+                        .per_scan
+                        .entry(scan_id_at_version.to_string())
+                        .or_default()
+                        .results += 1;
+                }
+            } else {
+                summary.results_emitted += 1;
+                summary
+                    .per_scan
+                    .entry(scan_id_at_version.to_string())
+                    .or_default()
+                    .results += 1;
+            }
+            Ok(PairDispatchControl::Continue)
+        }
+        Err(ScanError::Cancelled) => Ok(PairDispatchControl::Break),
+        Err(ScanError::Kernel(msg)) => {
+            summary.scan_errors += 1;
+            summary
+                .per_scan
+                .entry(scan_id_at_version.to_string())
+                .or_default()
+                .errors += 1;
+            emit_scan_error(
+                sink,
+                run_id,
+                scan_id_at_version,
+                req,
+                reader_source_id,
+                &msg,
+            )?;
+            Ok(PairDispatchControl::Continue)
+        }
+        Err(ScanError::Io(e)) => {
+            let msg = format!("scan io: {e}");
+            emit_scan_error(
+                sink,
+                run_id,
+                scan_id_at_version,
+                req,
+                reader_source_id,
+                &msg,
+            )?;
+            summary.scan_errors += 1;
+            summary
+                .per_scan
+                .entry(scan_id_at_version.to_string())
+                .or_default()
+                .errors += 1;
+            Ok(PairDispatchControl::Bail)
+        }
+        Err(ScanError::Miner(e)) => {
+            let msg = format!("scan miner-error: {e}");
+            emit_scan_error(
+                sink,
+                run_id,
+                scan_id_at_version,
+                req,
+                reader_source_id,
+                &msg,
+            )?;
+            summary.scan_errors += 1;
+            summary
+                .per_scan
+                .entry(scan_id_at_version.to_string())
+                .or_default()
+                .errors += 1;
+            Ok(PairDispatchControl::Bail)
+        }
+    }
+}
+
 /// Phase 4 Plan 04-12 (CR-01 fix): Pair-arity dispatch body.
 ///
 /// Mirrors the Single-arity body in `run_one_with_registry` but operates on
@@ -869,25 +1031,32 @@ fn dispatch_pair_arity_body<R: Reader>(
             // slices. Rolling cross scans (corr/ols rolling, lead-lag) keep
             // the default per-sub-range dispatch (a rolling window must not
             // span a gap).
+            //
+            // Split contract (Testy QA on PR #9):
+            //
+            // - `coalesce == false` (DEFAULT, rolling scans): interleave load
+            //   + dispatch per sub-range so a cache failure on sub-range N
+            //   still streams the Results from sub-ranges `0..N-1`. This is
+            //   the pre-RAD-2397 streaming semantics; a later cache load
+            //   failure must never suppress already-computable Results.
+            // - `coalesce == true` (whole-sample CROSS scans): preload every
+            //   sub-range frame before dispatching, because the kernel sees a
+            //   single fused (leg_a, leg_b) frame pair. A cache failure on
+            //   any sub-range short-circuits the entire scan (RunEnd +
+            //   HadScanErrors), matching the existing fail-fast contract.
             let coalesce = scan.coalesce_subranges() && sub_ranges.len() > 1;
 
-            // Phase 1: load (sub_range, leg_a_bars, leg_b_bars) tuples for
-            // every snapped sub-range. Cache-error short-circuit matches the
-            // pre-RAD-2397 behaviour: emit ScanError, emit RunEnd, return.
-            let mut loaded: Vec<(
-                TimeRange,
-                crate::aggregator::BarFrame,
-                crate::aggregator::BarFrame,
-            )> = Vec::with_capacity(sub_ranges.len());
-            for sub_range in &sub_ranges {
-                if cancel.load(Ordering::Relaxed) {
-                    break;
-                }
-                let sub_range_utc = ClosedRangeUtc {
-                    start: sub_range.start_utc,
-                    end: sub_range.end_utc,
-                };
-                // Load leg A bars.
+            // Shared cache-load helper for one sub-range. Returns
+            // `Ok(Some((bars_a, bars_b)))` on success, `Ok(None)` if the
+            // caller has already emitted ScanError + RunEnd and must bail,
+            // or `Err(MinerError)` to propagate a sink-write failure.
+            let load_pair = |sink: &mut dyn FindingSink,
+                             summary: &mut RunSummary,
+                             sub_range_utc: ClosedRangeUtc|
+             -> Result<
+                Option<(crate::aggregator::BarFrame, crate::aggregator::BarFrame)>,
+                MinerError,
+            > {
                 let bars_a = match cache.get_or_build(
                     reader,
                     AggParams {
@@ -914,11 +1083,9 @@ fn dispatch_pair_arity_body<R: Reader>(
                             .entry(scan_id_at_version.to_string())
                             .or_default()
                             .errors += 1;
-                        emit_run_end(sink, run_id, started, summary)?;
-                        return Ok(RunOutcome::HadScanErrors);
+                        return Ok(None);
                     }
                 };
-                // Load leg B bars.
                 let bars_b = match cache.get_or_build(
                     reader,
                     AggParams {
@@ -945,166 +1112,125 @@ fn dispatch_pair_arity_body<R: Reader>(
                             .entry(scan_id_at_version.to_string())
                             .or_default()
                             .errors += 1;
-                        emit_run_end(sink, run_id, started, summary)?;
-                        return Ok(RunOutcome::HadScanErrors);
+                        return Ok(None);
                     }
                 };
-                loaded.push((sub_range.clone(), bars_a, bars_b));
-            }
-
-            // Phase 2: collapse `loaded` into the dispatch units actually
-            // handed to `scan.run`. Coalesce-mode flattens every per-sub-
-            // range frame into ONE (range, leg_a, leg_b) unit whose range
-            // spans the union of loaded sub-ranges; non-coalesce keeps the
-            // original 1:1 mapping.
-            let units: Vec<(
-                TimeRange,
-                crate::aggregator::BarFrame,
-                crate::aggregator::BarFrame,
-            )> = if coalesce && !loaded.is_empty() {
-                let logical_start = loaded.first().expect("non-empty above").0.start_utc;
-                let logical_end = loaded.last().expect("non-empty above").0.end_utc;
-                let mut iter = loaded.into_iter();
-                let (_, mut concat_a, mut concat_b) =
-                    iter.next().expect("non-empty above");
-                for (_, a, b) in iter {
-                    concat_a.append_frame(&a);
-                    concat_b.append_frame(&b);
-                }
-                vec![(
-                    TimeRange {
-                        start_utc: logical_start,
-                        end_utc: logical_end,
-                    },
-                    concat_a,
-                    concat_b,
-                )]
-            } else {
-                loaded
+                Ok(Some((bars_a, bars_b)))
             };
 
-            for (sub_range, bars_a, bars_b) in units {
-                if cancel.load(Ordering::Relaxed) {
-                    break;
-                }
-
-                let mut per_sub_req = req.clone();
-                per_sub_req.sub_range = sub_range;
-
-                let ctx_gap_manifest: Option<&crate::gap::GapManifest> =
-                    if matches!(req.gap_policy, GapPolicyKind::ContinuousOnly) {
-                        Some(&joint_manifest)
-                    } else {
-                        None
+            if coalesce {
+                // RAD-2397 coalesce path: preload every snapped sub-range,
+                // then fuse into ONE (range, leg_a, leg_b) dispatch unit.
+                // A cache-load failure on any sub-range short-circuits the
+                // whole scan — there are no earlier dispatches that could
+                // have streamed Results because dispatch only happens once,
+                // post-fusion.
+                let mut loaded: Vec<(
+                    TimeRange,
+                    crate::aggregator::BarFrame,
+                    crate::aggregator::BarFrame,
+                )> = Vec::with_capacity(sub_ranges.len());
+                let mut cache_failed = false;
+                for sub_range in &sub_ranges {
+                    if cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let sub_range_utc = ClosedRangeUtc {
+                        start: sub_range.start_utc,
+                        end: sub_range.end_utc,
                     };
-                let ctx = make_scan_ctx(
-                    &bars_a,
-                    Some((&bars_a, &bars_b)),
-                    ctx_gap_manifest,
-                    run_id,
-                    crate::CODE_REVISION,
-                    Arc::clone(&cancel),
-                    req,
-                );
-
-                // Plan 05-03 continuation: same buffering-sink wrapping
-                // for the Pair-arity dispatch. Pair-arity hygiene
-                // dispatch (joint per-leg resampling) is DEFERRED to
-                // Phase 7 — `apply_hygiene_mutations` returns the
-                // envelope unchanged for Pair-arity scan ids (the
-                // hygiene_dispatch table returns None for them).
-                let hygiene_active =
-                    per_sub_req.bootstrap_method.is_some() || per_sub_req.null_method.is_some();
-                let dispatch_result = {
-                    let mut buf_sink = HygieneBufferingSink::new(sink, hygiene_active);
-                    let scan_res = scan.run(&ctx, &per_sub_req, &mut buf_sink);
-                    let (buffered, inner) = buf_sink.into_parts();
-                    (scan_res, buffered, inner)
-                };
-                match dispatch_result.0 {
-                    Ok(()) => {
-                        let inner = dispatch_result.2;
-                        let buffered = dispatch_result.1;
-                        if hygiene_active {
-                            for raw_result in buffered {
-                                let mutated = apply_hygiene_mutations(
-                                    raw_result,
-                                    &per_sub_req,
-                                    &bars_a,
-                                    Some(&bars_b),
-                                    &cancel,
-                                );
-                                inner.write_envelope(&Finding::Result(mutated))?;
-                                summary.results_emitted += 1;
-                                summary
-                                    .per_scan
-                                    .entry(scan_id_at_version.to_string())
-                                    .or_default()
-                                    .results += 1;
-                            }
-                        } else {
-                            summary.results_emitted += 1;
-                            summary
-                                .per_scan
-                                .entry(scan_id_at_version.to_string())
-                                .or_default()
-                                .results += 1;
+                    match load_pair(sink, &mut summary, sub_range_utc)? {
+                        Some((bars_a, bars_b)) => {
+                            loaded.push((sub_range.clone(), bars_a, bars_b));
+                        }
+                        None => {
+                            cache_failed = true;
+                            break;
                         }
                     }
-                    Err(ScanError::Cancelled) => break,
-                    Err(ScanError::Kernel(msg)) => {
-                        summary.scan_errors += 1;
-                        summary
-                            .per_scan
-                            .entry(scan_id_at_version.to_string())
-                            .or_default()
-                            .errors += 1;
-                        emit_scan_error(
-                            sink,
-                            run_id,
-                            scan_id_at_version,
-                            req,
-                            reader.source_id(),
-                            &msg,
-                        )?;
+                }
+                if cache_failed {
+                    emit_run_end(sink, run_id, started, summary)?;
+                    return Ok(RunOutcome::HadScanErrors);
+                }
+
+                if !loaded.is_empty() && !cancel.load(Ordering::Relaxed) {
+                    let logical_start = loaded.first().expect("non-empty above").0.start_utc;
+                    let logical_end = loaded.last().expect("non-empty above").0.end_utc;
+                    let mut iter = loaded.into_iter();
+                    let (_, mut concat_a, mut concat_b) = iter.next().expect("non-empty above");
+                    for (_, a, b) in iter {
+                        concat_a.append_frame(&a);
+                        concat_b.append_frame(&b);
                     }
-                    Err(ScanError::Io(e)) => {
-                        let msg = format!("scan io: {e}");
-                        emit_scan_error(
-                            sink,
-                            run_id,
-                            scan_id_at_version,
-                            req,
-                            reader.source_id(),
-                            &msg,
-                        )?;
-                        summary.scan_errors += 1;
-                        summary
-                            .per_scan
-                            .entry(scan_id_at_version.to_string())
-                            .or_default()
-                            .errors += 1;
+                    let fused_range = TimeRange {
+                        start_utc: logical_start,
+                        end_utc: logical_end,
+                    };
+                    let control = dispatch_pair_unit(
+                        fused_range,
+                        &concat_a,
+                        &concat_b,
+                        sink,
+                        &mut summary,
+                        &cancel,
+                        req,
+                        &joint_manifest,
+                        scan,
+                        reader.source_id(),
+                        run_id,
+                        scan_id_at_version,
+                    )?;
+                    if matches!(control, PairDispatchControl::Bail) {
                         emit_run_end(sink, run_id, started, summary)?;
                         return Ok(RunOutcome::HadScanErrors);
                     }
-                    Err(ScanError::Miner(e)) => {
-                        let msg = format!("scan miner-error: {e}");
-                        emit_scan_error(
-                            sink,
-                            run_id,
-                            scan_id_at_version,
-                            req,
-                            reader.source_id(),
-                            &msg,
-                        )?;
-                        summary.scan_errors += 1;
-                        summary
-                            .per_scan
-                            .entry(scan_id_at_version.to_string())
-                            .or_default()
-                            .errors += 1;
-                        emit_run_end(sink, run_id, started, summary)?;
-                        return Ok(RunOutcome::HadScanErrors);
+                    // Continue / Break: fall through to the unified
+                    // RunEnd emission below. (There is at most one unit in
+                    // coalesce mode, so Break is functionally identical to
+                    // Continue here.)
+                }
+            } else {
+                // Non-coalesce path (rolling scans, default): interleave
+                // load + dispatch per sub-range so earlier successful
+                // dispatches stream their Results even if a later cache
+                // load fails. Mirrors the pre-RAD-2397 inline shape.
+                for sub_range in &sub_ranges {
+                    if cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let sub_range_utc = ClosedRangeUtc {
+                        start: sub_range.start_utc,
+                        end: sub_range.end_utc,
+                    };
+                    let (bars_a, bars_b) = match load_pair(sink, &mut summary, sub_range_utc)? {
+                        Some(pair) => pair,
+                        None => {
+                            emit_run_end(sink, run_id, started, summary)?;
+                            return Ok(RunOutcome::HadScanErrors);
+                        }
+                    };
+                    let control = dispatch_pair_unit(
+                        sub_range.clone(),
+                        &bars_a,
+                        &bars_b,
+                        sink,
+                        &mut summary,
+                        &cancel,
+                        req,
+                        &joint_manifest,
+                        scan,
+                        reader.source_id(),
+                        run_id,
+                        scan_id_at_version,
+                    )?;
+                    match control {
+                        PairDispatchControl::Continue => {}
+                        PairDispatchControl::Break => break,
+                        PairDispatchControl::Bail => {
+                            emit_run_end(sink, run_id, started, summary)?;
+                            return Ok(RunOutcome::HadScanErrors);
+                        }
                     }
                 }
             }
