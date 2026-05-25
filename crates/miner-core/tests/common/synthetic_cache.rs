@@ -137,13 +137,31 @@ impl SyntheticCache {
         seed: u32,
         hole_minutes: std::ops::Range<i64>,
     ) -> Self {
+        self.with_day_multi_holed(symbol, side, date, seed, &[hole_minutes])
+    }
+
+    /// Multi-hole variant of [`Self::with_day_holed`]. Each range is a
+    /// half-open minute interval `[start, end)` relative to midnight; every
+    /// listed minute is OMITTED from the written day so `GapDetector` flags
+    /// them as intra-day gaps. Used by the RAD-2397 cross-arity coalesce
+    /// regression test to construct a day whose Tf1h-projected manifest
+    /// partitions both legs into more than two sub-ranges, each shorter
+    /// than the Engle-Granger min-sample threshold.
+    pub fn with_day_multi_holed(
+        self,
+        symbol: &str,
+        side: Side,
+        date: NaiveDate,
+        seed: u32,
+        hole_ranges: &[std::ops::Range<i64>],
+    ) -> Self {
         let day_start: DateTime<Utc> = date.and_hms_opt(0, 0, 0).expect("00:00:00").and_utc();
         let mut s = seed;
         let mut csv = String::with_capacity(1440 * 64 + 32);
         csv.push_str("timestamp,open,high,low,close,volume\n");
         for i in 0..1440_i64 {
             s = s.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-            if hole_minutes.contains(&i) {
+            if hole_ranges.iter().any(|r| r.contains(&i)) {
                 continue;
             }
             let frac = f64::from(s) / f64::from(u32::MAX);

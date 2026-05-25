@@ -283,6 +283,29 @@ pub trait Scan: Send + Sync {
     fn supports_null_method(&self, _method: NullMethod) -> bool {
         false
     }
+
+    /// RAD-2397 — should the engine concatenate the bars from every
+    /// `GapDispatch::SubRanges` sub-range into ONE call to [`Scan::run`],
+    /// instead of invoking the kernel once per contiguous sub-range?
+    ///
+    /// Default-false: per-sub-range dispatch is the right shape for rolling
+    /// / per-bar scans (`cross.lead_lag.ccf`, `cross.corr.rolling`,
+    /// `cross.ols.rolling`, …) — a rolling window must not span a gap.
+    ///
+    /// Whole-sample scans whose minimum-sample check evaluates the
+    /// post-join, gap-removed series length opt in by overriding to `true`
+    /// (`cross.cointegration.engle_granger`). Without the opt-in the
+    /// kernel sees small per-sub-range slices and short-circuits with
+    /// `Engle-Granger needs >= 30 aligned bars; got N` even when the
+    /// concatenated logical window comfortably exceeds the threshold.
+    ///
+    /// The engine still emits ONE `Finding::Result` envelope; its
+    /// `data_slice.range` spans the union of the dispatched sub-ranges
+    /// and `data_slice.gap_manifest` enumerates the gaps that were cut
+    /// out.
+    fn coalesce_subranges(&self) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------

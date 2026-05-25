@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`cross.cointegration.engle_granger` no longer emits zero results across windows containing gaps.** Post-RAD-2352 the partitioner correctly snaps every post-gap sub-range to the requested timeframe boundary, but the Pair-arity engine then dispatched the Engle-Granger kernel once per sub-range. Every per-sub-range call short-circuited with `Engle-Granger needs >= 30 aligned bars; got N`, producing zero `Finding::Result` envelopes on any 1h FX pair whose window contained the usual weekend / overnight Dukascopy gaps. The engine now coalesces the per-sub-range frames into ONE kernel call for whole-sample CROSS scans (new `Scan::coalesce_subranges` opt-in; default `false` for rolling scans), so the min-sample check evaluates the post-join, gap-removed series length rather than per-sub-range slices. (RAD-2397.)
+
+### Added
+
+- `Scan::coalesce_subranges() -> bool` opt-in on the `Scan` trait. Defaults to `false` (per-sub-range dispatch is the right shape for rolling cross scans). `cross.cointegration.engle_granger` overrides to `true`; the Pair-arity engine fuses every loaded sub-range frame into one (leg_a, leg_b) frame pair before calling `scan.run`. Documented in `crates/miner-core/src/scan/mod.rs`.
+- `BarFrame::append_frame(&BarFrame)` — column-wise append helper used by the engine's coalesce path. Debug-asserts source/symbol/side/timeframe identity.
+- New regression test `crates/miner-core/tests/cross_coint_coalesce.rs` drives `cross.cointegration.engle_granger` through the engine against a 2-day synthetic two-leg cache whose Tf1h-projected joint manifest partitions both legs into FIVE sub-ranges (all shorter than `MIN_ALIGNED_N = 30`). Pre-fix this produced 5 ScanError envelopes and 0 Result envelopes; post-fix it produces exactly one Result envelope whose `effect.n = 44`.
+
 ### Changed
 
 - **`continuous_only` (and `strict`) gap policies are now timeframe-aware.** Previously, every sub-minute hole during open hours split the requested window into a separate sub-range — so a multi-week scan at `--timeframe 1d` was shredded into hundreds of single-day sub-ranges, most of which `snap_subranges_to_timeframe` then dropped for being shorter than one bucket. The engine now projects the gap manifest onto the requested aggregation timeframe via the new `engine::gap_policy::effective_manifest_for_timeframe` helper before dispatching: a hole counts as a gap only when it fully covers at least one bucket at the requested `tf`. The raw 1-minute manifest is still preserved in `Finding::Result.data_slice.gap_manifest` and `Finding::GapAborted.gap_manifest` so data-quality information is not lost. (RAD-2642.)

@@ -124,6 +124,16 @@ impl Scan for EngleGrangerScan {
         )
     }
 
+    /// RAD-2397 — Engle-Granger is a single-shot whole-sample test: its
+    /// `MIN_ALIGNED_N = 30` check evaluates the inner-joined, gap-removed
+    /// series length. The engine must concatenate the per-sub-range frames
+    /// emitted by the partitioner into ONE kernel call; otherwise the
+    /// per-sub-range slices fall below the threshold and every dispatch
+    /// short-circuits with `Engle-Granger needs >= 30 aligned bars; got N`.
+    fn coalesce_subranges(&self) -> bool {
+        true
+    }
+
     #[allow(clippy::too_many_lines)]
     #[allow(
         clippy::too_many_lines,

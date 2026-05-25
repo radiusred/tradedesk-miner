@@ -213,6 +213,31 @@ impl BarFrame {
     pub fn is_empty(&self) -> bool {
         self.ts_open_utc.is_empty()
     }
+
+    /// RAD-2397 — append every column of `other` onto `self` in place.
+    ///
+    /// Used by the engine's `coalesce_subranges` path to fuse the
+    /// per-sub-range frames emitted by [`crate::engine::gap_policy`] into
+    /// ONE logical frame before dispatching to a whole-sample scan kernel.
+    ///
+    /// Panics in debug builds if `other`'s `source_id` / `symbol` / `side`
+    /// / `tf` do not match `self`; in release the mismatch is silent
+    /// (the engine only ever calls this with frames produced from the
+    /// same `(symbol, side, tf)` cache key, so the runtime check stays in
+    /// `debug_assert!`).
+    pub fn append_frame(&mut self, other: &BarFrame) {
+        debug_assert_eq!(self.source_id, other.source_id, "append_frame: source_id");
+        debug_assert_eq!(self.symbol, other.symbol, "append_frame: symbol");
+        debug_assert_eq!(self.side, other.side, "append_frame: side");
+        debug_assert_eq!(self.tf, other.tf, "append_frame: timeframe");
+        self.ts_open_utc.extend_from_slice(&other.ts_open_utc);
+        self.ts_close_utc.extend_from_slice(&other.ts_close_utc);
+        self.open.extend_from_slice(&other.open);
+        self.high.extend_from_slice(&other.high);
+        self.low.extend_from_slice(&other.low);
+        self.close.extend_from_slice(&other.close);
+        self.tick_volume.extend_from_slice(&other.tick_volume);
+    }
 }
 
 /// Aggregator error. `RE` is the reader's associated `Error` type.
