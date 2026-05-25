@@ -13,7 +13,7 @@
 //!
 //! Post-fix: `EngleGrangerScan::coalesce_subranges() == true` triggers the
 //! engine's Pair-arity coalesce branch in `dispatch_pair_arity_body`. All
-//! loaded sub-range frames fuse into one (leg_a, leg_b) frame pair and
+//! loaded sub-range frames fuse into one (`leg_a`, `leg_b`) frame pair and
 //! one `scan.run` call. The kernel sees the full coalesced series, the
 //! min-sample check passes, and exactly one `Finding::Result` envelope
 //! lands in the sink.
