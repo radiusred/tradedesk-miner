@@ -732,6 +732,10 @@ enum PairDispatchControl {
     clippy::too_many_arguments,
     reason = "All inputs come from the caller's stack frame; a wrapper struct would only obscure the data flow"
 )]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Linear scan-dispatch walk: build per_sub_req + ctx, wrap sink in HygieneBufferingSink, then the 5-arm ScanError match. Splitting the linear sequence into helpers obscures the per-arm summary/sink mutations"
+)]
 fn dispatch_pair_unit(
     sub_range: TimeRange,
     bars_a: &crate::aggregator::BarFrame,
@@ -1139,14 +1143,11 @@ fn dispatch_pair_arity_body<R: Reader>(
                         start: sub_range.start_utc,
                         end: sub_range.end_utc,
                     };
-                    match load_pair(sink, &mut summary, sub_range_utc)? {
-                        Some((bars_a, bars_b)) => {
-                            loaded.push((sub_range.clone(), bars_a, bars_b));
-                        }
-                        None => {
-                            cache_failed = true;
-                            break;
-                        }
+                    if let Some((bars_a, bars_b)) = load_pair(sink, &mut summary, sub_range_utc)? {
+                        loaded.push((sub_range.clone(), bars_a, bars_b));
+                    } else {
+                        cache_failed = true;
+                        break;
                     }
                 }
                 if cache_failed {
@@ -1203,12 +1204,10 @@ fn dispatch_pair_arity_body<R: Reader>(
                         start: sub_range.start_utc,
                         end: sub_range.end_utc,
                     };
-                    let (bars_a, bars_b) = match load_pair(sink, &mut summary, sub_range_utc)? {
-                        Some(pair) => pair,
-                        None => {
-                            emit_run_end(sink, run_id, started, summary)?;
-                            return Ok(RunOutcome::HadScanErrors);
-                        }
+                    let Some((bars_a, bars_b)) = load_pair(sink, &mut summary, sub_range_utc)?
+                    else {
+                        emit_run_end(sink, run_id, started, summary)?;
+                        return Ok(RunOutcome::HadScanErrors);
                     };
                     let control = dispatch_pair_unit(
                         sub_range.clone(),
