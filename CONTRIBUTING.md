@@ -130,8 +130,8 @@ For heap-allocation profiling, use the dhat wrapper at
 the `dhat` Cargo feature on `miner-bench`). For wall-clock benchmarks,
 use [`scripts/run-bench.sh`](scripts/run-bench.sh) (hyperfine wrapper).
 The full reproduction recipes — including how to refresh the
-`docs/bench-results.md` tables — live in
-[`docs/bench-results.md`](docs/bench-results.md) `## How to reproduce`.
+benchmark tables — live in [`BENCHMARKING.md`](BENCHMARKING.md)
+`## How to reproduce`.
 
 ## Pull request expectations
 
