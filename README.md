@@ -122,8 +122,8 @@ the data licensing posture.
 ## Performance
 
 Wall-clock numbers, allocation budget, and reference flamegraph live in
-[docs/bench-results.md](docs/bench-results.md). The README intentionally
-avoids embedded benchmark numbers — they go stale fast.
+[BENCHMARKING.md](BENCHMARKING.md). The README intentionally avoids
+embedded benchmark numbers — they go stale fast.
 
 ## Design principles
 
