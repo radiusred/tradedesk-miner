@@ -20,7 +20,7 @@
 # on the `miner-bench` binary, NOT from this file.
 #
 # Per RESEARCH Open Question 5: the reference flamegraph recipe in
-# `docs/bench-results.md` ## Reference flamegraph uses this same TOML file
+# `BENCHMARKING.md` ## Reference flamegraph uses this same TOML file
 # with `samply record` for the hot-path capture.
 
 [sweep]

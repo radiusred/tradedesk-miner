@@ -30,7 +30,7 @@
 #
 # Per RESEARCH Open Question 5: the engle_granger job is the source of the
 # reference flamegraph captured via `samply record` (see
-# docs/bench-results.md ## Reference flamegraph).
+# BENCHMARKING.md ## Reference flamegraph).
 #
 # This recipe expects a real production-shape Dukascopy cache at
 # MINER_CACHE_ROOT — the checked-in fixture cache covers only 2 symbols × 1
