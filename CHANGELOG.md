@@ -30,7 +30,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - IAAFT phase-scramble null kernel (`iaaft_phase_scramble_null_p` in `crates/miner-core/src/scan/hygiene/null.rs`); `Scan::supports_null_method(NullMethod::PhaseScramble)` now returns `true` for the five scans documented in 07-RESEARCH.md Pattern 4.
 - Clone-and-run fixture cache at `tests/fixtures/cache/` (synthetic-stub bytes; no Dukascopy-licensed bytes); deterministic generator at `scripts/generate-fixture-cache.sh` + `crates/miner-bench/src/bin/gen-fixtures.rs`; byte-identity gated by `tests/fixtures/cache/SHA256SUMS`.
 - `docs/data_sources.md` — Dukascopy caveats reference (cache layout, CSV schema, bid/ask independence, time zones + DST, gap policies, licensing posture).
-- `docs/bench-results.md` — single canonical home for wall-clock numbers, allocation budget, and the reference flamegraph.
+- `BENCHMARKING.md` — single canonical home for wall-clock numbers, allocation budget, and the reference flamegraph.
 - `cargo audit` + `cargo deny check` CI gates; `deny.toml` allowlist at repo root.
 - Findings-envelope snapshot test (`crates/miner-core/tests/findings_envelope_snapshot.rs`) + locked `tests/goldens/envelope_snapshot.jsonl`.
 - noise-replay sweep regression test (`crates/miner-core/tests/noise_replay_regression.rs`) — 300-job synthetic-null sweep proving BH-FDR controls multiple-testing.
@@ -39,7 +39,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 
 - `crates/miner-bench/src/main.rs` — Phase 1 placeholder replaced with the recipe-runner binary.
-- `README.md` — `## Example` block now uses the new fixture cache (`MINER_CACHE_ROOT=./tests/fixtures/cache`); added `## Data source caveats` summary; added `## Performance` pointer to `docs/bench-results.md`.
+- `README.md` — `## Example` block now uses the new fixture cache (`MINER_CACHE_ROOT=./tests/fixtures/cache`); added `## Data source caveats` summary; added `## Performance` pointer to `BENCHMARKING.md`.
 - `Cargo.toml` workspace — added `criterion`, `dhat`, and `realfft` to `[workspace.dependencies]`; added `[profile.release] debug = 1` for dhat symbol attribution.
 - `CONTRIBUTING.md` — extended `## Quality gates` table with `cargo audit` + `cargo deny check` (rows 7-8); added the samply profiler subsection.
 
