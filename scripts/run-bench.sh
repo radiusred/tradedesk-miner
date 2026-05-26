@@ -5,12 +5,12 @@
 # Wall-clock benchmark recipe runner. Wraps `cargo run --release -p miner-bench
 # --bin miner-bench -- --recipe benches/recipes/full-sweep.toml` with
 # `hyperfine` warmup + multi-run statistics so the wall-clock numbers are
-# stable enough to land in `docs/bench-results.md`.
+# stable enough to land in `BENCHMARKING.md`.
 #
 # Output:
 #   /tmp/miner-bench.json — hyperfine's JSON export (mean / median / stddev /
 #                           individual run timings). Post-process into the
-#                           markdown table at `docs/bench-results.md
+#                           markdown table at `BENCHMARKING.md
 #                           ## Wall-clock results`.
 #
 # Pre-reqs:
@@ -69,4 +69,4 @@ hyperfine \
     "cargo run --release -p miner-bench --bin miner-bench -- --recipe benches/recipes/full-sweep.toml"
 
 echo "[run-bench] hyperfine export: /tmp/miner-bench.json"
-echo "[run-bench] paste the timing summary into docs/bench-results.md ## Wall-clock results"
+echo "[run-bench] paste the timing summary into BENCHMARKING.md ## Wall-clock results"
