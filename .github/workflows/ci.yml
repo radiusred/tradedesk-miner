@@ -120,5 +120,19 @@ jobs:
       # version warned), advisories (mirrors cargo audit), sources
       # (unknown-registry + unknown-git denied). The action force-refreshes the
       # advisory database before each run (RESEARCH §Pitfall 5).
+      #
+      # This step runs last, after build/clippy/test/audit have filled target/
+      # with several GB of artifacts. cargo-deny-action is a Docker action whose
+      # in-container rustup honours rust-toolchain.toml ("1.85" -> 1.85.1) and
+      # re-downloads a full toolchain the prebuilt image lacks (image ships
+      # 1.85.0). On a runner with slim free disk that fetch tips over the limit
+      # ("No space left on device", os error 28). cargo-deny resolves the dep
+      # graph from Cargo.lock and needs no compiled artifacts, and nothing runs
+      # after it, so reclaim target/ first to give the fetch headroom. Keep the
+      # prebuilt action rather than `cargo install cargo-deny` so we don't risk
+      # cargo-deny's MSRV exceeding the pinned 1.85 (cf. the cargo-audit --locked
+      # note above).
+      - name: free disk before cargo deny
+        run: rm -rf target
       - name: cargo deny check
         uses: EmbarkStudios/cargo-deny-action@v2
