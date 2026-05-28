@@ -245,7 +245,7 @@ disk and never redistributes them.
 Anyone running miner against real OHLCV bytes needs their own Dukascopy
 access and a populated cache produced by `tradedesk-dukascopy` (or any
 reader implementation that emits the same on-disk layout — the `Reader`
-trait is pluggable, see ARCHITECTURE.md for the trait contract).
+trait is pluggable, see [architecture.md](architecture.md) for the trait contract).
 Dukascopy's upstream terms live at
 https://www.dukascopy.com/swiss/english/marketwatch/historical/ — review
 those before downloading or redistributing any bytes.
@@ -269,7 +269,7 @@ update this line.
   strings and per-scan `effect.extra` keys.
 - [sweep_manifest.md](sweep_manifest.md) — TOML sweep grammar plus
   hygiene + FDR blocks.
-- [../ARCHITECTURE.md](../ARCHITECTURE.md) — system map; locked envelope
+- [architecture.md](architecture.md) — system map; locked envelope
   discipline in context.
 - [../README.md](../README.md) — landing page and quickstart.
 

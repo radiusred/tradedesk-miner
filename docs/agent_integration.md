@@ -252,7 +252,7 @@ When hygiene runs, the finding's `repro` envelope is populated (`BootstrapSpec {
 - [future_mcp_http.md](future_mcp_http.md) — deferred MCP + HTTP wrapper design sketch
 - [examples/decode_finding.py](examples/decode_finding.py) — runnable base64 raw-array decoder
 - [examples/sample_sweep.toml](examples/sample_sweep.toml) — runnable sample sweep manifest
-- [../ARCHITECTURE.md](../ARCHITECTURE.md) — system map
+- [architecture.md](architecture.md) — system map
 
 ---
 
