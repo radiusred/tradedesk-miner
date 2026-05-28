@@ -247,7 +247,7 @@ This is the same null-not-omitted convention used by `data_slice.gap_manifest` a
 
 - [scan_catalogue.md](scan_catalogue.md) — the 23 v1 scan_ids + per-scan `effect.metric` + `effect.extra` keys.
 - [sweep_manifest.md](sweep_manifest.md) — TOML sweep grammar (the source of `SweepSummary`).
-- [../ARCHITECTURE.md](../ARCHITECTURE.md) — system map; the locked envelope discipline in context.
+- [architecture.md](architecture.md) — system map; the locked envelope discipline in context.
 - [../schemas/findings-v1.schema.json](../schemas/findings-v1.schema.json) — authoritative JSON Schema (regenerated from the Rust types via `xtask`).
 
 ---

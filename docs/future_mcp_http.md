@@ -65,7 +65,7 @@ The v2 plan-phase should read these in order before reopening the wrapper implem
 2. `.planning/research/ARCHITECTURE.md` §8 (Wrapper Crates) — the layered design for the wrappers, including the `tokio::task::spawn_blocking` bridge sketch and the per-wrapper crate boundaries.
 3. `.planning/research/STACK.md` — the `rmcp` row (with the VERIFY risk note), the `axum` row, and the `tower` / `tower-http` rows. Re-validate the version pins against the then-current releases.
 4. `crates/miner-mcp/src/main.rs` and `crates/miner-http/src/main.rs` — the placeholder anchor points. Each is twelve lines today emitting one `tracing::info!` line referencing this doc; v2 replaces the body and adds the wrapper-crate dependencies to the per-crate `Cargo.toml`.
-5. `./ARCHITECTURE.md` (the public-audience system map) — re-read the "Sync core + async edges" section. The async-edges discipline is the contract the v2 implementation must preserve.
+5. `./architecture.md` (the public-audience system map) — re-read the "Sync core + async edges" section. The async-edges discipline is the contract the v2 implementation must preserve.
 6. The Phase 6 sign-off SUMMARY at `.planning/phases/06-mcp-http-wrappers/06-03-SUMMARY.md` — captures the v1 docs-only invariants the v2 implementation must NOT break (zero new dependencies in `miner-core` / `miner-cli`; the `cargo tree -p miner-core --edges normal,build` gate stays green; the locked `Finding` envelope stays additive-only).
 
 CI invariants for the v2 wrapper implementation:

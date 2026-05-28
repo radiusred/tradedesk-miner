@@ -334,7 +334,7 @@ Pre / post event-window aggregation around caller-supplied event timestamps.
 
 - [findings_envelope.md](findings_envelope.md) — envelope shape every scan emits
 - [sweep_manifest.md](sweep_manifest.md) — submitting multiple scans as a sweep
-- [../ARCHITECTURE.md](../ARCHITECTURE.md) — system map
+- [architecture.md](architecture.md) — system map
 
 ---
 

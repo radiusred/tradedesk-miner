@@ -145,9 +145,9 @@ embedded benchmark numbers — they go stale fast.
 
 ## Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the system map.
-[`.planning/research/ARCHITECTURE.md`](.planning/research/ARCHITECTURE.md)
-carries the deeper layered design rationale.
+See [docs/architecture.md](docs/architecture.md) for the system map.
+The deeper layered design rationale lives in the internal planning tree
+(`.planning/research/ARCHITECTURE.md`) and is not part of the published docs.
 
 ## Roadmap
 
@@ -158,7 +158,7 @@ live under `.planning/phases/<phase>/<phase>-<plan>-SUMMARY.md`.
 
 Start with:
 
-- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [docs/architecture.md](docs/architecture.md)
 - [docs/findings_envelope.md](docs/findings_envelope.md)
 - [docs/scan_catalogue.md](docs/scan_catalogue.md)
 - [docs/sweep_manifest.md](docs/sweep_manifest.md)

@@ -224,7 +224,7 @@ The statistical hygiene and FDR machinery `miner sweep` exposes draws on three p
 
 - [findings_envelope.md](findings_envelope.md) — the `Finding::SweepSummary` + `DryRunFinding` shapes
 - [scan_catalogue.md](scan_catalogue.md) — valid `scan_id@version` strings + per-scan params
-- [../ARCHITECTURE.md](../ARCHITECTURE.md) — sweep runner in the data-flow context
+- [architecture.md](architecture.md) — sweep runner in the data-flow context
 
 ---
 
