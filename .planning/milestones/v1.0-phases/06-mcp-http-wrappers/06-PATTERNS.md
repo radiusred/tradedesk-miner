@@ -639,7 +639,7 @@ tracing::info!("miner-http placeholder; implementation deferred to v2 — see do
 Licensed under the Apache License, Version 2.0.
 See: https://www.apache.org/licenses/LICENSE-2.0
 
-Copyright 2026 [Radius Red Ltd.](https://github.com/radiusred) | [Contact](mailto:opensource@radiusred.uk)
+Copyright 2026 [Radius Red Ltd.](https://www.radiusred.uk) | [Contact](mailto:opensource@radiusred.uk)
 ```
 
 **Variant** — `indicator_guide.md` line 442 uses the autolink form (`See: [https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0)`). Plan-phase defaults to **bare URL** (D6-04 + Open Question #6 default; 4-of-5 sample majority).

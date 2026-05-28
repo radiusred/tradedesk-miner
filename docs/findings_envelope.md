@@ -257,4 +257,4 @@ This is the same null-not-omitted convention used by `data_slice.gap_manifest` a
 Licensed under the Apache License, Version 2.0.
 See: https://www.apache.org/licenses/LICENSE-2.0
 
-Copyright 2026 [Radius Red Ltd.](https://github.com/radiusred) | [Contact](mailto:opensource@radiusred.uk)
+Copyright 2026 [Radius Red Ltd.](https://www.radiusred.uk) | [Contact](mailto:opensource@radiusred.uk)

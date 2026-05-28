@@ -768,7 +768,7 @@ fn main() {
 Licensed under the Apache License, Version 2.0.
 See: https://www.apache.org/licenses/LICENSE-2.0
 
-Copyright 2026 [Radius Red Ltd.](https://github.com/radiusred) | [Contact](mailto:opensource@radiusred.uk)
+Copyright 2026 [Radius Red Ltd.](https://www.radiusred.uk) | [Contact](mailto:opensource@radiusred.uk)
 ```
 
 **Source:** `docs/.license-footer.md` (8 lines verified). Byte-identical across `docs/findings_envelope.md`, `docs/scan_catalogue.md`, `docs/sweep_manifest.md`, `docs/agent_integration.md`, `docs/future_mcp_http.md`, `ARCHITECTURE.md`, and the sibling repo's `tradedesk/docs/aggregation_guide.md` + `data_sources_guide.md`. `docs/data_sources.md` (D7-02) MUST paste this verbatim.

@@ -33,7 +33,7 @@ What Phase 6 delivers:
    Licensed under the Apache License, Version 2.0.
    See: https://www.apache.org/licenses/LICENSE-2.0
 
-   Copyright 2026 [Radius Red Ltd.](https://github.com/radiusred) | [Contact](mailto:opensource@radiusred.uk)
+   Copyright 2026 [Radius Red Ltd.](https://www.radiusred.uk) | [Contact](mailto:opensource@radiusred.uk)
    ```
 
 5. **ROADMAP.md / REQUIREMENTS.md / PROJECT.md / STATE.md scope amendments** — Phase 6 success criteria rewritten from "callable MCP tools + HTTP endpoints" to "design contract + docs/ folder published". OP-02 (MCP) and OP-03 (HTTP) reclassified as **v2 / future-work** (moved into the existing REQUIREMENTS.md v2 platform section, e.g., `PLAT-v2-07` and `PLAT-v2-08` or relabelled). PROJECT.md Active list demotes the MCP-server / HTTP-API line items to "Design documented; implementation deferred". The placeholder `miner-mcp` / `miner-http` crates STAY in the workspace (they satisfy FOUND-01 "wrapper binaries exist and build" and serve as future-implementation anchor points); plan-phase decides whether their `main.rs` comments are updated to point at the new `docs/future_mcp_http.md`.
@@ -105,7 +105,7 @@ Each doc under `docs/` AND the root `ARCHITECTURE.md` ends with:
 Licensed under the Apache License, Version 2.0.
 See: https://www.apache.org/licenses/LICENSE-2.0
 
-Copyright 2026 [Radius Red Ltd.](https://github.com/radiusred) | [Contact](mailto:opensource@radiusred.uk)
+Copyright 2026 [Radius Red Ltd.](https://www.radiusred.uk) | [Contact](mailto:opensource@radiusred.uk)
 ```
 
 Pattern source: `tradedesk/docs/aggregation_guide.md` and siblings. The URL line MAY be rendered as a markdown autolink (`[https://...](https://...)`) per tradedesk's convention; plan-phase confirms by sampling the sibling repo. The `examples/*.py` and `examples/*.toml` files use language-appropriate comment-block license headers (Apache-2.0 SPDX-ID + the same copyright line) rather than the markdown footer.
