@@ -1,6 +1,7 @@
 # Architecture
 
 Overview
+
 - tradedesk-miner is a high-performance, agent-operable data-mining engine for historical financial OHLCV data.
 - It scans cached Dukascopy bid/ask CSVs and surfaces statistical candidates (anomalies, cross-instrument relationships, seasonality effects) for downstream consumers — primarily the RadiusRed Quant agent.
 - The codebase is organised into seven Cargo crates with a strict one-way dependency direction (six runtime crates plus a dev-only `xtask` workspace member):
@@ -18,6 +19,7 @@ Overview
 - CI gate 3 (`cargo tree -p miner-core --edges normal,build`) enforces this — `miner-core` must show zero `tokio` / `async` transitive dependencies.
 
 Data Flow (high level)
+
 - `Reader::read_day` ingests zstd-CSVs from the tradedesk-dukascopy cache.
   - Path layout: `<root>/<SYMBOL>/<YYYY>/<MM 00-indexed>/<DD>_<bid|ask>.csv.zst`.
   - The 00-indexed month quirk is encapsulated inside the Dukascopy reader and boundary-tested.
@@ -36,6 +38,7 @@ Data Flow (high level)
   - Stdout = findings JSONL; stderr = `tracing` structured logs.
 
 Sync core + async edges
+
 - `miner-core` is pure sync + rayon. No `tokio`, no `async fn`, no `.await`. This is FOUND-04 and is CI-enforced.
 - Async lives only at the wrapper edges.
   - The MCP and HTTP wrappers (designed but not implemented in v1 — see `future_mcp_http.md`) will bridge to `miner-core` via `tokio::task::spawn_blocking`.
@@ -44,6 +47,7 @@ Sync core + async edges
 - `clippy::disallowed_macros` rejects `println!` / `eprintln!` outside the single findings sink and the logging adapter (CI gate 2).
 
 Key design decisions
+
 - Locked `Finding` envelope.
   - Seven variants: `RunStart` / `Result` / `ScanError` / `GapAborted` / `RunEnd` / `DryRun` / `SweepSummary`.
   - Every variant carries `schema_version`, `scan@version`, `param_hash`, `code_revision`, `data_slice`, and reserved DSR + FDR-q slots.
