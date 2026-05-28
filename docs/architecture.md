@@ -1,6 +1,6 @@
 # Architecture
 
-Overview
+## Overview
 
 - tradedesk-miner is a high-performance, agent-operable data-mining engine for historical financial OHLCV data.
 - It scans cached Dukascopy bid/ask CSVs and surfaces statistical candidates (anomalies, cross-instrument relationships, seasonality effects) for downstream consumers — primarily the RadiusRed Quant agent.
@@ -18,7 +18,7 @@ Overview
 - Dependency direction: `miner-cli | miner-mcp | miner-http -> miner-reader-dukascopy -> miner-core`.
 - CI gate 3 (`cargo tree -p miner-core --edges normal,build`) enforces this — `miner-core` must show zero `tokio` / `async` transitive dependencies.
 
-Data Flow (high level)
+## Data Flow (high level)
 
 - `Reader::read_day` ingests zstd-CSVs from the tradedesk-dukascopy cache.
   - Path layout: `<root>/<SYMBOL>/<YYYY>/<MM 00-indexed>/<DD>_<bid|ask>.csv.zst`.
@@ -37,7 +37,7 @@ Data Flow (high level)
   - Production impls: `StdoutSink` (CLI) and `FileSink` (tests).
   - Stdout = findings JSONL; stderr = `tracing` structured logs.
 
-Sync core + async edges
+## Sync core + async edges
 
 - `miner-core` is pure sync + rayon. No `tokio`, no `async fn`, no `.await`. This is FOUND-04 and is CI-enforced.
 - Async lives only at the wrapper edges.
@@ -46,7 +46,7 @@ Sync core + async edges
 - Stdout is reserved for findings JSONL. Stderr is reserved for structured logs.
 - `clippy::disallowed_macros` rejects `println!` / `eprintln!` outside the single findings sink and the logging adapter (CI gate 2).
 
-Key design decisions
+## Key design decisions
 
 - Locked `Finding` envelope.
   - Seven variants: `RunStart` / `Result` / `ScanError` / `GapAborted` / `RunEnd` / `DryRun` / `SweepSummary`.
@@ -67,7 +67,6 @@ Key design decisions
   - No hardcoded paths. Cache root + derived-bar-cache root + output destination all configurable via CLI flag > env var > config file precedence.
   - Apache-2.0 licensed.
 
-See also: `../README.md`, `findings_envelope.md`, `scan_catalogue.md`, `sweep_manifest.md`, `agent_integration.md`, and `future_mcp_http.md`.
 
 ---
 
