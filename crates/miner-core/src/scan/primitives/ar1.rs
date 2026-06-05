@@ -297,7 +297,7 @@ mod tests {
         assert!(ou_ar1_fit(&[1.0, 2.0]).half_life.is_infinite());
     }
 
-    /// nobs is series.len() - 1 (the number of Δ pairs).
+    /// nobs is `series.len()` - 1 (the number of Δ pairs).
     #[test]
     fn nobs_is_n_minus_one() {
         let series: Vec<f64> = (0..25).map(|t| 1.5 + 0.5_f64.powi(t)).collect();

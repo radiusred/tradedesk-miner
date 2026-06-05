@@ -380,7 +380,7 @@ mod tests {
     }
 
     /// Exact AR(1) decay-to-mean series with coefficient φ (recovered exactly
-    /// by OLS since the points are perfectly collinear in (y_lag, Δy)).
+    /// by OLS since the points are perfectly collinear in `(y_lag, Δy)`).
     fn ar1_decay_closes(phi: f64, n: usize) -> Vec<f64> {
         let mu = 1.5_f64;
         let y0 = 2.0_f64;
