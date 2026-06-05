@@ -339,11 +339,9 @@ fn redact_schema(v: &mut serde_json::Value) {
             // A RawArray is exactly {data, dtype, shape}: redact the bytes to a
             // length-tagged placeholder, keep dtype + shape.
             if map.contains_key("data") && map.contains_key("dtype") && map.contains_key("shape") {
-                let len: u64 = map
-                    .get("shape")
-                    .and_then(|s| s.as_array())
-                    .map(|a| a.iter().filter_map(serde_json::Value::as_u64).product())
-                    .unwrap_or(0);
+                let len: u64 = map.get("shape").and_then(|s| s.as_array()).map_or(0, |a| {
+                    a.iter().filter_map(serde_json::Value::as_u64).product()
+                });
                 map.insert(
                     "data".to_string(),
                     serde_json::Value::String(format!("<f64 x {len}>")),
