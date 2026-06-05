@@ -209,7 +209,8 @@ fn run_scan(a: &BarFrame, b: &BarFrame, params: serde_json::Value) -> Vec<Findin
 fn structural_break_trips_breakdown_only_after_break() {
     let n = 400;
     let break_idx = 200;
-    let (a_closes, b_closes) = structural_break_pair(n, break_idx, 0x1357_9BDF, 0x0ACE_F123, 0xBEEF);
+    let (a_closes, b_closes) =
+        structural_break_pair(n, break_idx, 0x1357_9BDF, 0x0ACE_F123, 0xBEEF);
     let ts = make_ts(n);
     let a = build_bars("EURUSD", &ts, &a_closes);
     let b = build_bars("GBPUSD", &ts, &b_closes);
@@ -232,7 +233,8 @@ fn structural_break_trips_breakdown_only_after_break() {
         if end_idx < break_idx {
             // Fully pre-break window — must NOT flag breakdown.
             assert_eq!(
-                flag, 0.0,
+                flag,
+                0.0,
                 "fully pre-break window {i} (end_idx={end_idx}) must not trip breakdown; \
                  adf_p={:?}",
                 decode_f64(&r.effect.extra["adf_p_values"])[i]
@@ -253,11 +255,17 @@ fn structural_break_trips_breakdown_only_after_break() {
     // Headline effect.value == breakdown count > 0.
     assert!(r.effect.value > 0.0, "breakdown count must be > 0");
     let tripped = flags.iter().filter(|f| **f == 1.0).count() as f64;
-    assert_eq!(r.effect.value, tripped, "effect.value must equal flag count");
+    assert_eq!(
+        r.effect.value, tripped,
+        "effect.value must equal flag count"
+    );
     // Every tripped window has a non-zero reason code.
     for (i, &flag) in flags.iter().enumerate() {
         if flag == 1.0 {
-            assert!(reasons[i] > 0.0, "tripped window {i} must carry a reason code");
+            assert!(
+                reasons[i] > 0.0,
+                "tripped window {i} must carry a reason code"
+            );
         } else {
             assert_eq!(reasons[i], 0.0, "untripped window {i} must have reason 0");
         }
@@ -284,7 +292,8 @@ fn persistently_cointegrated_never_trips_breakdown() {
     assert!(!flags.is_empty());
     let count = flags.iter().filter(|f| **f == 1.0).count();
     assert_eq!(
-        count, 0,
+        count,
+        0,
         "persistently cointegrated pair must never trip breakdown; flags={flags:?} \
          adf_p={:?}",
         decode_f64(&r.effect.extra["adf_p_values"])
@@ -313,7 +322,8 @@ fn twice_run_byte_identical_when_volatile_fields_masked() {
     common::mask_volatile_fields(&mut v1);
     common::mask_volatile_fields(&mut v2);
     assert_eq!(
-        v1, v2,
+        v1,
+        v2,
         "masked envelopes from two runs differ:\n{}\n{}",
         serde_json::to_string_pretty(&v1).unwrap_or_default(),
         serde_json::to_string_pretty(&v2).unwrap_or_default(),
