@@ -23,7 +23,7 @@
 - `Reader::read_day` ingests zstd-CSVs from the tradedesk-dukascopy cache.
   - Path layout: `<root>/<SYMBOL>/<YYYY>/<MM 00-indexed>/<DD>_<bid|ask>.csv.zst`.
   - The 00-indexed month quirk is encapsulated inside the Dukascopy reader and boundary-tested.
-- The aggregator deterministically materialises higher-timeframe UTC-aligned bars (15m / 1h / 1d).
+- The aggregator deterministically materialises higher-timeframe UTC-aligned bars (5m / 10m / 15m / 1h / 1d).
   - Bars are served from the on-disk derived-bar cache as Arrow IPC files, keyed by `(source_id, symbol, side, timeframe)`.
   - Two-axis invalidation: `aggregator_version` / `arrow_schema_version` mismatch triggers a full rebuild; a per-day blake3 fingerprint mismatch triggers a day-splice.
 - `GapDetector` produces a structured `GapManifest` of `(start, end, reason)` tuples before any scan runs.

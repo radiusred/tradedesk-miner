@@ -137,6 +137,117 @@ fn bars_evenly_spaced_across_fall_back() {
 }
 
 #[test]
+fn bars_evenly_spaced_across_fall_back_5m() {
+    let mock = build_three_day_mock();
+    let frame = aggregate(
+        &mock,
+        AggParams {
+            symbol: "EURUSD",
+            side: Side::Bid,
+            tf: Timeframe::Tf5m,
+            range: three_day_range(),
+        },
+    )
+    .expect("aggregate ok");
+
+    // 3 days × (1440 / 5) buckets/day = 3 × 288 = 864.
+    assert_eq!(
+        frame.len(),
+        864,
+        "3-day fall-back range at 5m must emit 864 bars (got {})",
+        frame.len()
+    );
+
+    // Strict 5-minute UTC spacing — no duplicate at the wall-clock repeat.
+    for i in 1..frame.len() {
+        let delta = frame.ts_open_utc[i] - frame.ts_open_utc[i - 1];
+        assert_eq!(
+            delta,
+            Duration::minutes(5),
+            "fall-back 5m: non-uniform spacing at bar {i}: {} -> {}",
+            frame.ts_open_utc[i - 1],
+            frame.ts_open_utc[i]
+        );
+    }
+
+    let transition = fall_back_transition_utc();
+    let count_at_transition = frame
+        .ts_open_utc
+        .iter()
+        .filter(|t| **t == transition)
+        .count();
+    assert_eq!(
+        count_at_transition, 1,
+        "5m bar at 2024-10-27T01:00:00Z must appear exactly ONCE"
+    );
+    let idx = frame
+        .ts_open_utc
+        .iter()
+        .position(|t| *t == transition)
+        .expect("5m bar at 2024-10-27T01:00:00Z must be present");
+    assert_eq!(
+        frame.ts_open_utc[idx + 1],
+        transition + Duration::minutes(5),
+        "next 5m bar after fall-back must be +5m UTC (localtime leak?)"
+    );
+}
+
+#[test]
+fn bars_evenly_spaced_across_fall_back_10m() {
+    let mock = build_three_day_mock();
+    let frame = aggregate(
+        &mock,
+        AggParams {
+            symbol: "EURUSD",
+            side: Side::Bid,
+            tf: Timeframe::Tf10m,
+            range: three_day_range(),
+        },
+    )
+    .expect("aggregate ok");
+
+    // 3 days × (1440 / 10) buckets/day = 3 × 144 = 432.
+    assert_eq!(
+        frame.len(),
+        432,
+        "3-day fall-back range at 10m must emit 432 bars (got {})",
+        frame.len()
+    );
+
+    for i in 1..frame.len() {
+        let delta = frame.ts_open_utc[i] - frame.ts_open_utc[i - 1];
+        assert_eq!(
+            delta,
+            Duration::minutes(10),
+            "fall-back 10m: non-uniform spacing at bar {i}: {} -> {}",
+            frame.ts_open_utc[i - 1],
+            frame.ts_open_utc[i]
+        );
+    }
+
+    let transition = fall_back_transition_utc();
+    let count_at_transition = frame
+        .ts_open_utc
+        .iter()
+        .filter(|t| **t == transition)
+        .count();
+    assert_eq!(
+        count_at_transition, 1,
+        "10m bar at 2024-10-27T01:00:00Z must appear exactly ONCE"
+    );
+    let idx = frame
+        .ts_open_utc
+        .iter()
+        .position(|t| *t == transition)
+        .expect("10m bar at 2024-10-27T01:00:00Z must be present");
+    assert_eq!(
+        frame.ts_open_utc[idx + 1],
+        transition + Duration::minutes(10),
+        "next 10m bar after fall-back must be +10m UTC (localtime leak?)"
+    );
+}
+
+#[test]
 fn bars_evenly_spaced_across_fall_back_1h() {
     let mock = build_three_day_mock();
     let frame = aggregate(

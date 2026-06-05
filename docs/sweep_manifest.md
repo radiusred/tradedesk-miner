@@ -84,7 +84,7 @@ Each `[[jobs]]` block (`JobBlock` at line 141) declares one fanout axis-set. Req
 - `instruments: serde_json::Value` — string array form depends on the scan's arity:
   - **Single-arity** (ANOM / SEAS): flat array of strings — `["EURUSD:bid", "GBPUSD:bid"]` declares two single-leg jobs.
   - **Pair-arity** (CROSS): nested 2-array — `[["EURUSD:bid", "GBPUSD:bid"]]` declares one two-leg job. Each inner array MUST be exactly length 2.
-- `timeframes: Vec<String>` — list of `"15m"` / `"1h"` / `"1d"` etc. Each becomes a fanout axis.
+- `timeframes: Vec<String>` — list of `"5m"` / `"10m"` / `"15m"` / `"1h"` / `"1d"`. Each becomes a fanout axis.
 - `windows: Vec<String>` — list of ISO-date ranges in `"YYYY-MM-DD:YYYY-MM-DD"` form (closed-closed UTC). Each becomes a fanout axis.
 
 Optional keys:

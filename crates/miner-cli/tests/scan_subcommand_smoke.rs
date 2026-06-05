@@ -322,6 +322,56 @@ fn exit_code_routing_zero_one_two() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// RAD-3630 — 5m & 10m timeframes emit Result envelopes end-to-end.
+//
+// Mirrors the happy-path scenario at the two new resolutions, using the
+// welford summary scan named in the RAD-3630 acceptance criteria. One 1m day
+// aggregates to 288 bars at 5m / 144 at 10m — both well above the summary
+// scan's minimum sample, so each run must emit [run_start, result, run_end].
+// ---------------------------------------------------------------------------
+
+#[test]
+#[serial_test::serial]
+fn scan_emits_result_at_5m_and_10m() {
+    let cache = happy_path_cache();
+    for tf in ["5m", "10m"] {
+        let (stdout, stderr, status) = run_miner(
+            &cache,
+            &[
+                "stats.summary.welford@1",
+                "--instrument",
+                "EURUSD:bid",
+                "--timeframe",
+                tf,
+                "--window",
+                "2024-06-12:2024-06-13",
+            ],
+        );
+        assert_eq!(
+            status.code(),
+            Some(0),
+            "tf {tf}: exit 0 required; stderr: {stderr}\nstdout: {stdout}"
+        );
+        let lines = parse_stdout_lines(&stdout);
+        assert_eq!(
+            lines.len(),
+            3,
+            "tf {tf}: expected [run_start, result, run_end]; got {:?}",
+            lines.iter().map(|l| l["kind"].clone()).collect::<Vec<_>>(),
+        );
+        assert_eq!(lines[0]["kind"], "run_start", "tf {tf}");
+        assert_eq!(lines[1]["kind"], "result", "tf {tf}");
+        assert_eq!(lines[2]["kind"], "run_end", "tf {tf}");
+        // The Result's data_slice must carry the requested timeframe through
+        // unchanged (cache path / Arrow metadata round-trip — Requirement 4).
+        assert_eq!(
+            lines[1]["data_slice"]["sources"][0]["timeframe"], tf,
+            "tf {tf}: Result source timeframe must echo the requested value",
+        );
+    }
+}
+
 #[allow(dead_code)]
 fn _ensure_schema_path(_p: &Path) {
     // Plan 06 keeps the schema path resolver around for future use.

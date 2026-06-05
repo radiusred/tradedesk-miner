@@ -13,7 +13,7 @@
 //!
 //! ```text
 //! miner scan <scan_id@version> --instrument SYMBOL:side [--instrument SYMBOL:side]... \
-//!     --timeframe <15m|1h|1d> --window <ISO_FROM>:<ISO_TO> \
+//!     --timeframe <5m|10m|15m|1h|1d> --window <ISO_FROM>:<ISO_TO> \
 //!     [--gap-policy <strict|continuous_only>] [--dry-run] [--params <KEY=VAL>...]
 //! ```
 //!
@@ -66,7 +66,7 @@ pub struct ScanArgs {
     #[arg(long = "instrument", action = clap::ArgAction::Append, value_parser = parse_instrument_spec)]
     pub instruments: Vec<InstrumentSpec>,
 
-    /// Timeframe (`15m` / `1h` / `1d`). Drives `BarCache::get_or_build`.
+    /// Timeframe (`5m` / `10m` / `15m` / `1h` / `1d`). Drives `BarCache::get_or_build`.
     #[arg(long)]
     pub timeframe: String,
 
@@ -186,7 +186,9 @@ impl ScanArgs {
         let timeframe = Timeframe::from_str(&self.timeframe).map_err(|bad| {
             WireError::preflight(
                 PreflightCode::InvalidParameter,
-                format!("timeframe must be one of \"15m\" / \"1h\" / \"1d\"; got {bad:?}"),
+                format!(
+                    "timeframe must be one of \"5m\" / \"10m\" / \"15m\" / \"1h\" / \"1d\"; got {bad:?}"
+                ),
             )
             .with_context(
                 "timeframe",

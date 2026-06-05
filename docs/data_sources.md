@@ -101,7 +101,7 @@ section below for the regression-test contract that pins this discipline.
 Each `RawBar` carries a `ts_open_utc` and a `ts_close_utc = ts_open_utc + 60s`.
 The 60-second close offset is a 1-minute-bar convention specific to this
 cache; the aggregator preserves UTC discipline when resampling to coarser
-timeframes (15m, 1h, 1d).
+timeframes (5m, 10m, 15m, 1h, 1d).
 
 ## Bid vs ask independence
 
