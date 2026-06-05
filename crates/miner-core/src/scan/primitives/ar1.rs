@@ -274,7 +274,10 @@ mod tests {
             "half_life = {} expected INFINITY",
             fit.half_life
         );
-        assert_eq!(fit.lambda, 0.0, "lambda sentinel = 0 for non-mean-reverting");
+        assert_eq!(
+            fit.lambda, 0.0,
+            "lambda sentinel = 0 for non-mean-reverting"
+        );
     }
 
     /// Constant series ⇒ zero-variance regressor ⇒ singular OLS ⇒ sentinel.
