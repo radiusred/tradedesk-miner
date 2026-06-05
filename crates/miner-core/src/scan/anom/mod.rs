@@ -21,6 +21,7 @@ pub mod drawdown;
 pub mod jarque_bera;
 pub mod kpss;
 pub mod ljung_box_sq;
+pub mod meanrev;
 pub mod outliers;
 pub mod returns;
 pub mod summary;
@@ -33,6 +34,7 @@ pub use drawdown::DrawdownProfileScan;
 pub use jarque_bera::JarqueBeraScan;
 pub use kpss::KpssScan;
 pub use ljung_box_sq::LjungBoxSqScan;
+pub use meanrev::OuHalfLifeScan;
 pub use outliers::OutliersZAndMadScan;
 pub use returns::ReturnsProfileScan;
 pub use summary::SummaryWelfordScan;
@@ -52,6 +54,7 @@ pub fn register_anom_scans(r: &mut Registry) {
     //   stats.autocorr.ljung_box_sq       <- Plan 04-04
     //   stats.drawdown.profile            <- Plan 04-04
     //   stats.heteroskedasticity.arch_lm  <- Plan 04-06
+    //   stats.meanrev.ou_halflife         <- RAD-3627
     //   stats.normality.jarque_bera       <- Plan 04-06
     //   stats.outliers.z_and_mad          <- Plan 04-04
     //   stats.returns.profile             <- Plan 04-03
@@ -63,6 +66,7 @@ pub fn register_anom_scans(r: &mut Registry) {
     r.register(Box::new(LjungBoxSqScan));
     r.register(Box::new(DrawdownProfileScan));
     r.register(Box::new(ArchLmScan));
+    r.register(Box::new(OuHalfLifeScan));
     r.register(Box::new(JarqueBeraScan));
     r.register(Box::new(OutliersZAndMadScan));
     r.register(Box::new(ReturnsProfileScan));
@@ -77,8 +81,9 @@ pub fn register_anom_scans(r: &mut Registry) {
 mod tests {
     use super::*;
 
-    /// `register_anom_scans` registers all 11 ANOM scans (ANOM-01..ANOM-11)
-    /// at the close of Plan 04-06. Plan 04-11 tightens this to a full count
+    /// `register_anom_scans` registers all 11 Phase-4 ANOM scans
+    /// (ANOM-01..ANOM-11) plus the RAD-3627 single-leg OU half-life scan
+    /// (`stats.meanrev.ou_halflife`). Plan 04-11 tightens this to a full count
     /// assertion across the complete catalogue (with CROSS + SEAS).
     #[test]
     fn register_anom_scans_registers_all_anom_phase4_scans() {
@@ -95,6 +100,10 @@ mod tests {
         assert!(
             r.get("stats.heteroskedasticity.arch_lm", 1).is_some(),
             "ANOM-08 arch_lm"
+        );
+        assert!(
+            r.get("stats.meanrev.ou_halflife", 1).is_some(),
+            "RAD-3627 ou_halflife"
         );
         assert!(
             r.get("stats.normality.jarque_bera", 1).is_some(),

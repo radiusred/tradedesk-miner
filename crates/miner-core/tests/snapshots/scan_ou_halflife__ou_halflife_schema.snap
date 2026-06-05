@@ -1,0 +1,38 @@
+---
+source: crates/miner-core/tests/scan_ou_halflife.rs
+expression: schema
+---
+{
+  "arity": "Single",
+  "effect_extra_keys": [
+    "ar1_coeff",
+    "ar1_t_stat",
+    "half_life",
+    "nobs",
+    "on"
+  ],
+  "effect_metric": "ou_lambda",
+  "effect_size_kind": "ou_lambda",
+  "effect_value": "lambda (OU mean-reversion rate; half_life=ln2/lambda lives in extra, INFINITY-safe)",
+  "params": {
+    "min_n": {
+      "default": 30,
+      "minimum": 3,
+      "type": "integer"
+    },
+    "on": {
+      "default": "level",
+      "enum": [
+        "level",
+        "returns"
+      ],
+      "type": "string"
+    }
+  },
+  "raw_series_keys": [
+    "closes",
+    "timestamps_ms"
+  ],
+  "scan_id": "stats.meanrev.ou_halflife",
+  "version": 1
+}
