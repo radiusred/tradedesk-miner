@@ -213,8 +213,8 @@ fn assert_emits_kind(sink: &BufferSink, expected_kind: &str, scan_label: &str) {
 fn anom_every_scan_emits_effect_size() {
     use miner_core::scan::anom::{
         AdfScan, ArchLmScan, DrawdownProfileScan, JarqueBeraScan, KpssScan, LjungBoxSqScan,
-        OutliersZAndMadScan, ReturnsProfileScan, SummaryWelfordScan, VarianceRatioScan,
-        VolRollingScan,
+        OuHalfLifeScan, OutliersZAndMadScan, ReturnsProfileScan, SummaryWelfordScan,
+        VarianceRatioScan, VolRollingScan,
     };
     use miner_core::scan::ljung_box::LjungBoxScan;
 
@@ -349,6 +349,16 @@ fn anom_every_scan_emits_effect_size() {
             "max_dd_pct",
             128,
             12,
+        ),
+        (
+            "ou_halflife",
+            Box::new(OuHalfLifeScan),
+            "stats.meanrev.ou_halflife",
+            1,
+            serde_json::json!({}),
+            "ou_lambda",
+            128,
+            13,
         ),
     ];
     for (label, scan, scan_id, version, params, expected_kind, n, seed) in scans {

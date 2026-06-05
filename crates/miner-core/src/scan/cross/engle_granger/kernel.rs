@@ -338,10 +338,12 @@ fn mackinnon_p_constant(tau: f64) -> f64 {
 
 /// Ornstein-Uhlenbeck mean-reversion half-life on the residual series.
 ///
-/// Fits `Δr_t = α' + ρ * r_{t-1} + η_t` via 2-parameter OLS on the
-/// residuals using nalgebra, then computes `half_life = -ln(2) / ln(1 + ρ)`
-/// when `ρ ∈ (-1, 0)`. Outside this range the half-life is undefined and
-/// returns `f64::INFINITY` as the documented sentinel.
+/// Delegates to the shared [`crate::scan::primitives::ar1::ou_ar1_fit`]
+/// primitive (RAD-3627) — the AR(1) regression `Δr_t = α' + ρ · r_{t-1} + η_t`
+/// and the `half_life = -ln(2) / ln(1 + ρ)` (ρ ∈ (-1, 0)) / `f64::INFINITY`
+/// sentinel convention live in ONE place, shared with the single-leg
+/// `stats.meanrev.ou_halflife@1` scan. Behaviour is identical to the previous
+/// inline copy (same nalgebra normal-equations OLS, same sentinel branches).
 ///
 /// Reference: standard pairs-trading OU half-life derivation; e.g.
 /// Chan, *Algorithmic Trading: Winning Strategies and Their Rationale*
@@ -350,36 +352,7 @@ fn mackinnon_p_constant(tau: f64) -> f64 {
 /// table row for OU half-life.
 #[inline]
 fn ou_half_life_from_residuals(residuals: &[f64]) -> f64 {
-    let n = residuals.len();
-    if n < 3 {
-        return f64::INFINITY;
-    }
-    // Δr_t = α' + ρ * r_{t-1} + η_t, t ∈ [1..n).
-    let m = n - 1;
-    let mut delta_r: Vec<f64> = Vec::with_capacity(m);
-    let mut lag_r: Vec<f64> = Vec::with_capacity(m);
-    for t in 1..n {
-        delta_r.push(residuals[t] - residuals[t - 1]);
-        lag_r.push(residuals[t - 1]);
-    }
-    let (_alpha_ou, rho) = fit_ols_intercept_slope(&delta_r, &lag_r);
-    if !rho.is_finite() {
-        return f64::INFINITY;
-    }
-    // half_life = -ln(2) / ln(1 + rho) when rho in (-1, 0).
-    if rho >= 0.0 || rho <= -1.0 {
-        return f64::INFINITY;
-    }
-    let denom = (1.0_f64 + rho).ln();
-    if !denom.is_finite() || denom == 0.0 {
-        return f64::INFINITY;
-    }
-    let half_life = -std::f64::consts::LN_2 / denom;
-    if half_life.is_finite() && half_life > 0.0 {
-        half_life
-    } else {
-        f64::INFINITY
-    }
+    crate::scan::primitives::ar1::ou_ar1_fit(residuals).half_life
 }
 
 // ---------------------------------------------------------------------------

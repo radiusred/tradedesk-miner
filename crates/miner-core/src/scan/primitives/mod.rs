@@ -13,6 +13,11 @@
 //! - [`raw_array`] — `f64_slice_to_raw_array(&[f64]) -> RawArray`. The helper
 //!   currently duplicated inline in `ljung_box/mod.rs` is lifted here once; the
 //!   22 Phase 4 scans consume the same single copy.
+//! - [`ar1`] — `ou_ar1_fit(&[f64]) -> Ar1Fit`. The shared AR(1) /
+//!   Ornstein-Uhlenbeck mean-reversion fit (ρ, φ, half-life, λ, DF t-stat).
+//!   Consumed by both `cross::engle_granger` (CROSS-05 residual half-life) and
+//!   `anom::meanrev` (`stats.meanrev.ou_halflife@1`); the AR(1) regression is
+//!   not copy-pasted (RAD-3627).
 //!
 //! ## Discipline (carried from `04-PATTERNS.md` Pattern B)
 //!
@@ -22,6 +27,7 @@
 //!   `returns` does not).
 //! - `debug_assert!` for kernel invariants.
 
+pub mod ar1;
 pub mod raw_array;
 pub mod returns;
 pub mod time_alignment;
