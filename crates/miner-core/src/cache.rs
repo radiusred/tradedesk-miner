@@ -386,6 +386,8 @@ fn bar_frame_from_record_batches(
     };
     let tf_s = get("timeframe")?;
     let tf = match tf_s.as_str() {
+        "5m" => Timeframe::Tf5m,
+        "10m" => Timeframe::Tf10m,
         "15m" => Timeframe::Tf15m,
         "1h" => Timeframe::Tf1h,
         "1d" => Timeframe::Tf1d,

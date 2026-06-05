@@ -46,16 +46,22 @@ use crate::reader::{ClosedRangeUtc, RawBar, Reader, Side};
 /// full rebuild (Plan 05 owns the cache side; this is the source-of-truth string).
 pub const AGGREGATOR_VERSION: &str = "1.0.0";
 
-/// Aggregation timeframe. The aggregator emits 15m / 1h / 1d bars from 1-minute source.
+/// Aggregation timeframe. The aggregator emits 5m / 10m / 15m / 1h / 1d bars from
+/// 1-minute source.
 ///
-/// Wire form (per PATTERNS lines 903-909): `"15m"` / `"1h"` / `"1d"`. The variant name
-/// prefix `Tf` exists because Rust identifiers cannot start with a digit; the manual
-/// per-variant `#[serde(rename = "...")]` overrides emit the user-visible string form.
+/// Wire form (per PATTERNS lines 903-909): `"5m"` / `"10m"` / `"15m"` / `"1h"` / `"1d"`.
+/// The variant name prefix `Tf` exists because Rust identifiers cannot start with a
+/// digit; the manual `Serialize`/`Deserialize` impls map each variant to its
+/// user-visible string form.
 ///
-/// The `JsonSchema` derive composes with the per-variant rename via schemars 1.x —
-/// the schema enum entries are `"15m" / "1h" / "1d"`, matching the serde wire form.
+/// The hand-rolled `JsonSchema` impl pins the schema enum entries to
+/// `"5m" / "10m" / "15m" / "1h" / "1d"`, matching the serde wire form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Timeframe {
+    /// 5-minute bars.
+    Tf5m,
+    /// 10-minute bars.
+    Tf10m,
     /// 15-minute bars.
     Tf15m,
     /// 1-hour bars.
@@ -70,6 +76,8 @@ impl Timeframe {
     #[must_use]
     pub fn duration(self) -> Duration {
         match self {
+            Self::Tf5m => Duration::minutes(5),
+            Self::Tf10m => Duration::minutes(10),
             Self::Tf15m => Duration::minutes(15),
             Self::Tf1h => Duration::hours(1),
             Self::Tf1d => Duration::hours(24),
@@ -82,6 +90,8 @@ impl Timeframe {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Tf5m => "5m",
+            Self::Tf10m => "10m",
             Self::Tf15m => "15m",
             Self::Tf1h => "1h",
             Self::Tf1d => "1d",
@@ -89,12 +99,12 @@ impl Timeframe {
     }
 
     /// Inverse of [`Timeframe::as_str`] — parse the canonical CLI / wire form
-    /// (`"15m"` / `"1h"` / `"1d"`) into a [`Timeframe`]. Used by Plan 03-05 to
-    /// convert the clap-parsed `--timeframe` string into the typed enum at the
-    /// CLI preflight boundary.
+    /// (`"5m"` / `"10m"` / `"15m"` / `"1h"` / `"1d"`) into a [`Timeframe`]. Used
+    /// by Plan 03-05 to convert the clap-parsed `--timeframe` string into the
+    /// typed enum at the CLI preflight boundary.
     ///
     /// # Errors
-    /// Returns the input `&str` unchanged when it is not one of the three
+    /// Returns the input `&str` unchanged when it is not one of the five
     /// canonical forms; callers convert the error into a typed `WireError`
     /// with appropriate context.
     ///
@@ -104,6 +114,8 @@ impl Timeframe {
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self, &str> {
         match s {
+            "5m" => Ok(Self::Tf5m),
+            "10m" => Ok(Self::Tf10m),
             "15m" => Ok(Self::Tf15m),
             "1h" => Ok(Self::Tf1h),
             "1d" => Ok(Self::Tf1d),
@@ -123,11 +135,13 @@ impl<'de> Deserialize<'de> for Timeframe {
         use serde::de::Error as _;
         let s = <&str as Deserialize>::deserialize(deserializer)?;
         match s {
+            "5m" => Ok(Self::Tf5m),
+            "10m" => Ok(Self::Tf10m),
             "15m" => Ok(Self::Tf15m),
             "1h" => Ok(Self::Tf1h),
             "1d" => Ok(Self::Tf1d),
             other => Err(D::Error::custom(format!(
-                "unknown Timeframe: {other:?} (expected one of \"15m\", \"1h\", \"1d\")"
+                "unknown Timeframe: {other:?} (expected one of \"5m\", \"10m\", \"15m\", \"1h\", \"1d\")"
             ))),
         }
     }
@@ -143,8 +157,8 @@ impl JsonSchema for Timeframe {
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
         serde_json::json!({
             "type": "string",
-            "enum": ["15m", "1h", "1d"],
-            "description": "Bar aggregation timeframe — `15m`, `1h`, or `1d`."
+            "enum": ["5m", "10m", "15m", "1h", "1d"],
+            "description": "Bar aggregation timeframe — `5m`, `10m`, `15m`, `1h`, or `1d`."
         })
         .try_into()
         .expect("valid schema fragment")
@@ -272,11 +286,13 @@ where
 ///
 /// For every timeframe, the sub-minute components (second, nanosecond) are zeroed.
 /// Then:
+/// - `Tf5m`: minute floored to a 5-minute boundary (`m / 5 * 5`).
+/// - `Tf10m`: minute floored to a 10-minute boundary (`m / 10 * 10`).
 /// - `Tf15m`: minute floored to a 15-minute boundary (`m / 15 * 15`).
 /// - `Tf1h`: minute zeroed.
 /// - `Tf1d`: minute AND hour zeroed.
 ///
-/// All three branches use chrono's `.with_*` setters in sequence; `Tf1d`
+/// All branches use chrono's `.with_*` setters in sequence; `Tf1d`
 /// intentionally does NOT use the `date_naive` + `and_hms_opt` form — keeping a
 /// single component-wise form removes the need to justify a per-tf branch in
 /// code review, and a workspace grep gate enforces this discipline.
@@ -287,6 +303,12 @@ pub(crate) fn align_down(ts: DateTime<Utc>, tf: Timeframe) -> DateTime<Utc> {
         .and_then(|t| t.with_nanosecond(0))
         .expect("zeroing sub-minute fields is always valid");
     match tf {
+        Timeframe::Tf5m => t0
+            .with_minute((t0.minute() / 5) * 5)
+            .expect("minute computed as (m / 5) * 5 is always in 0..=55"),
+        Timeframe::Tf10m => t0
+            .with_minute((t0.minute() / 10) * 10)
+            .expect("minute computed as (m / 10) * 10 is always in 0..=50"),
         Timeframe::Tf15m => t0
             .with_minute((t0.minute() / 15) * 15)
             .expect("minute computed as (m / 15) * 15 is always in 0..=45"),
@@ -325,6 +347,8 @@ fn validate_range_alignment(start: DateTime<Utc>, tf: Timeframe) -> bool {
         return false;
     }
     match tf {
+        Timeframe::Tf5m => start.minute() % 5 == 0,
+        Timeframe::Tf10m => start.minute() % 10 == 0,
         Timeframe::Tf15m => start.minute() % 15 == 0,
         Timeframe::Tf1h => start.minute() == 0,
         Timeframe::Tf1d => start.minute() == 0 && start.hour() == 0,
@@ -635,6 +659,16 @@ mod tests {
 
     #[test]
     fn timeframe_serde_round_trip() {
+        let ser = serde_json::to_string(&Timeframe::Tf5m).unwrap();
+        assert_eq!(ser, "\"5m\"");
+        let de: Timeframe = serde_json::from_str("\"5m\"").unwrap();
+        assert_eq!(de, Timeframe::Tf5m);
+
+        let ser = serde_json::to_string(&Timeframe::Tf10m).unwrap();
+        assert_eq!(ser, "\"10m\"");
+        let de: Timeframe = serde_json::from_str("\"10m\"").unwrap();
+        assert_eq!(de, Timeframe::Tf10m);
+
         let ser = serde_json::to_string(&Timeframe::Tf15m).unwrap();
         assert_eq!(ser, "\"15m\"");
         let de: Timeframe = serde_json::from_str("\"15m\"").unwrap();
@@ -653,9 +687,29 @@ mod tests {
 
     #[test]
     fn timeframe_from_str_round_trip() {
-        for tf in [Timeframe::Tf15m, Timeframe::Tf1h, Timeframe::Tf1d] {
+        for tf in [
+            Timeframe::Tf5m,
+            Timeframe::Tf10m,
+            Timeframe::Tf15m,
+            Timeframe::Tf1h,
+            Timeframe::Tf1d,
+        ] {
             assert_eq!(Timeframe::from_str(tf.as_str()).unwrap(), tf);
         }
+    }
+
+    #[test]
+    fn timeframe_json_schema_enumerates_five_timeframes() {
+        // RAD-3630: `miner scans` surfaces this schema; the enum must list the
+        // five supported wire forms in canonical (ascending duration) order.
+        let mut generator = SchemaGenerator::default();
+        let schema = Timeframe::json_schema(&mut generator);
+        let value = serde_json::to_value(&schema).expect("schema serialises");
+        assert_eq!(
+            value["enum"],
+            serde_json::json!(["5m", "10m", "15m", "1h", "1d"]),
+            "Timeframe JsonSchema enum must reflect the five supported timeframes"
+        );
     }
 
     #[test]
@@ -689,6 +743,47 @@ mod tests {
         assert_eq!(
             align_down(ts, Timeframe::Tf15m),
             Utc.with_ymd_and_hms(2024, 6, 12, 10, 45, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn align_down_5m() {
+        // 10:07:42 floors to 10:05 (m / 5 * 5 = 7/5*5 = 5).
+        let ts = Utc.with_ymd_and_hms(2024, 6, 12, 10, 7, 42).unwrap();
+        assert_eq!(
+            align_down(ts, Timeframe::Tf5m),
+            Utc.with_ymd_and_hms(2024, 6, 12, 10, 5, 0).unwrap()
+        );
+        // Already on a 5m boundary — unchanged (sub-minute fields zeroed).
+        let ts = Utc.with_ymd_and_hms(2024, 6, 12, 10, 10, 0).unwrap();
+        assert_eq!(
+            align_down(ts, Timeframe::Tf5m),
+            Utc.with_ymd_and_hms(2024, 6, 12, 10, 10, 0).unwrap()
+        );
+        let ts = Utc.with_ymd_and_hms(2024, 6, 12, 10, 59, 59).unwrap();
+        assert_eq!(
+            align_down(ts, Timeframe::Tf5m),
+            Utc.with_ymd_and_hms(2024, 6, 12, 10, 55, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn align_down_10m() {
+        // 10:07:42 floors to 10:00 (m / 10 * 10 = 7/10*10 = 0).
+        let ts = Utc.with_ymd_and_hms(2024, 6, 12, 10, 7, 42).unwrap();
+        assert_eq!(
+            align_down(ts, Timeframe::Tf10m),
+            Utc.with_ymd_and_hms(2024, 6, 12, 10, 0, 0).unwrap()
+        );
+        let ts = Utc.with_ymd_and_hms(2024, 6, 12, 10, 10, 0).unwrap();
+        assert_eq!(
+            align_down(ts, Timeframe::Tf10m),
+            Utc.with_ymd_and_hms(2024, 6, 12, 10, 10, 0).unwrap()
+        );
+        let ts = Utc.with_ymd_and_hms(2024, 6, 12, 10, 59, 59).unwrap();
+        assert_eq!(
+            align_down(ts, Timeframe::Tf10m),
+            Utc.with_ymd_and_hms(2024, 6, 12, 10, 50, 0).unwrap()
         );
     }
 
@@ -741,7 +836,9 @@ mod tests {
 
         let range = whole_day_range(date);
         for (tf, expected_len) in [
-            (Timeframe::Tf15m, 96_usize), // 1440 / 15
+            (Timeframe::Tf5m, 288_usize),  // 1440 / 5
+            (Timeframe::Tf10m, 144_usize), // 1440 / 10
+            (Timeframe::Tf15m, 96_usize),  // 1440 / 15
             (Timeframe::Tf1h, 24_usize),
             (Timeframe::Tf1d, 1_usize),
         ] {
@@ -1031,5 +1128,71 @@ mod tests {
             }
             AggregateError::Reader(_) => panic!("expected MisalignedRange, got Reader error"),
         }
+    }
+
+    #[test]
+    fn misaligned_range_errors_for_5m_and_10m() {
+        let mock = MockReader::new();
+
+        // 10:07 is not aligned to a 5-minute boundary (7 % 5 != 0).
+        let start = Utc.with_ymd_and_hms(2024, 6, 12, 10, 7, 0).unwrap();
+        let err = aggregate(
+            &mock,
+            AggParams {
+                symbol: "EURUSD",
+                side: Side::Bid,
+                tf: Timeframe::Tf5m,
+                range: ClosedRangeUtc {
+                    start,
+                    end: start + Duration::hours(1),
+                },
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            AggregateError::MisalignedRange {
+                tf: Timeframe::Tf5m,
+                ..
+            }
+        ));
+
+        // 10:05 IS aligned for 5m but NOT for 10m (5 % 10 != 0).
+        let start = Utc.with_ymd_and_hms(2024, 6, 12, 10, 5, 0).unwrap();
+        let err = aggregate(
+            &mock,
+            AggParams {
+                symbol: "EURUSD",
+                side: Side::Bid,
+                tf: Timeframe::Tf10m,
+                range: ClosedRangeUtc {
+                    start,
+                    end: start + Duration::hours(1),
+                },
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            AggregateError::MisalignedRange {
+                tf: Timeframe::Tf10m,
+                ..
+            }
+        ));
+
+        // 10:05 must be ACCEPTED for 5m (no misalignment error).
+        aggregate(
+            &mock,
+            AggParams {
+                symbol: "EURUSD",
+                side: Side::Bid,
+                tf: Timeframe::Tf5m,
+                range: ClosedRangeUtc {
+                    start,
+                    end: start + Duration::hours(1),
+                },
+            },
+        )
+        .expect("10:05 is aligned to a 5-minute boundary");
     }
 }
