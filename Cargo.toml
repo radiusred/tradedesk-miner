@@ -32,7 +32,7 @@ members = [
 # All member crates inherit via `version.workspace = true` — a single
 # source of truth keeps internal path-deps (e.g. miner-cli → miner-core)
 # from going out of sync at version-bump time.
-version = "1.0.3"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
