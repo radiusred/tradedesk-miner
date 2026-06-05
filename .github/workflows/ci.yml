@@ -109,9 +109,13 @@ jobs:
       # and as of 2026-05 picks up transitive deps (time@0.3.47, smol_str@0.3.6,
       # ...) that require rustc 1.86+, breaking against this repo's pinned 1.85.
       # Use --locked so cargo-audit's own Cargo.lock pins the dep graph instead.
+      # Pin the cargo-audit *version* too: 0.22.2 (released 2026-06) raises its
+      # own manifest rust-version to 1.88, so `--locked` alone no longer helps —
+      # cargo still selects the latest crate version and rejects it against the
+      # pinned 1.85 toolchain. 0.22.1 is the newest release that supports 1.85.
       - name: cargo audit
         run: |
-          cargo install --locked cargo-audit
+          cargo install --locked --version 0.22.1 cargo-audit
           cargo audit
 
       # Gate 8 (Phase 07 Plan 07-03 / D7-05) — cargo deny check. Runs all four
