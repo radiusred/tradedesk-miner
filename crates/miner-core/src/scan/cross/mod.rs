@@ -15,11 +15,13 @@
 
 use super::Registry;
 
+pub mod cointegration_rolling;
 pub mod corr_rolling;
 pub mod engle_granger;
 pub mod lead_lag;
 pub mod ols_rolling;
 
+pub use cointegration_rolling::CointegrationRollingScan;
 pub use corr_rolling::{PearsonRollingScan, SpearmanRollingScan};
 pub use engle_granger::EngleGrangerScan;
 pub use lead_lag::LeadLagCcfScan;
@@ -34,6 +36,8 @@ pub use ols_rolling::OlsRollingScan;
 /// `cross.ols.rolling`). Plans never touch `registry::bootstrap`.
 pub fn register_cross_scans(r: &mut Registry) {
     r.register(Box::new(EngleGrangerScan));
+    // RAD-3626 — sorts immediately after `cross.cointegration.engle_granger`.
+    r.register(Box::new(CointegrationRollingScan));
     r.register(Box::new(PearsonRollingScan));
     r.register(Box::new(SpearmanRollingScan));
     r.register(Box::new(OlsRollingScan));
@@ -47,7 +51,8 @@ mod tests {
     /// Plan 04-07 — `register_cross_scans` registers three Pair-arity
     /// rolling scans (Pearson + Spearman correlation, and OLS regression).
     /// Plan 04-08 Task 1 adds CROSS-04 `cross.lead_lag.ccf`. Plan 04-08
-    /// Task 2 adds CROSS-05 `cross.cointegration.engle_granger`.
+    /// Task 2 adds CROSS-05 `cross.cointegration.engle_granger`. RAD-3626
+    /// adds CROSS-06 `cross.cointegration.rolling`.
     /// Subsequent Phase-4 plans extend this helper with further scans.
     #[test]
     fn register_cross_scans_includes_all_five_cross_scans() {
@@ -56,12 +61,16 @@ mod tests {
         register_cross_scans(&mut r);
         let added = r.scans.len() - before;
         assert!(
-            added >= 5,
-            "expected >= 5 CROSS scans registered; got {added}"
+            added >= 6,
+            "expected >= 6 CROSS scans registered; got {added}"
         );
         assert!(
             r.get("cross.cointegration.engle_granger", 1).is_some(),
             "cross.cointegration.engle_granger@1 must be registered"
+        );
+        assert!(
+            r.get("cross.cointegration.rolling", 1).is_some(),
+            "cross.cointegration.rolling@1 must be registered"
         );
         assert!(
             r.get("cross.corr.pearson_rolling", 1).is_some(),

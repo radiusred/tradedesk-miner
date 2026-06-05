@@ -62,7 +62,10 @@ const EFFECT_METRIC: &str = "engle_granger_hedge_ratio";
 /// produce a meaningful ADF stat + OU half-life. Below this the test is
 /// underpowered and we reject up-stream. 30 matches the conservative pin
 /// in the plan acceptance criteria.
-const MIN_ALIGNED_N: usize = 30;
+///
+/// `pub(crate)` so the rolling cointegration scan (`cross.cointegration.rolling`,
+/// RAD-3626) reuses the SAME per-window floor rather than re-deriving it.
+pub(crate) const MIN_ALIGNED_N: usize = 30;
 
 const FINDING_SHAPE: ScanFindingShape = ScanFindingShape {
     effect_extra_keys: &[
