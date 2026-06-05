@@ -200,7 +200,11 @@ pub(crate) fn rolling_cointegration(
 
     // Upper bound on the window count: ceil-free since start increments by step
     // while start + window <= n.
-    let n_windows = if window > n { 0 } else { (n - window) / step + 1 };
+    let n_windows = if window > n {
+        0
+    } else {
+        (n - window) / step + 1
+    };
 
     let mut window_start_idx = Vec::with_capacity(n_windows);
     let mut window_end_idx = Vec::with_capacity(n_windows);
@@ -220,7 +224,11 @@ pub(crate) fn rolling_cointegration(
     let mut start = 0usize;
     while start + window <= n {
         let end = start + window - 1;
-        let fit = engle_granger(&y[start..start + window], &x[start..start + window], regression);
+        let fit = engle_granger(
+            &y[start..start + window],
+            &x[start..start + window],
+            regression,
+        );
 
         let beta = fit.hedge_ratio_beta;
         let adf_p = fit.adf_p_value;

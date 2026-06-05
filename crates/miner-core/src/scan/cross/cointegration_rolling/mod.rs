@@ -237,7 +237,10 @@ impl Scan for CointegrationRollingScan {
             params.regression,
             params.thresholds,
         );
-        debug_assert!(!roll.is_empty(), "window <= aligned_n guarantees >= 1 window");
+        debug_assert!(
+            !roll.is_empty(),
+            "window <= aligned_n guarantees >= 1 window"
+        );
 
         // 7. NaN detection — a zero-variance regressor window surfaces as a NaN
         //    β (singular OLS system); reject the run as the rolling siblings do.
@@ -299,7 +302,10 @@ impl Scan for CointegrationRollingScan {
             "residual_stds".into(),
             f64_slice_to_raw_array(&roll.residual_stds),
         );
-        extra.insert("step".into(), f64_slice_to_raw_array(&[usize_as_f64(params.step)]));
+        extra.insert(
+            "step".into(),
+            f64_slice_to_raw_array(&[usize_as_f64(params.step)]),
+        );
         extra.insert(
             "window_ends_ms".into(),
             f64_slice_to_raw_array(&window_ends_ms),
@@ -454,7 +460,9 @@ fn resolve_params(req: &ScanRequest, aligned_n: usize) -> Result<ResolvedParams,
             .ok_or_else(|| ScanError::Kernel(format!("step must be an integer; got {v}")))?,
     };
     if step_i64 < 1 {
-        return Err(ScanError::Kernel(format!("step must be >= 1; got {step_i64}")));
+        return Err(ScanError::Kernel(format!(
+            "step must be >= 1; got {step_i64}"
+        )));
     }
     let step = usize::try_from(step_i64)
         .map_err(|_| ScanError::Kernel(format!("step out of range for usize: {step_i64}")))?;
@@ -525,9 +533,9 @@ fn resolve_regression(req: &ScanRequest) -> Result<engle_granger::AdfRegression,
     match req.resolved_params.get("regression") {
         None => Ok(engle_granger::AdfRegression::Constant),
         Some(v) => {
-            let s = v
-                .as_str()
-                .ok_or_else(|| ScanError::Kernel(format!("regression must be a string; got {v}")))?;
+            let s = v.as_str().ok_or_else(|| {
+                ScanError::Kernel(format!("regression must be a string; got {v}"))
+            })?;
             match s {
                 "c" => Ok(engle_granger::AdfRegression::Constant),
                 "ct" => Ok(engle_granger::AdfRegression::ConstantTrend),
@@ -739,7 +747,9 @@ mod tests {
         let mut sink = VecSink::new();
         let req = sample_request(serde_json::json!({"window": 60, "step": 10}));
         let ctx = make_ctx(&a, &b, Arc::new(AtomicBool::new(false)));
-        CointegrationRollingScan.run(&ctx, &req, &mut sink).expect("ok");
+        CointegrationRollingScan
+            .run(&ctx, &req, &mut sink)
+            .expect("ok");
         let findings = parse_findings(&sink);
         assert_eq!(findings.len(), 1);
         let Finding::Result(r) = &findings[0] else {
