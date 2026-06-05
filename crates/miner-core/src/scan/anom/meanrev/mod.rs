@@ -534,7 +534,10 @@ mod tests {
             panic!("expected Result");
         };
         let half_life = decode_f64(&r.effect.extra["half_life"]);
-        assert!(half_life.is_infinite(), "half_life = {half_life} expected INF");
+        assert!(
+            half_life.is_infinite(),
+            "half_life = {half_life} expected INF"
+        );
         assert_eq!(r.effect.value, 0.0, "λ sentinel = 0");
     }
 
@@ -586,7 +589,9 @@ mod tests {
         let mut sink = VecSink::new();
         let req = sample_request_with_params(serde_json::json!({"min_n": 10}));
         let ctx = make_ctx(&bars, Arc::new(AtomicBool::new(false)));
-        OuHalfLifeScan.run(&ctx, &req, &mut sink).expect("ok with min_n=10");
+        OuHalfLifeScan
+            .run(&ctx, &req, &mut sink)
+            .expect("ok with min_n=10");
         assert!(!sink.0.is_empty());
     }
 

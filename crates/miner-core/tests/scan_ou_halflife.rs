@@ -6,11 +6,7 @@
 //! snapshot and the half-life recovery / sentinel behaviour via numeric
 //! acceptance asserts (acceptance criteria 2 + 4).
 
-#![allow(
-    clippy::cast_precision_loss,
-    clippy::too_many_lines,
-    clippy::float_cmp
-)]
+#![allow(clippy::cast_precision_loss, clippy::too_many_lines, clippy::float_cmp)]
 
 mod common;
 
@@ -129,7 +125,9 @@ fn decode_f64(arr: &RawArray) -> f64 {
 fn run_one(params: serde_json::Value, closes: &[f64]) -> miner_core::findings::ResultFinding {
     let bars = build_bar_frame_from_closes(closes);
     let mut sink = BufferSink::new();
-    OuHalfLifeScan.run(&ctx(&bars), &request(params), &mut sink).expect("scan ok");
+    OuHalfLifeScan
+        .run(&ctx(&bars), &request(params), &mut sink)
+        .expect("scan ok");
     let findings = common::parse_findings(&sink.0);
     assert_eq!(findings.len(), 1, "exactly one envelope");
     let Finding::Result(r) = findings.into_iter().next().unwrap() else {
@@ -202,7 +200,10 @@ fn scan_ou_halflife_non_mean_reverting_is_infinity() {
 /// The `on=returns` basis dispatches and echoes the basis label.
 #[test]
 fn scan_ou_halflife_returns_basis() {
-    let r = run_one(serde_json::json!({"on": "returns"}), &ar1_decay_closes(0.5, 40));
+    let r = run_one(
+        serde_json::json!({"on": "returns"}),
+        &ar1_decay_closes(0.5, 40),
+    );
     let on_bytes = &r.effect.extra["on"].data.0;
     assert_eq!(std::str::from_utf8(on_bytes).unwrap(), "returns");
 }
