@@ -185,12 +185,12 @@ impl Scan for TsmomScan {
         let mut tsmom_means: Vec<f64> = Vec::with_capacity(k_values.len());
         let mut turnover_per_bar: Vec<f64> = Vec::with_capacity(k_values.len());
         for &k in &k_values {
-            let res = kernel::tsmom_continuation(&analysis, k).map_err(ScanError::Kernel)?;
-            continuation_coefs.push(res.continuation_coef);
-            t_stats.push(res.t_stat);
-            p_values.push(res.p_value);
-            hit_rates.push(res.hit_rate);
-            tsmom_means.push(res.tsmom_mean);
+            let k_result = kernel::tsmom_continuation(&analysis, k).map_err(ScanError::Kernel)?;
+            continuation_coefs.push(k_result.continuation_coef);
+            t_stats.push(k_result.t_stat);
+            p_values.push(k_result.p_value);
+            hit_rates.push(k_result.hit_rate);
+            tsmom_means.push(k_result.tsmom_mean);
             turnover_per_bar.push(1.0 / usize_to_f64(k));
         }
 
