@@ -330,6 +330,20 @@ Pre / post event-window aggregation around caller-supplied event timestamps.
 - **When to reach for it:** event-study analysis around NFP / FOMC / ECB / earnings; arbitrary caller-defined event timestamps
 - **Requirement:** SEAS-06
 
+### seas.gap.overnight@1
+
+Session/overnight gap statistics: detects close→next-open jumps that straddle a session boundary, then reports the gap-size distribution and **gap-fill probability** conditioned on direction × size bucket.
+
+- **Arity:** Single
+- **effect.metric:** `overnight_gap_fill_rate`
+- **effect.value:** overall fill rate (filled / total gaps; 0 when no gaps)
+- **effect.extra keys:** `bucket_labels`, `down_counts`, `down_fill_counts`, `down_fill_prob`, `gap_count`, `gap_size_quantile_probs`, `gap_size_quantiles`, `hold_floor_caveat`, `median_bars_to_fill`, `size_bucket_edges`, `sparse_gaps`, `up_counts`, `up_fill_counts`, `up_fill_prob`
+- **Raw arrays:** `gap_bars_to_fill`, `gap_directions`, `gap_filled`, `gap_sizes`, `timestamps_ms` (one entry per detected gap)
+- **Params:** `boundary_gap_minutes` (session/day-boundary; default 1.5× timeframe), `size_bucket_edges` (default `[5e-4, 1e-3, 2e-3]`), `min_gap_threshold` (default 0), `resolution_hint` (advisory), `fill_lookahead_bars` (default 48), `min_obs_per_bucket` (default 5), `hold_floor_bars` (default 12), `sparse_gap_min_count` (default 20)
+- **Note:** resolution-parameterized — boundaries come from the inter-bar time delta, so a continuous 24×5 FX series produces zero gaps and trips the `sparse_gaps` flag rather than emitting weak candidates. `hold_floor_caveat` trips when the data-driven median bars-to-fill is below the 12-bar arena floor (a gap-fill trade holds too few bars at this resolution — build at a finer resolution). Most valuable on equity-index / commodity CFDs; most useful at 15-min / 30-min bars.
+- **When to reach for it:** overnight / session gap-fill edges on index & commodity CFDs (Scout RAD-3548 ★★★★, Sharpe 2.38 SPX)
+- **Requirement:** RAD-3840
+
 ## See Also
 
 - [findings_envelope.md](findings_envelope.md) — envelope shape every scan emits

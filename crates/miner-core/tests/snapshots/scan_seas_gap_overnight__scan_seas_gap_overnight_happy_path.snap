@@ -1,0 +1,187 @@
+---
+source: crates/miner-core/tests/scan_seas_gap_overnight.rs
+expression: masked
+---
+{
+  "code_revision": "test-rev-abc1234",
+  "data_slice": {
+    "gap_manifest": null,
+    "gap_manifest_ref": null,
+    "range": {
+      "end_utc": "2024-01-08T00:00:00Z",
+      "start_utc": "2024-01-01T00:00:00Z"
+    },
+    "sources": [
+      {
+        "side": "bid",
+        "source_id": "dukascopy",
+        "symbol": "EURUSD",
+        "timeframe": "15m"
+      }
+    ]
+  },
+  "dsr": null,
+  "effect": {
+    "ci95": null,
+    "effect_size": {
+      "kind": "fill_rate",
+      "value": 0.8
+    },
+    "extra": {
+      "bucket_labels": {
+        "data": "WyI8MC4wMDA1IiwiMC4wMDA1Li4wLjAwMSIsIjAuMDAxLi4wLjAwMiIsIj49MC4wMDIiXQ==",
+        "dtype": "f64",
+        "shape": [
+          52
+        ]
+      },
+      "down_counts": {
+        "data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8=",
+        "dtype": "f64",
+        "shape": [
+          4
+        ]
+      },
+      "down_fill_counts": {
+        "data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8=",
+        "dtype": "f64",
+        "shape": [
+          4
+        ]
+      },
+      "down_fill_prob": {
+        "data": "AAAAAAAA+H8AAAAAAAD4fwAAAAAAAPA/AAAAAAAA8D8=",
+        "dtype": "f64",
+        "shape": [
+          4
+        ]
+      },
+      "gap_count": {
+        "data": "AAAAAAAAFEA=",
+        "dtype": "f64",
+        "shape": [
+          1
+        ]
+      },
+      "gap_size_quantile_probs": {
+        "data": "mpmZmZmZuT8AAAAAAADQPwAAAAAAAOA/AAAAAAAA6D/NzMzMzMzsPw==",
+        "dtype": "f64",
+        "shape": [
+          5
+        ]
+      },
+      "gap_size_quantiles": {
+        "data": "TDcVqTC2UD8AgGq8dJNYPwCAarx0k1g/uH5qvHSTaD+4fmq8dJNoPw==",
+        "dtype": "f64",
+        "shape": [
+          5
+        ]
+      },
+      "hold_floor_caveat": {
+        "data": "AAAAAAAA8D8=",
+        "dtype": "f64",
+        "shape": [
+          1
+        ]
+      },
+      "median_bars_to_fill": {
+        "data": "AAAAAAAA8D8=",
+        "dtype": "f64",
+        "shape": [
+          1
+        ]
+      },
+      "size_bucket_edges": {
+        "data": "/Knx0k1iQD/8qfHSTWJQP/yp8dJNYmA/",
+        "dtype": "f64",
+        "shape": [
+          3
+        ]
+      },
+      "sparse_gaps": {
+        "data": "AAAAAAAAAAA=",
+        "dtype": "f64",
+        "shape": [
+          1
+        ]
+      },
+      "up_counts": {
+        "data": "AAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAAAAA8D8=",
+        "dtype": "f64",
+        "shape": [
+          4
+        ]
+      },
+      "up_fill_counts": {
+        "data": "AAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAAAAAAAA=",
+        "dtype": "f64",
+        "shape": [
+          4
+        ]
+      },
+      "up_fill_prob": {
+        "data": "AAAAAAAA+H8AAAAAAADwPwAAAAAAAPA/AAAAAAAAAAA=",
+        "dtype": "f64",
+        "shape": [
+          4
+        ]
+      }
+    },
+    "metric": "overnight_gap_fill_rate",
+    "n": 5,
+    "p_value": null,
+    "value": 0.8
+  },
+  "fdr_q": null,
+  "kind": "result",
+  "param_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "params": {
+    "fill_lookahead_bars": 1,
+    "min_obs_per_bucket": 1,
+    "sparse_gap_min_count": 3
+  },
+  "produced_at_utc": "<masked_produced_at_utc>",
+  "raw": {
+    "series": {
+      "gap_bars_to_fill": {
+        "data": "AAAAAAAA8D8AAAAAAAD4fwAAAAAAAPA/AAAAAAAA8D8AAAAAAADwPw==",
+        "dtype": "f64",
+        "shape": [
+          5
+        ]
+      },
+      "gap_directions": {
+        "data": "AAAAAAAA8D8AAAAAAADwPwAAAAAAAPC/AAAAAAAA8L8AAAAAAADwPw==",
+        "dtype": "f64",
+        "shape": [
+          5
+        ]
+      },
+      "gap_filled": {
+        "data": "AAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAADwPw==",
+        "dtype": "f64",
+        "shape": [
+          5
+        ]
+      },
+      "gap_sizes": {
+        "data": "AIBqvHSTWD+4fmq8dJNoPwCAarx0k1i/uH5qvHSTaL9SuLiNBvBGPw==",
+        "dtype": "f64",
+        "shape": [
+          5
+        ]
+      },
+      "timestamps_ms": {
+        "data": "AAAAhXfMeEIAAMDqycx4QgAAgFAczXhCAABAtm7NeEIAAAAcwc14Qg==",
+        "dtype": "f64",
+        "shape": [
+          5
+        ]
+      }
+    }
+  },
+  "repro": null,
+  "run_id": "<masked_run_id>",
+  "scan_id@version": "seas.gap.overnight@1",
+  "schema_version": 1
+}
