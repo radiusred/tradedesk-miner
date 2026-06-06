@@ -127,6 +127,10 @@ pub(crate) fn vol_normalize(returns: &[f64], window: usize) -> Vec<f64> {
     clippy::similar_names,
     reason = "sx/sy/sxx/sxy/dx/dy are the canonical OLS accumulator names"
 )]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "n/k/m are canonical OLS/TSMOM names; x/y are the standard regressor/regressand pair"
+)]
 pub(crate) fn tsmom_continuation(returns: &[f64], k: usize) -> Result<TsmomResult, String> {
     let n = returns.len();
     if k < 1 {
