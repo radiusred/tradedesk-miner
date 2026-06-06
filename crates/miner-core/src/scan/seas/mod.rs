@@ -27,6 +27,7 @@ pub mod bucketing;
 pub mod day_of_week;
 pub mod eom_som;
 pub mod event_window;
+pub mod gap;
 pub mod hour_of_day;
 pub mod session;
 
@@ -34,6 +35,7 @@ pub use anova_kw::AnovaKruskalScan;
 pub use day_of_week::DayOfWeekScan;
 pub use eom_som::EomSomScan;
 pub use event_window::EventWindowScan;
+pub use gap::OvernightGapScan;
 pub use hour_of_day::HourOfDayScan;
 pub use session::SessionScan;
 
@@ -46,12 +48,14 @@ pub fn register_seas_scans(r: &mut Registry) {
     //   seas.bucket.hour_of_day        <- Plan 04-09
     //   seas.bucket.session            <- Plan 04-09
     //   seas.event.pre_post_window     <- Plan 04-10
+    //   seas.gap.overnight             <- RAD-3840
     //   seas.test.anova_kruskal        <- Plan 04-10
     r.register(Box::new(DayOfWeekScan));
     r.register(Box::new(EomSomScan));
     r.register(Box::new(HourOfDayScan));
     r.register(Box::new(SessionScan));
     r.register(Box::new(EventWindowScan));
+    r.register(Box::new(OvernightGapScan));
     r.register(Box::new(AnovaKruskalScan));
 }
 
@@ -59,17 +63,17 @@ pub fn register_seas_scans(r: &mut Registry) {
 mod tests {
     use super::*;
 
-    /// Plan 04-10 ships the final 3 SEAS scans (`eom_som`, `anova_kw`,
-    /// `event_window`) on top of Plan 04-09's 3 (`day_of_week`, `hour_of_day`,
-    /// session) — total 6 registrations.
+    /// Plan 04-10 ships 6 SEAS scans (`day_of_week`, `hour_of_day`, `session`,
+    /// `eom_som`, `anova_kw`, `event_window`); RAD-3840 adds `gap.overnight`
+    /// for a total of 7 registrations.
     #[test]
-    fn register_seas_scans_registers_six_after_plan_04_10() {
+    fn register_seas_scans_registers_seven_with_gap_overnight() {
         let mut r = Registry::new();
         let before = r.scans.len();
         register_seas_scans(&mut r);
         assert!(
-            r.scans.len() >= before + 6,
-            "Plan 04-10 ships 6 SEAS registrations total; got {}",
+            r.scans.len() >= before + 7,
+            "7 SEAS registrations expected; got {}",
             r.scans.len() - before
         );
         assert!(r.get("seas.bucket.day_of_week", 1).is_some());
@@ -77,6 +81,7 @@ mod tests {
         assert!(r.get("seas.bucket.hour_of_day", 1).is_some());
         assert!(r.get("seas.bucket.session", 1).is_some());
         assert!(r.get("seas.event.pre_post_window", 1).is_some());
+        assert!(r.get("seas.gap.overnight", 1).is_some());
         assert!(r.get("seas.test.anova_kruskal", 1).is_some());
     }
 }
