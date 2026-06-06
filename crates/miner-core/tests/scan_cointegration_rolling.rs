@@ -201,6 +201,16 @@ fn run_scan(a: &BarFrame, b: &BarFrame, params: serde_json::Value) -> Vec<Findin
     common::parse_findings(&sink.0)
 }
 
+/// Pull a length-1 `effect.extra` scalar off a per-window `Finding::Result`.
+fn window_scalar(f: &Finding, key: &str) -> f64 {
+    let Finding::Result(r) = f else {
+        panic!("expected Result");
+    };
+    let arr = decode_f64(&r.effect.extra[key]);
+    assert_eq!(arr.len(), 1, "extra[{key}] must be a length-1 array");
+    arr[0]
+}
+
 // ---------------------------------------------------------------------------
 // (a) structural break flips breakdown only AFTER the break
 // ---------------------------------------------------------------------------
@@ -216,15 +226,23 @@ fn structural_break_trips_breakdown_only_after_break() {
     let b = build_bars("GBPUSD", &ts, &b_closes);
 
     let findings = run_scan(&a, &b, serde_json::json!({"window": WINDOW, "step": STEP}));
-    assert_eq!(findings.len(), 1);
-    let Finding::Result(r) = &findings[0] else {
-        panic!("expected Result");
-    };
+    let n_windows = (n - WINDOW) / STEP + 1;
+    // One Finding::Result per window step (RAD-3626 AC-2).
+    assert_eq!(findings.len(), n_windows);
 
-    let flags = decode_f64(&r.effect.extra["breakdown_flags"]);
-    let reasons = decode_f64(&r.effect.extra["breakdown_reason_codes"]);
-    let n_windows = flags.len();
-    assert_eq!(n_windows, (n - WINDOW) / STEP + 1);
+    // Pull the per-window breakdown verdict off each finding (emitted in window
+    // order; window_index confirms the ordering).
+    let mut flags = Vec::with_capacity(n_windows);
+    let mut reasons = Vec::with_capacity(n_windows);
+    for (i, finding) in findings.iter().enumerate() {
+        assert_eq!(
+            window_scalar(finding, "window_index"),
+            i as f64,
+            "findings must be emitted in window order"
+        );
+        flags.push(window_scalar(finding, "breakdown_flag"));
+        reasons.push(window_scalar(finding, "breakdown_reason_code"));
+    }
 
     // Window i covers aligned indices [i*STEP, i*STEP + WINDOW). Since the
     // fixture is a full gap-free series, indices map directly.
@@ -236,8 +254,8 @@ fn structural_break_trips_breakdown_only_after_break() {
                 flag,
                 0.0,
                 "fully pre-break window {i} (end_idx={end_idx}) must not trip breakdown; \
-                 adf_p={:?}",
-                decode_f64(&r.effect.extra["adf_p_values"])[i]
+                 adf_stat={}",
+                window_scalar(&findings[i], "adf_stat")
             );
         }
     }
@@ -252,14 +270,11 @@ fn structural_break_trips_breakdown_only_after_break() {
         "expected at least one post-break window to trip breakdown; flags={flags:?} reasons={reasons:?}"
     );
 
-    // Headline effect.value == breakdown count > 0.
-    assert!(r.effect.value > 0.0, "breakdown count must be > 0");
-    let tripped = flags.iter().filter(|f| **f == 1.0).count() as f64;
-    assert_eq!(
-        r.effect.value, tripped,
-        "effect.value must equal flag count"
-    );
-    // Every tripped window has a non-zero reason code.
+    // Aggregate breakdown count (recoverable from the per-window stream) > 0.
+    let tripped = flags.iter().filter(|f| **f == 1.0).count();
+    assert!(tripped > 0, "breakdown count must be > 0");
+
+    // Every tripped window has a non-zero reason code; untripped → reason 0.
     for (i, &flag) in flags.iter().enumerate() {
         if flag == 1.0 {
             assert!(
@@ -285,20 +300,16 @@ fn persistently_cointegrated_never_trips_breakdown() {
     let b = build_bars("GBPUSD", &ts, &b_closes);
 
     let findings = run_scan(&a, &b, serde_json::json!({"window": WINDOW, "step": STEP}));
-    let Finding::Result(r) = &findings[0] else {
-        panic!("expected Result");
-    };
-    let flags = decode_f64(&r.effect.extra["breakdown_flags"]);
-    assert!(!flags.is_empty());
+    assert!(!findings.is_empty());
+    let flags: Vec<f64> = findings
+        .iter()
+        .map(|f| window_scalar(f, "breakdown_flag"))
+        .collect();
     let count = flags.iter().filter(|f| **f == 1.0).count();
     assert_eq!(
-        count,
-        0,
-        "persistently cointegrated pair must never trip breakdown; flags={flags:?} \
-         adf_p={:?}",
-        decode_f64(&r.effect.extra["adf_p_values"])
+        count, 0,
+        "persistently cointegrated pair must never trip breakdown; flags={flags:?}"
     );
-    assert_eq!(r.effect.value, 0.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -359,7 +370,12 @@ fn redact_schema(v: &mut serde_json::Value) {
                 return;
             }
             for (k, child) in map.iter_mut() {
-                if (k == "value" && child.is_number()) || (k == "param_hash" && child.is_string()) {
+                // `value` (β / effect_size) and `p_value` (residual ADF p) are
+                // computed floats — redact to keep the snapshot free of
+                // platform-specific float bits; keep keys + nesting.
+                if ((k == "value" || k == "p_value") && child.is_number())
+                    || (k == "param_hash" && child.is_string())
+                {
                     *child = serde_json::Value::String(format!("<{k}>"));
                 } else {
                     redact_schema(child);
@@ -386,13 +402,18 @@ fn cointegration_rolling_schema_snapshot() {
     let b = build_bars("GBPUSD", &ts, &b_closes);
 
     let findings = run_scan(&a, &b, serde_json::json!({"window": 60, "step": 20}));
-    assert_eq!(findings.len(), 1);
-    let Finding::Result(r) = &findings[0] else {
+    // n_windows = (120 - 60)/20 + 1 = 4 → one Finding::Result per window step.
+    assert_eq!(findings.len(), 4);
+    let Finding::Result(r0) = &findings[0] else {
         panic!("expected Result");
     };
-    assert_eq!(r.scan_id_at_version, "cross.cointegration.rolling@1");
-    assert_eq!(r.effect.n, Some(4));
+    assert_eq!(r0.scan_id_at_version, "cross.cointegration.rolling@1");
+    // Per-window n = window length in bars (not the window count).
+    assert_eq!(r0.effect.n, Some(60));
 
+    // Snapshot the per-window envelope SCHEMA (findings[0]). Every window shares
+    // the same shape, so one finding pins the contract; the per-dispatch count
+    // is asserted above.
     let mut schema = serde_json::to_value(&findings[0]).expect("envelope -> Value");
     common::mask_volatile_fields(&mut schema);
     redact_schema(&mut schema);

@@ -16,32 +16,43 @@
 //!
 //! ## Emission shape
 //!
-//! Following the CROSS rolling-sibling convention (`cross.ols.rolling`,
-//! `cross.corr.*_rolling`), the scan emits ONE `Finding::Result` carrying ONE
-//! ENTRY PER WINDOW STEP in its `effect.extra` arrays (NOT one envelope per
-//! window — the whole codebase emits a single Result per `Scan::run`). The
-//! per-window vectors are index-aligned:
+//! This scan emits ONE `Finding::Result` PER WINDOW STEP (RAD-3626 acceptance
+//! criterion 2) — unlike the aggregated rolling siblings (`cross.ols.rolling`,
+//! `cross.corr.*_rolling`) which pack per-window vectors into a single
+//! envelope. A rolling cointegration breakdown is a *located* per-window event
+//! ("this pair broke down at window K / time T"), so each window is surfaced as
+//! its own candidate finding the consumer can locate in time. The streaming
+//! sink already handles a multi-envelope `Scan::run` (see
+//! `engine::hygiene_buffering_sink`).
 //!
-//! - `betas`, `alphas`, `adf_stats`, `adf_p_values`, `ou_half_lives`,
-//!   `residual_stds` — the per-window Engle-Granger stats (`ou_half_lives`
-//!   uses the `f64::INFINITY` sentinel for non-mean-reverting windows,
-//!   matching `engle_granger`).
-//! - `breakdown_flags` — `1.0` when the window tripped breakdown, else `0.0`.
-//! - `breakdown_reason_codes` — `0=none, 1=adf_lost_stationarity,
-//!   2=beta_drift, 3=both` (see [`kernel::BreakdownReason`]).
-//! - `window_starts_ms` / `window_ends_ms` — the aligned-series open timestamp
-//!   of the window's first / last bar.
-//! - `window_length` / `step` — scalar (length-1) echoes of the params.
+//! Each per-window `Finding::Result` mirrors the single-shot
+//! `cross.cointegration.engle_granger@1` envelope (each window IS one
+//! Engle-Granger fit) plus the rolling breakdown verdict:
 //!
-//! `effect.value` = the breakdown **count** (number of tripped windows) — the
-//! headline a consumer scans for ("did this pair break down, and how often");
-//! `effect.effect_size` mirrors it as `kind = "breakdown_window_count"`.
-//! `effect.p_value` is `None`: there is no single hypothesis test here — the
-//! per-window ADF p-values live in the `adf_p_values` array.
+//! - `effect.value` = the window hedge ratio β; `effect.p_value` = the residual
+//!   ADF p-value; `effect.n` = the window length in bars; `effect.effect_size`
+//!   = `{ kind: "hedge_ratio", value: β }` (matches `engle_granger`).
+//! - `effect.extra` (alphabetical, all length-1 F64 arrays):
+//!   - `adf_stat` — residual ADF statistic.
+//!   - `breakdown_flag` — `1.0` when the window tripped breakdown, else `0.0`.
+//!   - `breakdown_reason_code` — `0=none, 1=adf_lost_stationarity,
+//!     2=beta_drift, 3=both` (see [`kernel::BreakdownReason`]).
+//!   - `hedge_ratio_alpha` — window intercept α.
+//!   - `ou_half_life` — windowed-residual OU half-life (`f64::INFINITY`
+//!     sentinel for non-mean-reverting windows, matching `engle_granger`).
+//!   - `residual_std` — windowed-residual sample std (ddof=1).
+//!   - `step` / `window_length` — scalar echoes of the params.
+//!   - `window_index` — 0-based ordinal of the window within this dispatch.
+//!   - `window_start_ms` / `window_end_ms` — the aligned-series open timestamp
+//!     of the window's first / last bar.
+//! - `raw.series` carries the WINDOW-SLICED LEVELS (`close_a`, `close_b`) plus
+//!   the canonical D-03 `timestamps_ms` key — Engle-Granger operates on levels,
+//!   not returns, and each finding is self-describing over its own window.
 //!
-//! `raw.series` carries the LEVELS (`close_a`, `close_b`) plus the canonical
-//! D-03 `timestamps_ms` key for the full joint aligned series — Engle-Granger
-//! operates on levels, not returns.
+//! All per-window findings for one dispatch share the same `data_slice`
+//! (sub-range, sources, gap manifest); the window-specific span lives in the
+//! `window_*_ms` extras. The aggregate breakdown count is recoverable by the
+//! consumer from the per-window `breakdown_flag` stream.
 //!
 //! ## Coalesce contract (RAD-2397)
 //!
@@ -74,29 +85,34 @@ pub struct CointegrationRollingScan;
 
 const SCAN_ID: &str = "cross.cointegration.rolling";
 const SCAN_VERSION: u32 = 1;
-const EFFECT_METRIC: &str = "cointegration_rolling_breakdown_count";
+/// Per-window headline metric — `effect.value` carries the window hedge ratio β
+/// (mirrors `cross.cointegration.engle_granger`); the breakdown verdict lives in
+/// `effect.extra.breakdown_flag` / `breakdown_reason_code`.
+const EFFECT_METRIC: &str = "cointegration_rolling_hedge_ratio";
 
 /// Default `step` (slide one bar at a time).
 const DEFAULT_STEP: i64 = 1;
 
 const FINDING_SHAPE: ScanFindingShape = ScanFindingShape {
+    // Per-window envelope: every key is a length-1 F64 array on EACH emitted
+    // Finding::Result (one per window step). Alphabetical (BTreeMap wire order).
     effect_extra_keys: &[
-        "adf_p_values",
-        "adf_stats",
-        "alphas",
-        "betas",
-        "breakdown_flags",
-        "breakdown_reason_codes",
-        "ou_half_lives",
-        "residual_stds",
+        "adf_stat",
+        "breakdown_flag",
+        "breakdown_reason_code",
+        "hedge_ratio_alpha",
+        "ou_half_life",
+        "residual_std",
         "step",
-        "window_ends_ms",
+        "window_end_ms",
+        "window_index",
         "window_length",
-        "window_starts_ms",
+        "window_start_ms",
     ],
     // D-03 invariant: Raw::new requires a `timestamps_ms` key. Engle-Granger
-    // operates on LEVELS, so the raw block carries the leg closes under the
-    // joint aligned timestamps (mirrors cross.cointegration.engle_granger).
+    // operates on LEVELS, so the raw block carries the (window-sliced) leg
+    // closes under the joint aligned timestamps (mirrors
+    // cross.cointegration.engle_granger).
     raw_series_keys: &["close_a", "close_b", "timestamps_ms"],
 };
 
@@ -255,152 +271,159 @@ impl Scan for CointegrationRollingScan {
             return Ok(());
         }
 
-        // 9. Window→timestamp mapping. Levels map 1:1 to aligned indices (no
-        //    +1 returns shift); window i opens at aligned index window_start_idx
-        //    and closes at window_end_idx.
-        let window_starts_ms: Vec<f64> = roll
-            .window_start_idx
-            .iter()
-            .map(|&i| ms_as_f64(aligned.timestamps_ms[i]))
-            .collect();
-        let window_ends_ms: Vec<f64> = roll
-            .window_end_idx
-            .iter()
-            .map(|&i| ms_as_f64(aligned.timestamps_ms[i]))
-            .collect();
-
-        let breakdown_flags_f: Vec<f64> = roll
-            .breakdown_flags
-            .iter()
-            .map(|&b| if b { 1.0 } else { 0.0 })
-            .collect();
-        let breakdown_reason_codes: Vec<f64> =
-            roll.breakdown_reasons.iter().map(|r| r.as_f64()).collect();
-
-        // 10. effect.extra arrays (BTreeMap → alphabetical wire order).
-        let mut extra: BTreeMap<String, RawArray> = BTreeMap::new();
-        extra.insert(
-            "adf_p_values".into(),
-            f64_slice_to_raw_array(&roll.adf_p_values),
-        );
-        extra.insert("adf_stats".into(), f64_slice_to_raw_array(&roll.adf_stats));
-        extra.insert("alphas".into(), f64_slice_to_raw_array(&roll.alphas));
-        extra.insert("betas".into(), f64_slice_to_raw_array(&roll.betas));
-        extra.insert(
-            "breakdown_flags".into(),
-            f64_slice_to_raw_array(&breakdown_flags_f),
-        );
-        extra.insert(
-            "breakdown_reason_codes".into(),
-            f64_slice_to_raw_array(&breakdown_reason_codes),
-        );
-        extra.insert(
-            "ou_half_lives".into(),
-            f64_slice_to_raw_array(&roll.ou_half_lives),
-        );
-        extra.insert(
-            "residual_stds".into(),
-            f64_slice_to_raw_array(&roll.residual_stds),
-        );
-        extra.insert(
-            "step".into(),
-            f64_slice_to_raw_array(&[usize_as_f64(params.step)]),
-        );
-        extra.insert(
-            "window_ends_ms".into(),
-            f64_slice_to_raw_array(&window_ends_ms),
-        );
-        extra.insert(
-            "window_length".into(),
-            f64_slice_to_raw_array(&[usize_as_f64(params.window)]),
-        );
-        extra.insert(
-            "window_starts_ms".into(),
-            f64_slice_to_raw_array(&window_starts_ms),
-        );
-
-        let breakdown_count = roll.breakdown_count();
-        let breakdown_count_f = usize_as_f64(breakdown_count);
-
-        let effect = Effect {
-            metric: EFFECT_METRIC.to_string(),
-            value: breakdown_count_f,
-            // No single hypothesis test — per-window ADF p-values live in the
-            // adf_p_values array; the headline is the breakdown count.
-            p_value: None,
-            #[allow(
-                clippy::cast_possible_truncation,
-                reason = "n_windows <= aligned_n <= u64 on supported targets (64-bit only)"
-            )]
-            n: Some(roll.len() as u64),
-            ci95: None,
-            effect_size: Some(EffectSize {
-                kind: "breakdown_window_count".to_string(),
-                value: breakdown_count_f,
-            }),
-            extra,
+        // 9. Build the two-leg sources template once (D4-03) — every per-window
+        //    finding in this dispatch shares the same sources.
+        let sources_template: Vec<Source> = {
+            let (Some(spec_a), Some(spec_b)) = (req.instruments.first(), req.instruments.get(1))
+            else {
+                return Err(ScanError::Kernel(format!(
+                    "{SCAN_ID}: expected 2 instruments; got {}",
+                    req.instruments.len()
+                )));
+            };
+            vec![
+                Source {
+                    source_id: bars_a.source_id.clone(),
+                    symbol: spec_a.symbol.clone(),
+                    side: spec_a.side.as_str().to_string(),
+                    timeframe: req.timeframe.as_str().to_string(),
+                },
+                Source {
+                    source_id: bars_b.source_id.clone(),
+                    symbol: spec_b.symbol.clone(),
+                    side: spec_b.side.as_str().to_string(),
+                    timeframe: req.timeframe.as_str().to_string(),
+                },
+            ]
         };
 
-        // 11. raw.series — leg-labelled CLOSES + canonical aligned timestamps.
-        let timestamps_ms_f: Vec<f64> = aligned
-            .timestamps_ms
-            .iter()
-            .map(|ms| ms_as_f64(*ms))
-            .collect();
-        let mut series: BTreeMap<String, RawArray> = BTreeMap::new();
-        series.insert("close_a".into(), f64_slice_to_raw_array(&aligned.close_a));
-        series.insert("close_b".into(), f64_slice_to_raw_array(&aligned.close_b));
-        series.insert(
-            "timestamps_ms".into(),
-            f64_slice_to_raw_array(&timestamps_ms_f),
-        );
-        let raw_block = Raw::new(series).map_err(|m| ScanError::Kernel(m.to_string()))?;
+        let scan_id_at_version = format!("{SCAN_ID}@{SCAN_VERSION}");
+        let step_f = usize_as_f64(params.step);
+        let window_length_f = usize_as_f64(params.window);
 
-        // 12. D4-03: two-leg sources Vec.
-        let per_leg_source_ids = (bars_a.source_id.clone(), bars_b.source_id.clone());
-        let mut sources: Vec<Source> = Vec::with_capacity(2);
-        if let (Some(spec_a), Some(spec_b)) = (req.instruments.first(), req.instruments.get(1)) {
-            sources.push(Source {
-                source_id: per_leg_source_ids.0,
-                symbol: spec_a.symbol.clone(),
-                side: spec_a.side.as_str().to_string(),
-                timeframe: req.timeframe.as_str().to_string(),
-            });
-            sources.push(Source {
-                source_id: per_leg_source_ids.1,
-                symbol: spec_b.symbol.clone(),
-                side: spec_b.side.as_str().to_string(),
-                timeframe: req.timeframe.as_str().to_string(),
-            });
-        } else {
-            return Err(ScanError::Kernel(format!(
-                "{SCAN_ID}: expected 2 instruments; got {}",
-                req.instruments.len()
-            )));
+        // 10. Emit ONE Finding::Result per window step (RAD-3626 AC-2). Each
+        //     window is a self-describing Engle-Granger fit + breakdown verdict;
+        //     levels map 1:1 to aligned indices (no +1 returns shift), so window
+        //     i opens at window_start_idx[i] and closes at window_end_idx[i].
+        for i in 0..roll.len() {
+            // Cancel-poll between windows so a long roll stays responsive.
+            if ctx.cancel.load(Ordering::Relaxed) {
+                return Ok(());
+            }
+
+            let start = roll.window_start_idx[i];
+            let end = roll.window_end_idx[i];
+
+            let window_start_ms = ms_as_f64(aligned.timestamps_ms[start]);
+            let window_end_ms = ms_as_f64(aligned.timestamps_ms[end]);
+            let breakdown_flag = if roll.breakdown_flags[i] { 1.0 } else { 0.0 };
+            let breakdown_reason_code = roll.breakdown_reasons[i].as_f64();
+
+            // effect.extra — all length-1 F64 arrays (BTreeMap → alphabetical).
+            let mut extra: BTreeMap<String, RawArray> = BTreeMap::new();
+            extra.insert(
+                "adf_stat".into(),
+                f64_slice_to_raw_array(&[roll.adf_stats[i]]),
+            );
+            extra.insert(
+                "breakdown_flag".into(),
+                f64_slice_to_raw_array(&[breakdown_flag]),
+            );
+            extra.insert(
+                "breakdown_reason_code".into(),
+                f64_slice_to_raw_array(&[breakdown_reason_code]),
+            );
+            extra.insert(
+                "hedge_ratio_alpha".into(),
+                f64_slice_to_raw_array(&[roll.alphas[i]]),
+            );
+            extra.insert(
+                "ou_half_life".into(),
+                f64_slice_to_raw_array(&[roll.ou_half_lives[i]]),
+            );
+            extra.insert(
+                "residual_std".into(),
+                f64_slice_to_raw_array(&[roll.residual_stds[i]]),
+            );
+            extra.insert("step".into(), f64_slice_to_raw_array(&[step_f]));
+            extra.insert(
+                "window_end_ms".into(),
+                f64_slice_to_raw_array(&[window_end_ms]),
+            );
+            extra.insert(
+                "window_index".into(),
+                f64_slice_to_raw_array(&[usize_as_f64(i)]),
+            );
+            extra.insert(
+                "window_length".into(),
+                f64_slice_to_raw_array(&[window_length_f]),
+            );
+            extra.insert(
+                "window_start_ms".into(),
+                f64_slice_to_raw_array(&[window_start_ms]),
+            );
+
+            // effect.value = β (hedge ratio); effect.p_value = residual ADF p —
+            // mirrors the single-shot cross.cointegration.engle_granger headline.
+            let effect = Effect {
+                metric: EFFECT_METRIC.to_string(),
+                value: roll.betas[i],
+                p_value: Some(roll.adf_p_values[i]),
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    reason = "window <= aligned_n <= u64 on supported targets (64-bit only)"
+                )]
+                n: Some(params.window as u64),
+                ci95: None,
+                effect_size: Some(EffectSize {
+                    kind: "hedge_ratio".to_string(),
+                    value: roll.betas[i],
+                }),
+                extra,
+            };
+
+            // raw.series — WINDOW-SLICED leg closes + canonical aligned
+            // timestamps (D-03). Each finding is self-describing over its window.
+            let ts_window: Vec<f64> = aligned.timestamps_ms[start..=end]
+                .iter()
+                .map(|ms| ms_as_f64(*ms))
+                .collect();
+            let mut series: BTreeMap<String, RawArray> = BTreeMap::new();
+            series.insert(
+                "close_a".into(),
+                f64_slice_to_raw_array(&aligned.close_a[start..=end]),
+            );
+            series.insert(
+                "close_b".into(),
+                f64_slice_to_raw_array(&aligned.close_b[start..=end]),
+            );
+            series.insert("timestamps_ms".into(), f64_slice_to_raw_array(&ts_window));
+            let raw_block = Raw::new(series).map_err(|m| ScanError::Kernel(m.to_string()))?;
+
+            let result_finding = ResultFinding {
+                schema_version: 1,
+                scan_id_at_version: scan_id_at_version.clone(),
+                param_hash: req.param_hash.as_str().to_string(),
+                code_revision: ctx.code_revision.to_string(),
+                data_slice: DataSlice {
+                    range: req.sub_range.clone(),
+                    gap_manifest_ref: None,
+                    gap_manifest: ctx.gap_manifest.cloned(),
+                    sources: sources_template.clone(),
+                },
+                dsr: None,
+                fdr_q: None,
+                run_id: ctx.run_id,
+                produced_at_utc: Utc::now(),
+                params: req.resolved_params.clone(),
+                effect,
+                raw: Some(raw_block),
+                repro: None,
+            };
+
+            sink.write_envelope(&Finding::Result(result_finding))?;
         }
 
-        let result_finding = ResultFinding {
-            schema_version: 1,
-            scan_id_at_version: format!("{SCAN_ID}@{SCAN_VERSION}"),
-            param_hash: req.param_hash.as_str().to_string(),
-            code_revision: ctx.code_revision.to_string(),
-            data_slice: DataSlice {
-                range: req.sub_range.clone(),
-                gap_manifest_ref: None,
-                gap_manifest: ctx.gap_manifest.cloned(),
-                sources,
-            },
-            dsr: None,
-            fdr_q: None,
-            run_id: ctx.run_id,
-            produced_at_utc: Utc::now(),
-            params: req.resolved_params.clone(),
-            effect,
-            raw: Some(raw_block),
-            repro: None,
-        };
-
-        sink.write_envelope(&Finding::Result(result_finding))?;
         Ok(())
     }
 }
@@ -738,7 +761,7 @@ mod tests {
     }
 
     #[test]
-    fn emits_one_result_with_per_window_arrays() {
+    fn emits_one_result_per_window_step() {
         let n = 200;
         let (a_closes, b_closes) = cointegrated_pair(n, 7, 11);
         let ts = make_ts(n);
@@ -751,64 +774,63 @@ mod tests {
             .run(&ctx, &req, &mut sink)
             .expect("ok");
         let findings = parse_findings(&sink);
-        assert_eq!(findings.len(), 1);
-        let Finding::Result(r) = &findings[0] else {
-            panic!("expected Result");
-        };
-        assert_eq!(r.scan_id_at_version, "cross.cointegration.rolling@1");
-        assert_eq!(r.effect.metric, "cointegration_rolling_breakdown_count");
-        assert!(r.effect.p_value.is_none());
-        // n_windows = (200 - 60)/10 + 1 = 15.
-        assert_eq!(r.effect.n, Some(15));
-        // extra keys alphabetical via BTreeMap.
-        let keys: Vec<&str> = r.effect.extra.keys().map(String::as_str).collect();
-        assert_eq!(
-            keys,
-            vec![
-                "adf_p_values",
-                "adf_stats",
-                "alphas",
-                "betas",
-                "breakdown_flags",
-                "breakdown_reason_codes",
-                "ou_half_lives",
-                "residual_stds",
-                "step",
-                "window_ends_ms",
-                "window_length",
-                "window_starts_ms",
-            ]
-        );
-        // per-window arrays all length 15.
-        for key in [
-            "adf_p_values",
-            "adf_stats",
-            "alphas",
-            "betas",
-            "breakdown_flags",
-            "breakdown_reason_codes",
-            "ou_half_lives",
-            "residual_stds",
-            "window_ends_ms",
-            "window_starts_ms",
-        ] {
-            assert_eq!(decode_f64(&r.effect.extra[key]).len(), 15, "len {key}");
+        // n_windows = (200 - 60)/10 + 1 = 15 → one Finding::Result each.
+        assert_eq!(findings.len(), 15);
+
+        for (i, finding) in findings.iter().enumerate() {
+            let Finding::Result(r) = finding else {
+                panic!("expected Result at {i}");
+            };
+            assert_eq!(r.scan_id_at_version, "cross.cointegration.rolling@1");
+            assert_eq!(r.effect.metric, "cointegration_rolling_hedge_ratio");
+            // Per-window headline: value = β (finite), p_value = residual ADF p.
+            assert!(r.effect.p_value.is_some());
+            assert!(r.effect.value.is_finite());
+            // n = window length in bars.
+            assert_eq!(r.effect.n, Some(60));
+            assert_eq!(
+                r.effect.effect_size.as_ref().map(|e| e.kind.as_str()),
+                Some("hedge_ratio")
+            );
+
+            // extra keys alphabetical via BTreeMap.
+            let keys: Vec<&str> = r.effect.extra.keys().map(String::as_str).collect();
+            assert_eq!(
+                keys,
+                vec![
+                    "adf_stat",
+                    "breakdown_flag",
+                    "breakdown_reason_code",
+                    "hedge_ratio_alpha",
+                    "ou_half_life",
+                    "residual_std",
+                    "step",
+                    "window_end_ms",
+                    "window_index",
+                    "window_length",
+                    "window_start_ms",
+                ]
+            );
+            // every extra is a length-1 array.
+            for key in &keys {
+                assert_eq!(decode_f64(&r.effect.extra[*key]).len(), 1, "len {key}");
+            }
+            // scalars + ordinal.
+            assert_eq!(decode_f64(&r.effect.extra["window_length"])[0], 60.0);
+            assert_eq!(decode_f64(&r.effect.extra["step"])[0], 10.0);
+            assert_eq!(decode_f64(&r.effect.extra["window_index"])[0], usize_as_f64(i));
+            // window end strictly after window start.
+            let s = decode_f64(&r.effect.extra["window_start_ms"])[0];
+            let e = decode_f64(&r.effect.extra["window_end_ms"])[0];
+            assert!(e > s, "window {i} end {e} must be after start {s}");
+
+            // raw carries the WINDOW-SLICED levels (len == window) + timestamps.
+            let raw = r.raw.as_ref().expect("raw present");
+            assert_eq!(decode_f64(&raw.series["close_a"]).len(), 60);
+            assert_eq!(decode_f64(&raw.series["close_b"]).len(), 60);
+            assert_eq!(decode_f64(&raw.series["timestamps_ms"]).len(), 60);
+            assert_eq!(r.data_slice.sources.len(), 2);
         }
-        // scalars.
-        assert_eq!(decode_f64(&r.effect.extra["window_length"]), vec![60.0]);
-        assert_eq!(decode_f64(&r.effect.extra["step"]), vec![10.0]);
-        // window_ends are strictly after window_starts.
-        let starts = decode_f64(&r.effect.extra["window_starts_ms"]);
-        let ends = decode_f64(&r.effect.extra["window_ends_ms"]);
-        for (s, e) in starts.iter().zip(ends.iter()) {
-            assert!(e > s, "window end {e} must be after start {s}");
-        }
-        // raw carries levels + canonical timestamps.
-        let raw = r.raw.as_ref().expect("raw present");
-        assert!(raw.series.contains_key("close_a"));
-        assert!(raw.series.contains_key("close_b"));
-        assert!(raw.series.contains_key("timestamps_ms"));
-        assert_eq!(r.data_slice.sources.len(), 2);
     }
 
     #[test]

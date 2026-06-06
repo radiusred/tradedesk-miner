@@ -30,64 +30,50 @@ expression: schema
   "effect": {
     "ci95": null,
     "effect_size": {
-      "kind": "breakdown_window_count",
+      "kind": "hedge_ratio",
       "value": "<value>"
     },
     "extra": {
-      "adf_p_values": {
-        "data": "<f64 x 4>",
+      "adf_stat": {
+        "data": "<f64 x 1>",
         "dtype": "f64",
         "shape": [
-          4
+          1
         ]
       },
-      "adf_stats": {
-        "data": "<f64 x 4>",
+      "breakdown_flag": {
+        "data": "<f64 x 1>",
         "dtype": "f64",
         "shape": [
-          4
+          1
         ]
       },
-      "alphas": {
-        "data": "<f64 x 4>",
+      "breakdown_reason_code": {
+        "data": "<f64 x 1>",
         "dtype": "f64",
         "shape": [
-          4
+          1
         ]
       },
-      "betas": {
-        "data": "<f64 x 4>",
+      "hedge_ratio_alpha": {
+        "data": "<f64 x 1>",
         "dtype": "f64",
         "shape": [
-          4
+          1
         ]
       },
-      "breakdown_flags": {
-        "data": "<f64 x 4>",
+      "ou_half_life": {
+        "data": "<f64 x 1>",
         "dtype": "f64",
         "shape": [
-          4
+          1
         ]
       },
-      "breakdown_reason_codes": {
-        "data": "<f64 x 4>",
+      "residual_std": {
+        "data": "<f64 x 1>",
         "dtype": "f64",
         "shape": [
-          4
-        ]
-      },
-      "ou_half_lives": {
-        "data": "<f64 x 4>",
-        "dtype": "f64",
-        "shape": [
-          4
-        ]
-      },
-      "residual_stds": {
-        "data": "<f64 x 4>",
-        "dtype": "f64",
-        "shape": [
-          4
+          1
         ]
       },
       "step": {
@@ -97,11 +83,18 @@ expression: schema
           1
         ]
       },
-      "window_ends_ms": {
-        "data": "<f64 x 4>",
+      "window_end_ms": {
+        "data": "<f64 x 1>",
         "dtype": "f64",
         "shape": [
-          4
+          1
+        ]
+      },
+      "window_index": {
+        "data": "<f64 x 1>",
+        "dtype": "f64",
+        "shape": [
+          1
         ]
       },
       "window_length": {
@@ -111,17 +104,17 @@ expression: schema
           1
         ]
       },
-      "window_starts_ms": {
-        "data": "<f64 x 4>",
+      "window_start_ms": {
+        "data": "<f64 x 1>",
         "dtype": "f64",
         "shape": [
-          4
+          1
         ]
       }
     },
-    "metric": "cointegration_rolling_breakdown_count",
-    "n": 4,
-    "p_value": null,
+    "metric": "cointegration_rolling_hedge_ratio",
+    "n": 60,
+    "p_value": "<p_value>",
     "value": "<value>"
   },
   "fdr_q": null,
@@ -135,24 +128,24 @@ expression: schema
   "raw": {
     "series": {
       "close_a": {
-        "data": "<f64 x 120>",
+        "data": "<f64 x 60>",
         "dtype": "f64",
         "shape": [
-          120
+          60
         ]
       },
       "close_b": {
-        "data": "<f64 x 120>",
+        "data": "<f64 x 60>",
         "dtype": "f64",
         "shape": [
-          120
+          60
         ]
       },
       "timestamps_ms": {
-        "data": "<f64 x 120>",
+        "data": "<f64 x 60>",
         "dtype": "f64",
         "shape": [
-          120
+          60
         ]
       }
     }
