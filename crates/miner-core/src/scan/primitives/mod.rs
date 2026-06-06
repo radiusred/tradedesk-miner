@@ -18,6 +18,10 @@
 //!   Consumed by both `cross::engle_granger` (CROSS-05 residual half-life) and
 //!   `anom::meanrev` (`stats.meanrev.ou_halflife@1`); the AR(1) regression is
 //!   not copy-pasted (RAD-3627).
+//! - [`robust`] — `median_in_place` / `median` order-statistic helpers. The
+//!   shared robust center underpinning both `cross::cointegration_rolling`'s
+//!   beta-drift baseline and `anom::cusum_break`'s pre/post segment stats; the
+//!   median is defined once, not copy-pasted (RAD-3841).
 //!
 //! ## Discipline (carried from `04-PATTERNS.md` Pattern B)
 //!
@@ -30,4 +34,5 @@
 pub mod ar1;
 pub mod raw_array;
 pub mod returns;
+pub mod robust;
 pub mod time_alignment;

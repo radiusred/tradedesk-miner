@@ -46,6 +46,7 @@
 #![cfg_attr(any(test, debug_assertions), allow(clippy::float_cmp))]
 
 use crate::scan::cross::engle_granger::kernel::{AdfRegression, engle_granger};
+use crate::scan::primitives::robust::median_in_place;
 
 /// Trailing-median lookback (in windows) for the beta-drift baseline. The
 /// median is computed over at most this many *prior* windows.
@@ -296,21 +297,6 @@ fn beta_drift(beta: f64, abs_beta_history: &[f64], band: f64) -> bool {
     ab < lower || ab > upper
 }
 
-/// Median of a slice (sorts in place). Empty slice ⇒ NaN. Even length ⇒ mean
-/// of the two central order statistics. Total order via `total_cmp` (NaN-safe).
-fn median_in_place(vals: &mut [f64]) -> f64 {
-    let m = vals.len();
-    if m == 0 {
-        return f64::NAN;
-    }
-    vals.sort_by(f64::total_cmp);
-    if m % 2 == 1 {
-        vals[m / 2]
-    } else {
-        (vals[m / 2 - 1] + vals[m / 2]) / 2.0
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -415,17 +401,6 @@ mod tests {
         assert_eq!(BreakdownReason::Both.as_f64(), 3.0);
         assert!(!BreakdownReason::None.is_breakdown());
         assert!(BreakdownReason::Both.is_breakdown());
-    }
-
-    /// `median_in_place` matches hand-computed values for odd/even lengths.
-    #[test]
-    fn median_in_place_odd_even() {
-        let mut odd = [3.0, 1.0, 2.0];
-        assert_eq!(median_in_place(&mut odd), 2.0);
-        let mut even = [4.0, 1.0, 3.0, 2.0];
-        assert_eq!(median_in_place(&mut even), 2.5);
-        let mut empty: [f64; 0] = [];
-        assert!(median_in_place(&mut empty).is_nan());
     }
 
     /// Determinism: identical inputs ⇒ identical betas + breakdown flags.

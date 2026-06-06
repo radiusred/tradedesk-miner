@@ -177,6 +177,22 @@ Drawdown profile of the cumulative-returns equity curve.
 - **When to reach for it:** worst-case loss profiling and recovery-time analysis; complements vol-based risk summaries
 - **Requirement:** ANOM-11
 
+### stats.regime.cusum_break@1
+
+CUSUM structural-break / regime detection on the log-return series. Binary
+segmentation ("Bai-Perron-lite") finds breaks in the mean (drift) and/or
+volatility; emits one located finding per detected break.
+
+- **Arity:** Single
+- **effect.metric:** `cusum_break`
+- **effect.value:** the normalized CUSUM statistic at the detected break
+- **effect.extra keys:** `break_index`, `break_ts_ms`, `post_mean`, `post_median`, `post_n`, `post_std`, `pre_mean`, `pre_median`, `pre_n`, `pre_std`, `regime_index`, `target`
+- **effect.effect_size:** `mean_shift` (standardized mean shift) or `vol_shift` (post/pre std ratio), per break
+- **params:** `target` (`mean`/`vol`/`both`, default `both`), `threshold` (default 1.358 — Kolmogorov 5% critical value; lower is more sensitive), `min_segment` (default 30)
+- **Raw arrays:** `closes`, `timestamps_ms`
+- **Reference:** standardized CUSUM (sup of Brownian bridge) for mean; Inclán & Tiao (1994) CUSUM-of-squares for variance; binary segmentation for multiple breaks
+- **When to reach for it:** as a conditioning filter / meta-signal — gate entries to a single drift/volatility regime, or strengthen cointegration-breakdown detection. A stationary series flags no breaks.
+
 ## CROSS — Two-instrument scans
 
 Five REQUIREMENTS rows (CROSS-01..05), six distinct `scan_id@version` pairs (the rolling-correlation family ships Pearson + Spearman under CROSS-02). All five scan-IDs are Pair-arity and emit a length-2 `instruments` vector.
