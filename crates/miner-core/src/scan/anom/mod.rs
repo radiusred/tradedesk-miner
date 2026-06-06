@@ -25,6 +25,7 @@ pub mod meanrev;
 pub mod outliers;
 pub mod returns;
 pub mod summary;
+pub mod tsmom;
 pub mod variance_ratio;
 pub mod vol;
 
@@ -38,6 +39,7 @@ pub use meanrev::OuHalfLifeScan;
 pub use outliers::OutliersZAndMadScan;
 pub use returns::ReturnsProfileScan;
 pub use summary::SummaryWelfordScan;
+pub use tsmom::TsmomScan;
 pub use variance_ratio::VarianceRatioScan;
 pub use vol::VolRollingScan;
 
@@ -55,6 +57,7 @@ pub fn register_anom_scans(r: &mut Registry) {
     //   stats.drawdown.profile            <- Plan 04-04
     //   stats.heteroskedasticity.arch_lm  <- Plan 04-06
     //   stats.meanrev.ou_halflife         <- RAD-3627
+    //   stats.momentum.tsmom              <- RAD-3839
     //   stats.normality.jarque_bera       <- Plan 04-06
     //   stats.outliers.z_and_mad          <- Plan 04-04
     //   stats.returns.profile             <- Plan 04-03
@@ -67,6 +70,7 @@ pub fn register_anom_scans(r: &mut Registry) {
     r.register(Box::new(DrawdownProfileScan));
     r.register(Box::new(ArchLmScan));
     r.register(Box::new(OuHalfLifeScan));
+    r.register(Box::new(TsmomScan));
     r.register(Box::new(JarqueBeraScan));
     r.register(Box::new(OutliersZAndMadScan));
     r.register(Box::new(ReturnsProfileScan));
@@ -105,6 +109,7 @@ mod tests {
             r.get("stats.meanrev.ou_halflife", 1).is_some(),
             "RAD-3627 ou_halflife"
         );
+        assert!(r.get("stats.momentum.tsmom", 1).is_some(), "RAD-3839 tsmom");
         assert!(
             r.get("stats.normality.jarque_bera", 1).is_some(),
             "ANOM-09 jarque_bera"
