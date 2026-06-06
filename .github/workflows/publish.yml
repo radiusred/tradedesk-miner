@@ -2,16 +2,18 @@ name: Publish binaries
 
 # Cross-compiles the `miner` CLI binary for each supported target triple,
 # attaches the tarballs to the draft GitHub Release prepared by
-# `prepare-release.yml`, then flips the draft to published so the Release
+# `finalize-release.yml`, then flips the draft to published so the Release
 # becomes immutable with all assets locked in.
 #
-# Trigger: `workflow_run` on completion of "Prepare Release" (success only).
-# Why not `release: types: [published]`? Because `prepare-release.yml`
-# creates the release as a DRAFT — and `release.published` doesn't fire
-# for drafts. With Settings → General → "Immutable releases" enabled,
-# uploading assets after the release is published is forbidden, so we
-# must (1) keep the release in draft state until all assets are attached,
-# then (2) publish it as the final step.
+# Trigger: `workflow_run` on completion of "Finalize Release" (success only).
+# finalize-release.yml is what now creates the DRAFT release (a change that
+# moved Release creation out of prepare-release.yml so the release runner no
+# longer idles waiting for the PR to merge). Why not `release: types:
+# [published]`? Because the release is created as a DRAFT — and
+# `release.published` doesn't fire for drafts. With Settings → General →
+# "Immutable releases" enabled, uploading assets after the release is
+# published is forbidden, so we must (1) keep the release in draft state until
+# all assets are attached, then (2) publish it as the final step.
 #
 # This is the Cargo-workspace analog of the siblings' PyPI `publish.yml`.
 
@@ -20,7 +22,7 @@ name: Publish binaries
 # earlier run was cancelled and `gh run rerun` would replay a stale SHA).
 on:
   workflow_run:
-    workflows: ["Prepare Release"]
+    workflows: ["Finalize Release"]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -35,7 +37,7 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.target }}
-    # Run on manual dispatch OR when Prepare Release succeeded; ignore failed / cancelled workflow_run events.
+    # Run on manual dispatch OR when Finalize Release succeeded; ignore failed / cancelled workflow_run events.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ${{ matrix.os }}
     permissions:
