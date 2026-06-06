@@ -17,6 +17,7 @@ use super::Registry;
 
 pub mod adf;
 pub mod arch_lm;
+pub mod cusum_break;
 pub mod drawdown;
 pub mod jarque_bera;
 pub mod kpss;
@@ -31,6 +32,7 @@ pub mod vol;
 
 pub use adf::AdfScan;
 pub use arch_lm::ArchLmScan;
+pub use cusum_break::CusumBreakScan;
 pub use drawdown::DrawdownProfileScan;
 pub use jarque_bera::JarqueBeraScan;
 pub use kpss::KpssScan;
@@ -60,6 +62,7 @@ pub fn register_anom_scans(r: &mut Registry) {
     //   stats.momentum.tsmom              <- RAD-3839
     //   stats.normality.jarque_bera       <- Plan 04-06
     //   stats.outliers.z_and_mad          <- Plan 04-04
+    //   stats.regime.cusum_break          <- RAD-3841
     //   stats.returns.profile             <- Plan 04-03
     //   stats.stationarity.adf            <- Plan 04-05
     //   stats.stationarity.kpss           <- Plan 04-05
@@ -71,6 +74,7 @@ pub fn register_anom_scans(r: &mut Registry) {
     r.register(Box::new(ArchLmScan));
     r.register(Box::new(OuHalfLifeScan));
     r.register(Box::new(TsmomScan));
+    r.register(Box::new(CusumBreakScan));
     r.register(Box::new(JarqueBeraScan));
     r.register(Box::new(OutliersZAndMadScan));
     r.register(Box::new(ReturnsProfileScan));
@@ -110,6 +114,10 @@ mod tests {
             "RAD-3627 ou_halflife"
         );
         assert!(r.get("stats.momentum.tsmom", 1).is_some(), "RAD-3839 tsmom");
+        assert!(
+            r.get("stats.regime.cusum_break", 1).is_some(),
+            "RAD-3841 cusum_break"
+        );
         assert!(
             r.get("stats.normality.jarque_bera", 1).is_some(),
             "ANOM-09 jarque_bera"
