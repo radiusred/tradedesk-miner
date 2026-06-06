@@ -530,25 +530,22 @@ fn resolve_min_gap_threshold(req: &ScanRequest) -> Result<f64, ScanError> {
 }
 
 fn resolve_boundary_minutes(req: &ScanRequest) -> Result<i64, ScanError> {
-    match req.resolved_params.get("boundary_gap_minutes") {
-        Some(v) => {
-            let x = v.as_i64().ok_or_else(|| {
-                ScanError::Kernel(format!("boundary_gap_minutes must be an integer; got {v}"))
-            })?;
-            if x < 1 {
-                return Err(ScanError::Kernel(format!(
-                    "boundary_gap_minutes must be >= 1; got {x}"
-                )));
-            }
-            Ok(x)
+    if let Some(v) = req.resolved_params.get("boundary_gap_minutes") {
+        let x = v.as_i64().ok_or_else(|| {
+            ScanError::Kernel(format!("boundary_gap_minutes must be an integer; got {v}"))
+        })?;
+        if x < 1 {
+            return Err(ScanError::Kernel(format!(
+                "boundary_gap_minutes must be >= 1; got {x}"
+            )));
         }
-        None => {
-            // Default: 1.5 x the timeframe (integer floor). A within-session bar
-            // delta equals the timeframe (<= this), while any skipped bar /
-            // overnight / weekend break exceeds it.
-            let tf_min = req.timeframe.duration().num_minutes();
-            Ok(tf_min * 3 / 2)
-        }
+        Ok(x)
+    } else {
+        // Default: 1.5 x the timeframe (integer floor). A within-session bar
+        // delta equals the timeframe (<= this), while any skipped bar /
+        // overnight / weekend break exceeds it.
+        let tf_min = req.timeframe.duration().num_minutes();
+        Ok(tf_min * 3 / 2)
     }
 }
 
