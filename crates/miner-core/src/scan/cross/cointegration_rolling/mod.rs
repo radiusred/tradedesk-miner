@@ -818,7 +818,10 @@ mod tests {
             // scalars + ordinal.
             assert_eq!(decode_f64(&r.effect.extra["window_length"])[0], 60.0);
             assert_eq!(decode_f64(&r.effect.extra["step"])[0], 10.0);
-            assert_eq!(decode_f64(&r.effect.extra["window_index"])[0], usize_as_f64(i));
+            assert_eq!(
+                decode_f64(&r.effect.extra["window_index"])[0],
+                usize_as_f64(i)
+            );
             // window end strictly after window start.
             let s = decode_f64(&r.effect.extra["window_start_ms"])[0];
             let e = decode_f64(&r.effect.extra["window_end_ms"])[0];
