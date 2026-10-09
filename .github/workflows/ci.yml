@@ -1,0 +1,174 @@
+# tradedesk-miner CI workflow.
+#
+# Plan 01-06 (Wave 5) lands the FOUR MANDATORY GATES from CONTEXT.md D-21
+# plus general hygiene (fmt + test):
+#
+#   Gate 1 — `cargo build --workspace --locked`    (compile health; a stale
+#                                                   Cargo.lock fails, M1-R9)
+#   Gate 2 — `cargo clippy ... -- -D warnings`     (stdout discipline via
+#                                                   clippy.toml disallowed-macros;
+#                                                   mitigates T-01-03)
+#   Gate 3 — tokio-tree grep against miner-core    (FOUND-04 — async-runtime-free
+#                                                   scan engine)
+#   Gate 4 — schema-sync diff                      (FOUND-03 — the schemars-derived
+#                                                   `schemas/findings-v1.schema.json`
+#                                                   IS the contract; mitigates
+#                                                   T-01-02 schema drift)
+#
+# Action pinning posture for Phase 1: major-version tags (`@v4`, `@stable`).
+# Phase 7 hardening pass will pin SHAs.
+
+name: CI
+
+# CI runs on pull_request only (mirroring the tradedesk +
+# tradedesk-dukascopy siblings). The org-wide `protect-main` ruleset enforces
+# PR + rebase-merge + linear history, so every commit that lands on main is
+# byte-identical to a commit CI already validated on its PR. The old
+# `on: [push, pull_request]` trigger (a) double-ran the matrix on every PR
+# (the push event AND the pull_request event both fired for the same commits)
+# and (b) re-ran the whole matrix again on the post-merge push to main —
+# pure GHA-minute waste with no added signal.
+on:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    # No skip for release/* PRs (#64, M2-R7). The release PR's diff is the
+    # `[workspace.package].version` bump plus the Cargo.lock refresh, and that
+    # pair is exactly what the `--locked` gates check: the lock's member
+    # versions once sat at 1.0.3 against a 1.3.0 workspace (repaired by PR #27,
+    # fixed at source by #35), and while release/* heads skipped this job no
+    # release PR ran a locked build. The full gates run, not the build alone:
+    # the bump changes CARGO_PKG_VERSION, which reaches the findings envelope's
+    # `miner_version`, so the tests see the version the release ships. The cost
+    # is one ~14-minute run per release.
+    steps:
+      - uses: actions/checkout@v6  # v6 runs on Node 24; v4 was deprecated (Node 20)
+
+      # Disk headroom for the build (#73). On the standard runner the debug build
+      # of every target ran out of disk while linking
+      # (`ld: final link failed: No space left on device`). Drop the preinstalled
+      # toolchains this workspace never uses before anything compiles; `df -h`
+      # before and after puts the reclaimed headroom in the log. This changes no
+      # gate. The `rm -rf target` step before cargo deny stays where it is: it
+      # frees the build's own artifacts, which exist only after the build.
+      - name: free disk before the build
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h /
+
+      - name: Install Rust toolchain (1.85 stable + clippy + rustfmt)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85"
+          components: clippy, rustfmt
+
+      # Gate 1 — build. `--locked` makes a Cargo.lock that is out of step with
+      # the manifests (e.g. member versions behind [workspace.package].version)
+      # fail the build instead of being silently rewritten on the runner, where
+      # the fix would never reach the repo (M1-R9). Clippy and test carry the
+      # flag too, so no compile step regains the self-healing behaviour if the
+      # steps are reordered.
+      - name: cargo build --workspace --locked
+        run: cargo build --workspace --all-targets --locked
+
+      # Gate 2 — clippy with -D warnings (catches stdout-discipline violations
+      # via the workspace clippy.toml disallowed-macros list from Plan 04).
+      - name: cargo clippy --workspace --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # Additional hygiene — fmt
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      # cargo test (includes D-22 schema validation tests landed in Plan 07)
+      - name: cargo test --workspace --locked
+        run: cargo test --workspace --no-fail-fast --locked
+
+      # Gate 3 — tokio-free miner-core (FOUND-04).
+      #
+      # The PROHIBITED regex is the exact list from RESEARCH §Tokio-Free Gate:
+      # tokio, async-std, smol (any sub-crate), plus async-trait, async-io,
+      # async-channel, async-executor, async-task. `--edges normal,build`
+      # excludes dev-dependencies (tests are allowed to use a runtime to
+      # exercise the wrapper bridges).
+      #
+      # The gate fails closed (#45): the tree is captured on its own first, so
+      # a `cargo tree` that errors (a renamed or mistyped crate, a manifest that
+      # does not resolve) fails the step under `set -e`. `|| true` covers only
+      # the grep, whose exit 1 means "no prohibited crate", not a failure.
+      - name: tokio-free miner-core
+        run: |
+          set -euo pipefail
+          PROHIBITED='^(tokio|tokio-[^ ]+|async-std|async-std-[^ ]+|smol|smol-[^ ]+|async-trait|async-io|async-channel|async-executor|async-task)$'
+          for CRATE in miner-core; do
+            TREE=$(cargo tree -p "$CRATE" --edges normal,build --prefix none)
+            LEAKED=$(printf '%s\n' "$TREE" | awk '{print $1}' | sort -u \
+                | { grep -E "$PROHIBITED" || true; })
+            if [ -n "$LEAKED" ]; then
+              echo "::error::async runtime crate(s) leaked into $CRATE:"
+              echo "$LEAKED"
+              exit 1
+            fi
+            echo "ok: $CRATE has zero async-runtime dependencies"
+          done
+
+      # Gate 4 — schema sync (FOUND-03, mitigates T-01-02).
+      #
+      # Regenerates `schemas/findings-v1.schema.json` from the schemars derives
+      # in miner-core and fails the build if the committed artifact has drifted
+      # from the Rust types. Robustness against runner-environment flakes is
+      # ensured by (a) Plan 01-01 pinning `serde_json` without `preserve_order`,
+      # (b) xtask's `to_value → to_string_pretty` normalisation, (c) Plan 01-06
+      # Task 1's twice-run byte-diff acceptance gate.
+      - name: schema sync
+        run: |
+          cargo run -p xtask --locked -- gen-schema
+          if ! git diff --exit-code schemas/findings-v1.schema.json; then
+            echo "::error::schema drifted from Rust types — re-run \`cargo xtask gen-schema\` and commit"
+            exit 1
+          fi
+
+      # Gate 7 (Phase 07 Plan 07-03 / D7-05) — cargo audit against the RustSec
+      # advisory database. Runs on every push and PR; zero days tolerance.
+      # Temporary advisory ignores live in `deny.toml`'s `[advisories] ignore`
+      # array with an inline `RUSTSEC-YYYY-NNNN — <reason> — review by
+      # YYYY-MM-DD` comment per the allowlist-by-exception policy in
+      # CONTRIBUTING.md ## Quality gates.
+      # rustsec/audit-check@v2.0.0 installs cargo-audit latest without --locked
+      # and as of 2026-05 picks up transitive deps (time@0.3.47, smol_str@0.3.6,
+      # ...) that require rustc 1.86+, breaking against this repo's pinned 1.85.
+      # Use --locked so cargo-audit's own Cargo.lock pins the dep graph instead.
+      # Pin the cargo-audit *version* too: 0.22.2 (released 2026-06) raises its
+      # own manifest rust-version to 1.88, so `--locked` alone no longer helps —
+      # cargo still selects the latest crate version and rejects it against the
+      # pinned 1.85 toolchain. 0.22.1 is the newest release that supports 1.85.
+      - name: cargo audit
+        run: |
+          cargo install --locked --version 0.22.1 cargo-audit
+          cargo audit
+
+      # Gate 8 (Phase 07 Plan 07-03 / D7-05) — cargo deny check. Runs all four
+      # sub-checks against `deny.toml` at the repo root: licenses (D7-05
+      # allowlist of 9 permissive licenses), bans (wildcards denied, multi-
+      # version warned), advisories (mirrors cargo audit), sources
+      # (unknown-registry + unknown-git denied). The action force-refreshes the
+      # advisory database before each run (RESEARCH §Pitfall 5).
+      #
+      # This step runs last, after build/clippy/test/audit have filled target/
+      # with several GB of artifacts. cargo-deny-action is a Docker action whose
+      # in-container rustup honours rust-toolchain.toml ("1.85" -> 1.85.1) and
+      # re-downloads a full toolchain the prebuilt image lacks (image ships
+      # 1.85.0). On a runner with slim free disk that fetch tips over the limit
+      # ("No space left on device", os error 28). cargo-deny resolves the dep
+      # graph from Cargo.lock and needs no compiled artifacts, and nothing runs
+      # after it, so reclaim target/ first to give the fetch headroom. Keep the
+      # prebuilt action rather than `cargo install cargo-deny` so we don't risk
+      # cargo-deny's MSRV exceeding the pinned 1.85 (cf. the cargo-audit --locked
+      # note above).
+      - name: free disk before cargo deny
+        run: rm -rf target
+      - name: cargo deny check
+        uses: EmbarkStudios/cargo-deny-action@v2

@@ -1,0 +1,28 @@
+# Cargo build artifacts
+target/
+**/*.rs.bk
+
+# Claude Code agent state (per-developer; never committed)
+.claude/
+
+# Python venv used only by scripts/regen-goldens.sh — per-developer, never committed
+.venv-goldens
+
+# Plan 07-02: the `tests/fixtures/cache/` synthetic Dukascopy-shape cache is
+# locally generated via `bash scripts/generate-fixture-cache.sh` (which runs
+# the `gen-fixtures` binary). Only the `.gitkeep` marker is tracked; the
+# generated `EURUSD/`, `GBPUSD/`, and `SHA256SUMS` outputs are not committed.
+# The generator is deterministic (Numerical Recipes LCG seed + per-day
+# blake3 sub-seeds + single-threaded zstd-3), so any fresh run produces
+# byte-identical bytes — and `sha256sum -c SHA256SUMS` from the local
+# generation verifies that determinism.
+tests/fixtures/cache/EURUSD/
+tests/fixtures/cache/GBPUSD/
+tests/fixtures/cache/SHA256SUMS
+tests/fixtures/cache/**/*.tmp
+tests/fixtures/cache/**/*.bak
+
+# Plan 07-08: `scripts/run-alloc-profile.sh` writes `dhat-heap.json` to CWD
+# (the dhat global allocator's destructor emits the JSON on process exit).
+# This is per-run profiling output — never committed.
+dhat-heap.json

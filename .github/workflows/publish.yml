@@ -1,0 +1,232 @@
+name: Publish binaries
+
+# Cross-compiles the `miner` CLI binary for each supported target triple,
+# attaches the tarballs to the draft GitHub Release prepared by
+# `finalize-release.yml`, then flips the draft to published so the Release
+# becomes immutable with all assets locked in.
+#
+# Trigger: `workflow_run` on completion of "Finalize Release" (success only).
+# finalize-release.yml is what now creates the DRAFT release (a change that
+# moved Release creation out of prepare-release.yml so the release runner no
+# longer idles waiting for the PR to merge). Why not `release: types:
+# [published]`? Because the release is created as a DRAFT — and
+# `release.published` doesn't fire for drafts. With Settings → General →
+# "Immutable releases" enabled, uploading assets after the release is
+# published is forbidden, so we must (1) keep the release in draft state until
+# all assets are attached, then (2) publish it as the final step.
+#
+# This is the Cargo-workspace analog of the siblings' PyPI `publish.yml`.
+
+# Manual escape hatch: `workflow_dispatch` lets us re-run this workflow at
+# the current HEAD SHA against an existing draft release (e.g. when an
+# earlier run was cancelled and `gh run rerun` would replay a stale SHA).
+on:
+  workflow_run:
+    workflows: ["Finalize Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Draft release tag to publish (e.g. v1.0.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    # Run on manual dispatch OR when Finalize Release succeeded; ignore failed / cancelled workflow_run events.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write  # for attaching artifacts to the draft release
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 — primary target (Quant agent host class).
+          # `gnu` (glibc) is the default; if a downstream agent runs on a
+          # distro without the matching glibc, add `x86_64-unknown-linux-musl`
+          # to this matrix for a fully static fallback.
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+            archive_ext: tar.gz
+
+          # Linux ARM64 — for any agent deployed on Graviton / Ampere boxes.
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            archive_ext: tar.gz
+
+          # macOS arm64 (Apple Silicon) — for local-dev workstations.
+          # Intel macOS (x86_64-apple-darwin / macos-13) is intentionally
+          # omitted: macos-13 runners never scheduled in practice and stalled
+          # every publish run. Add back only if a Quant team Intel-Mac use
+          # case actually surfaces.
+          - target: aarch64-apple-darwin
+            os: macos-14
+            archive_ext: tar.gz
+
+    steps:
+      - name: Resolve draft release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # On manual dispatch, the operator names the draft tag directly —
+          # skip auto-detection so an out-of-order draft can't be picked.
+          if [ -n "${INPUT_TAG:-}" ]; then
+            TAG="${INPUT_TAG}"
+          else
+            # Find the draft release that prepare-release.yml just created.
+            # If there are multiple drafts (unlikely), use the most recently
+            # created one — prepare-release runs serially per workflow_run.
+            # NOTE: this step runs BEFORE actions/checkout, so we pass --repo
+            # explicitly (gh otherwise tries to autodetect from CWD's .git).
+            TAG=$(gh release list --repo "$REPO" --limit 10 \
+                    --json tagName,isDraft,createdAt \
+                    --jq 'map(select(.isDraft == true)) | sort_by(.createdAt) | last | .tagName')
+          fi
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "::error::No draft release found. Did prepare-release.yml create one?"
+            exit 1
+          fi
+          # Resolve the draft's targetCommitish — `gh release create --draft`
+          # does NOT push a git tag (the tag is only created when the draft
+          # is flipped to published at the end of this workflow), so we must
+          # check out the target SHA directly. The tag string is still used
+          # downstream for `gh release upload`, manifest naming, and the
+          # final `gh release edit --draft=false` flip.
+          SHA=$(gh release view --repo "$REPO" "$TAG" \
+                  --json targetCommitish --jq .targetCommitish)
+          if [ -z "$SHA" ] || [ "$SHA" = "null" ]; then
+            echo "::error::Draft release ${TAG} has no targetCommitish."
+            exit 1
+          fi
+          echo "::notice::Building artifacts for draft release ${TAG} @ ${SHA}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.tag.outputs.sha }}
+
+      - name: Install Rust toolchain (pinned 1.85 + matrix target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85"
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry and target/
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+
+      # `--locked` (#46): a Cargo.lock out of step with the manifests fails the
+      # build instead of being re-resolved on the runner, so the shipped
+      # binaries are built from the resolution committed at the tagged SHA
+      # (M1-R9's rule, applied to the last build that could self-heal).
+      - name: Build miner binary (release profile)
+        env:
+          CARGO_TERM_COLOR: always
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin miner
+
+      - name: Stage release tarball
+        id: stage
+        shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          archive_basename="miner-${version}-${{ matrix.target }}"
+          staging="${RUNNER_TEMP}/${archive_basename}"
+          mkdir -p "${staging}"
+
+          # Pack the binary, license, README, CHANGELOG so the tarball is
+          # self-describing.
+          cp "target/${{ matrix.target }}/release/miner" "${staging}/"
+          cp README.md LICENSE CHANGELOG.md "${staging}/" 2>/dev/null || true
+
+          archive_path="${RUNNER_TEMP}/${archive_basename}.${{ matrix.archive_ext }}"
+          tar -C "${RUNNER_TEMP}" -czf "${archive_path}" "${archive_basename}"
+          shasum -a 256 "${archive_path}" | awk '{print $1}' > "${archive_path}.sha256"
+
+          {
+            echo "archive_path=${archive_path}"
+            echo "checksum_path=${archive_path}.sha256"
+            echo "archive_basename=${archive_basename}.${{ matrix.archive_ext }}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts to draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload --repo "$REPO" "$TAG" \
+            "${{ steps.stage.outputs.archive_path }}" \
+            "${{ steps.stage.outputs.checksum_path }}" \
+            --clobber
+
+  # Single-runner aggregator: collects all checksums into a single
+  # SHA256SUMS file so users can verify with one `shasum -c` command.
+  # Mirrors the per-fixture SHA256SUMS pattern from Plan 07-02.
+  manifest:
+    name: Publish SHA256SUMS manifest
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ needs.build.outputs.tag }}
+    steps:
+      - name: Download all release assets and build manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets && cd assets
+          # No checkout in this job — pass --repo so gh doesn't try to
+          # autodetect from CWD's .git (which doesn't exist).
+          gh release download --repo "$REPO" "$TAG" --pattern '*.tar.gz' --pattern '*.zip'
+          : > SHA256SUMS
+          for f in *.tar.gz *.zip; do
+            [ -e "$f" ] || continue
+            sha=$(shasum -a 256 "$f" | awk '{print $1}')
+            printf '%s  %s\n' "$sha" "$f" >> SHA256SUMS
+          done
+          gh release upload --repo "$REPO" "$TAG" SHA256SUMS --clobber
+
+  # Final step: flip the draft release to published so it becomes
+  # discoverable to users (it disappears from the "Drafts" view and
+  # shows up on the Releases page) AND becomes immutable per the repo's
+  # "Immutable releases" setting. After this step, no further asset
+  # modifications are possible — which is exactly the supply-chain
+  # guarantee we want for distributed binaries.
+  publish:
+    name: Publish release
+    needs: [build, manifest]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Flip draft to published
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.manifest.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # No checkout in this job — pass --repo explicitly.
+          gh release edit --repo "$REPO" "$TAG" --draft=false
+          echo "::notice::Released ${TAG}"

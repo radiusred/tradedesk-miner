@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Radius Red Ltd.
+#
+# Sample miner sweep manifest. Run with:
+#   miner sweep docs/examples/sample_sweep.toml
+#
+# Demonstrates the full v1 grammar: [sweep] master seed, two [[jobs]] blocks,
+# optional [hygiene] global block (bootstrap CIs + null distribution),
+# optional [fdr] block (per-scan_id BH-FDR scoping).
+
+[sweep]
+seed = 0xDEADBEEF
+
+[[jobs]]
+scan = "stats.autocorr.ljung_box@1"
+instruments = ["EURUSD:bid", "GBPUSD:bid"]
+timeframes = ["15m"]
+windows = ["2024-01-15:2024-01-29"]
+params = { lags = 5 }
+
+[[jobs]]
+scan = "stats.autocorr.ljung_box_sq@1"
+instruments = ["EURUSD:bid", "GBPUSD:bid"]
+timeframes = ["15m"]
+windows = ["2024-01-15:2024-01-29"]
+params = { lags = 5 }
+
+# Hygiene runs a lightweight bootstrap + null on each finding. The 99/99
+# draw counts are deliberately small so the demo exercises the grammar
+# end-to-end without stress-testing the kernels — bump to 999 for real
+# research sweeps.
+[hygiene]
+bootstrap = "stationary"
+bootstrap_n = 99
+null = "circular_shift"
+null_n = 99
+
+[fdr]
+family = "scan_id"
+alpha = 0.05

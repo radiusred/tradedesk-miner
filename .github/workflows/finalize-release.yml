@@ -1,0 +1,120 @@
+name: Finalize Release
+
+# The merge-triggered half of the release flow.
+#
+# prepare-release.yml now exits immediately after opening the release PR and
+# enabling auto-merge (no idle wait-for-merge runner). This workflow does the
+# tagging + Release creation that used to live at the end of that idle poll
+# loop. It fires when an automated release PR (branch `release/*`) merges.
+#
+# The siblings (tradedesk + tradedesk-dukascopy) call
+# radiusred/.github reusable-finalize-release.yml, which is Python/Hatch-shaped
+# and creates a NON-draft release. A Cargo workspace needs a Cargo-aware,
+# DRAFT-release variant: this repo has Settings → General → "Immutable
+# releases" enabled, so publish.yml attaches the cross-compiled tarballs to a
+# DRAFT release and flips it to published as its final step. So this workflow
+# creates the release as `--draft`; publish.yml (triggered on this workflow's
+# completion) builds + attaches binaries and publishes.
+#
+# A workflow_dispatch escape hatch lets finalize be re-run manually for the
+# rare case where the merge-triggered run failed after the PR already merged.
+#
+# Required repo settings (same as prepare-release.yml):
+#   Variable  RELEASE_APP_CLIENT_ID    — radiusred-release GitHub App client id
+#   Secret    RELEASE_APP_PRIVATE_KEY  — the App's private key (PEM)
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: "Merged release branch, e.g. release/v1.3.0"
+        required: true
+        type: string
+      merge_sha:
+        description: "Merge commit SHA to tag and target the release at"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  finalize:
+    name: Tag and create draft Release
+    # Only run for a merged release/* PR (or a manual dispatch). A closed-but-
+    # not-merged PR, or any non-release branch, is ignored.
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event.pull_request.merged == true &&
+           startsWith(github.event.pull_request.head.ref, 'release/')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate App token
+        uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Resolve tag and merge SHA
+        id: meta
+        env:
+          RELEASE_BRANCH: ${{ github.event.pull_request.head.ref || inputs.release_branch }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha || inputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          # release/v1.3.0 -> v1.3.0
+          TAG="${RELEASE_BRANCH#release/}"
+          if [ "$TAG" = "$RELEASE_BRANCH" ] || [ -z "$TAG" ]; then
+            echo "::error::Could not derive a tag from release branch '${RELEASE_BRANCH}' (expected 'release/<tag>')." >&2
+            exit 1
+          fi
+          if [ -z "${MERGE_SHA:-}" ] || [ "$MERGE_SHA" = "null" ]; then
+            echo "::error::No merge SHA available to target the release at." >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          ref: ${{ steps.meta.outputs.sha }}
+
+      - name: Generate release notes
+        id: notes
+        if: hashFiles('cliff.toml') != ''
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --unreleased --tag ${{ steps.meta.outputs.tag }} --strip header
+        env:
+          OUTPUT: RELEASE_NOTES.md
+
+      - name: Create draft GitHub Release
+        # Repo has Settings → General → "Immutable releases" enabled, which
+        # forbids modifying assets on a published release. Create as --draft so
+        # publish.yml can attach the cross-compiled tarballs from each matrix
+        # job, then publish.yml's final step flips the draft to published once
+        # all assets are in place.
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW_TAG:      ${{ steps.meta.outputs.tag }}
+          TARGET_SHA:   ${{ steps.meta.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if gh release view "$NEW_TAG" >/dev/null 2>&1; then
+            echo "::notice::Release ${NEW_TAG} already exists; skipping create."
+            exit 0
+          fi
+          if [ -s RELEASE_NOTES.md ]; then
+            gh release create "$NEW_TAG" --target "$TARGET_SHA" --draft --notes-file RELEASE_NOTES.md
+          else
+            gh release create "$NEW_TAG" --target "$TARGET_SHA" --draft --generate-notes
+          fi

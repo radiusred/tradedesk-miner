@@ -1,0 +1,54 @@
+---
+source: crates/miner-core/tests/scan_tsmom.rs
+expression: schema
+---
+{
+  "effect_extra": {
+    "continuation_coefs": [
+      4
+    ],
+    "hit_rates": [
+      4
+    ],
+    "k_values": [
+      4
+    ],
+    "p_values": [
+      4
+    ],
+    "selected_hold_bars": [
+      1
+    ],
+    "t_stats": [
+      4
+    ],
+    "tsmom_means": [
+      4
+    ],
+    "turnover_per_bar": [
+      4
+    ]
+  },
+  "effect_metric": "tsmom_continuation",
+  "effect_size_kind": "hit_rate",
+  "headline_p_value_present": true,
+  "n": 599,
+  "params": {
+    "k_values": [
+      1,
+      5,
+      10,
+      20
+    ],
+    "scaling": true
+  },
+  "raw_series": {
+    "returns": [
+      599
+    ],
+    "timestamps_ms": [
+      599
+    ]
+  },
+  "scan_id_at_version": "stats.momentum.tsmom@1"
+}
