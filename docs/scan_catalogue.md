@@ -356,8 +356,8 @@ Session/overnight gap statistics: detects close→next-open jumps that straddle 
 - **effect.extra keys:** `bucket_labels`, `down_counts`, `down_fill_counts`, `down_fill_prob`, `gap_count`, `gap_size_quantile_probs`, `gap_size_quantiles`, `hold_floor_caveat`, `median_bars_to_fill`, `size_bucket_edges`, `sparse_gaps`, `up_counts`, `up_fill_counts`, `up_fill_prob`
 - **Raw arrays:** `gap_bars_to_fill`, `gap_directions`, `gap_filled`, `gap_sizes`, `timestamps_ms` (one entry per detected gap)
 - **Params:** `boundary_gap_minutes` (session/day-boundary; default 1.5× timeframe), `size_bucket_edges` (default `[5e-4, 1e-3, 2e-3]`), `min_gap_threshold` (default 0), `resolution_hint` (advisory), `fill_lookahead_bars` (default 48), `min_obs_per_bucket` (default 5), `hold_floor_bars` (default 12), `sparse_gap_min_count` (default 20)
-- **Note:** resolution-parameterized — boundaries come from the inter-bar time delta, so a continuous 24×5 FX series produces zero gaps and trips the `sparse_gaps` flag rather than emitting weak candidates. `hold_floor_caveat` trips when the data-driven median bars-to-fill is below the 12-bar arena floor (a gap-fill trade holds too few bars at this resolution — build at a finer resolution). Most valuable on equity-index / commodity CFDs; most useful at 15-min / 30-min bars.
-- **When to reach for it:** overnight / session gap-fill edges on index & commodity CFDs
+- **Note:** resolution-parameterized — boundaries come from the inter-bar time delta, so a continuous 24×5 FX series produces zero gaps and trips the `sparse_gaps` flag. `hold_floor_caveat` trips when the data-driven median bars-to-fill is below `hold_floor_bars` (default 12).
+- **When to reach for it:** overnight / session gap statistics on instruments that close between sessions (index & commodity CFDs)
 - **Requirement:** RAD-3840
 
 ## See Also
