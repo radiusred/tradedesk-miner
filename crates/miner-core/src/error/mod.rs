@@ -78,6 +78,22 @@ impl From<MinerError> for WireError {
     }
 }
 
+impl From<tradedesk_data::dukascopy::DukascopyError> for WireError {
+    /// Engine-boundary conversion of the Dukascopy reader's error. Every variant maps
+    /// to [`ScanErrorCode::CacheCorruption`], with the error's `Display` as the message
+    /// and an empty context.
+    ///
+    /// `tradedesk-data` owns the reader and its error; the miner owns `WireError`, so
+    /// the conversion lives here (the orphan rule puts it on the wire error's side).
+    fn from(err: tradedesk_data::dukascopy::DukascopyError) -> Self {
+        WireError {
+            code: ScanErrorCode::CacheCorruption.as_str().to_string(),
+            message: err.to_string(),
+            context: std::collections::BTreeMap::new(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -85,6 +101,37 @@ impl From<MinerError> for WireError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `From<DukascopyError> for WireError`: every reader-side variant becomes a
+    /// `cache_corruption` wire error carrying the reader error's `Display` text and no
+    /// context.
+    #[test]
+    fn dukascopy_error_converts_to_cache_corruption_wire_error() {
+        use tradedesk_data::dukascopy::DukascopyError;
+
+        let cases = [
+            DukascopyError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no such file",
+            )),
+            DukascopyError::MissingField {
+                line: 7,
+                field: "close",
+            },
+            DukascopyError::CorruptSourceFile {
+                path: std::path::PathBuf::from("EURUSD/2024/00/02_bid.csv.zst"),
+                detail: "zero-byte".into(),
+            },
+            DukascopyError::PathLayout("bad month".into()),
+        ];
+        for err in cases {
+            let display = err.to_string();
+            let wire: WireError = err.into();
+            assert_eq!(wire.code, "cache_corruption");
+            assert_eq!(wire.message, display);
+            assert!(wire.context.is_empty());
+        }
+    }
 
     /// Test 4 — `miner_error_does_not_require_serialize`: confirms `MinerError`
     /// compiles WITHOUT `Serialize` and that the `Io(#[from] std::io::Error)`
