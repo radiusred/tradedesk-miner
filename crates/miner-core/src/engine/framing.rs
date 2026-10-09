@@ -160,11 +160,11 @@ pub fn build_run_end(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aggregator::Timeframe;
     use crate::engine::gap_policy::GapPolicyKind;
     use crate::findings::TimeRange;
-    use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
     use chrono::TimeZone;
+    use tradedesk_data::aggregator::Timeframe;
+    use tradedesk_data::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
 
     fn blake3_hex_zero() -> Blake3Hex {
         let bytes: [u8; 64] = [b'0'; 64];

@@ -38,7 +38,7 @@
 
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 
-use crate::calendar::Calendar;
+use tradedesk_data::calendar::Calendar;
 
 /// Compute the bucket index for `ts` under a trading-day-of-month scheme with
 /// `cutoff_n` trading days at each edge.

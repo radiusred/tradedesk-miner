@@ -39,13 +39,13 @@
 //! features, no `test-internal`) do NOT compile the flag in.
 
 use clap::Args;
-use miner_core::aggregator::Timeframe;
 use miner_core::engine::gap_policy::GapPolicyKind;
 use miner_core::engine::preflight;
 use miner_core::error::{PreflightCode, WireError};
 use miner_core::findings::TimeRange;
-use miner_core::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 use miner_core::scan::{BootstrapMethod, NullMethod, ScanRequest};
+use tradedesk_data::aggregator::Timeframe;
+use tradedesk_data::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 
 /// `miner scan` subcommand arguments.
 ///
@@ -378,9 +378,9 @@ mod tests {
     use super::*;
     use crate::cli::{Cli, Command};
     use clap::Parser;
-    use miner_core::aggregator::Timeframe;
     use miner_core::engine::gap_policy::GapPolicyKind;
-    use miner_core::reader::Side;
+    use tradedesk_data::aggregator::Timeframe;
+    use tradedesk_data::reader::Side;
 
     /// Parse a complete `miner scan ...` argv vector for use in tests. Plan
     /// 04-02 / D4-02: the `--instrument` flag now takes `SYMBOL:side` form

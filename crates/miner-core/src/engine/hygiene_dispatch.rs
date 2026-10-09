@@ -92,10 +92,10 @@ use rand::RngCore;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
 
-use crate::aggregator::BarFrame;
 use crate::scan::ScanRequest;
 use crate::scan::primitives::returns::log_returns;
 use crate::scan::primitives::time_alignment::inner_join;
+use tradedesk_data::aggregator::BarFrame;
 
 /// Statistic closure type for Single-arity scans. The hygiene kernels accept
 /// any `Fn(&[f64]) -> f64`; this alias keeps engine call sites concise.
@@ -1015,7 +1015,7 @@ fn make_seas_eom_som_closure(req: &ScanRequest, bars: &BarFrame) -> Option<StatC
         .unwrap_or(3);
     let num_buckets = 2 * cutoff_n;
     let ts_for_returns: Vec<_> = bars.ts_open_utc.iter().skip(1).copied().collect();
-    let calendar = crate::calendar::Calendar::fx_major();
+    let calendar = tradedesk_data::calendar::Calendar::fx_major();
     // Pre-compute (return_index → bucket) assignments. Returns whose
     // timestamps don't fall in an EOM/SOM window are filtered out.
     let mut filtered_indices: Vec<usize> = Vec::with_capacity(ts_for_returns.len());
@@ -1212,12 +1212,12 @@ pub(crate) type CancelFlag = Arc<AtomicBool>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aggregator::Timeframe;
     use crate::engine::gap_policy::GapPolicyKind;
     use crate::engine::param_hash;
     use crate::findings::TimeRange;
-    use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
     use chrono::{DateTime, Duration, TimeZone, Utc};
+    use tradedesk_data::aggregator::Timeframe;
+    use tradedesk_data::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
 
     fn make_req(scan_id: &str, params: &serde_json::Value) -> ScanRequest {
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();

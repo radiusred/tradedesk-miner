@@ -17,8 +17,8 @@ use std::path::Path;
 use std::process::ExitStatus;
 
 use chrono::NaiveDate;
-use miner_core::Side;
 use tempfile::TempDir;
+use tradedesk_data::Side;
 
 mod fixtures;
 use fixtures::SyntheticCache;

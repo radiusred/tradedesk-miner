@@ -1,6 +1,6 @@
 //! Gap-policy dispatch: `strict` / `continuous_only` → finding-emission plan.
 //!
-//! Pattern analog: `gap.rs:152-187` ([`crate::gap::GapDetector`]) — stateless
+//! Pattern analog: `gap.rs:152-187` ([`tradedesk_data::gap::GapDetector`]) — stateless
 //! function dispatch (no fields, no configuration) + tagged-enum policy kind
 //! mirroring `GapReason` shape (`gap.rs:117-130`).
 //!
@@ -18,13 +18,26 @@
 //! policy)` triple it returns the same [`GapDispatch`]. No clock reads, no
 //! file IO, no allocations beyond the returned `Vec<TimeRange>`.
 
+use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::aggregator::{Timeframe, align_down, align_up};
 use crate::findings::TimeRange;
-use crate::gap::{GapManifest, GapReason, GapSpan};
-use crate::reader::ClosedRangeUtc;
+use tradedesk_data::aggregator::{Timeframe, align_up};
+use tradedesk_data::gap::{GapManifest, GapReason, GapSpan};
+use tradedesk_data::reader::ClosedRangeUtc;
+
+/// Floor `ts` to the timeframe boundary at or before it.
+///
+/// `tradedesk-data` keeps its own `align_down` crate-private and exposes only
+/// [`align_up`], so the floor is derived from it: `align_up` returns `ts` when `ts` is on
+/// a boundary and `floor + tf.duration()` otherwise. A timestamp is always less than one
+/// timeframe past its floor, so in the second case `align_up(ts) - tf.duration()` is the
+/// floor exactly. Once `tradedesk-data` makes `align_down` public, call it instead.
+fn align_down(ts: DateTime<Utc>, tf: Timeframe) -> DateTime<Utc> {
+    let up = align_up(ts, tf);
+    if up == ts { ts } else { up - tf.duration() }
+}
 
 // ---------------------------------------------------------------------------
 // GapPolicyKind — tagged enum, mirrors gap.rs:117-130 GapReason shape.
@@ -200,9 +213,9 @@ pub fn dispatch(
 /// Under `--gap-policy continuous_only`, [`dispatch`] partitions the requested
 /// window into maximal gap-free sub-ranges at the **gap detector's**
 /// resolution — currently 1-minute. The aggregator
-/// ([`crate::aggregator::aggregate`]) validates that `range.start` is aligned
+/// ([`tradedesk_data::aggregator::aggregate`]) validates that `range.start` is aligned
 /// to the target timeframe's bucket boundary (15m, 1h, 1d) and rejects
-/// unaligned starts with [`crate::aggregator::AggregateError::MisalignedRange`].
+/// unaligned starts with [`tradedesk_data::aggregator::AggregateError::MisalignedRange`].
 ///
 /// On real data the *next* sub-range after a single-minute intra-day gap
 /// starts at the minute immediately following the gap (e.g.
@@ -455,10 +468,10 @@ pub fn dispatch_pair_at_timeframe(
 mod tests {
     use super::*;
     use crate::findings::TimeRange;
-    use crate::gap::{GapReason, GapSpan};
-    use crate::reader::Side;
     use chrono::{DateTime, Duration, TimeZone, Utc};
     use proptest::prelude::*;
+    use tradedesk_data::gap::{GapReason, GapSpan};
+    use tradedesk_data::reader::Side;
 
     fn t(h: u32) -> DateTime<Utc> {
         // Helper: an hour-of-day on 2024-01-01 UTC. Hour 24 maps to
@@ -494,6 +507,69 @@ mod tests {
                 end_utc: t(6),
             },
             gaps,
+        }
+    }
+
+    const ALL_TIMEFRAMES: [Timeframe; 5] = [
+        Timeframe::Tf5m,
+        Timeframe::Tf10m,
+        Timeframe::Tf15m,
+        Timeframe::Tf1h,
+        Timeframe::Tf1d,
+    ];
+
+    /// The `align_down` adapter floors to the timeframe boundary: a timestamp on a
+    /// boundary is unchanged, and one past it (sub-minute parts included) goes back to it.
+    #[test]
+    fn align_down_floors_to_the_timeframe_boundary() {
+        let off = Utc
+            .with_ymd_and_hms(2024, 3, 5, 13, 47, 29)
+            .unwrap()
+            .checked_add_signed(Duration::nanoseconds(123_456_789))
+            .unwrap();
+        let cases = [
+            (
+                Timeframe::Tf5m,
+                Utc.with_ymd_and_hms(2024, 3, 5, 13, 45, 0).unwrap(),
+            ),
+            (
+                Timeframe::Tf10m,
+                Utc.with_ymd_and_hms(2024, 3, 5, 13, 40, 0).unwrap(),
+            ),
+            (
+                Timeframe::Tf15m,
+                Utc.with_ymd_and_hms(2024, 3, 5, 13, 45, 0).unwrap(),
+            ),
+            (
+                Timeframe::Tf1h,
+                Utc.with_ymd_and_hms(2024, 3, 5, 13, 0, 0).unwrap(),
+            ),
+            (
+                Timeframe::Tf1d,
+                Utc.with_ymd_and_hms(2024, 3, 5, 0, 0, 0).unwrap(),
+            ),
+        ];
+        for (tf, floor) in cases {
+            assert_eq!(align_down(off, tf), floor, "{tf:?} off a boundary");
+            assert_eq!(align_down(floor, tf), floor, "{tf:?} on a boundary");
+        }
+    }
+
+    proptest! {
+        /// For any timestamp and timeframe, `align_down` returns a boundary at or before
+        /// the timestamp and less than one timeframe behind it: the floor, uniquely.
+        #[test]
+        fn align_down_is_the_unique_floor(
+            secs in 1_500_000_000i64..1_900_000_000i64,
+            nanos in 0u32..1_000_000_000u32,
+            tf_idx in 0usize..5,
+        ) {
+            let tf = ALL_TIMEFRAMES[tf_idx];
+            let ts = DateTime::from_timestamp(secs, nanos).unwrap();
+            let floor = align_down(ts, tf);
+            prop_assert!(floor <= ts);
+            prop_assert!(ts - floor < tf.duration());
+            prop_assert_eq!(align_up(floor, tf), floor);
         }
     }
 

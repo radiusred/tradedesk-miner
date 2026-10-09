@@ -18,7 +18,7 @@
 //! per-test `TempDir`. Two symbols (EURUSD, GBPUSD), bid side only, January
 //! 2024 weekdays only (weekends absent — Dukascopy cache shape).
 //!
-//! Path constructor: `miner_reader_dukascopy::day_csv_zst` is the ONLY
+//! Path constructor: `tradedesk_data::dukascopy::day_csv_zst` is the ONLY
 //! sanctioned way to build day-file paths (encapsulates the 00-indexed-month
 //! quirk per CACHE-05 / T-02-04). Do NOT hand-roll the `<MM 00-indexed>` math.
 //!
@@ -33,10 +33,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
-use miner_core::Side;
-use miner_reader_dukascopy::day_csv_zst;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use tradedesk_data::Side;
+use tradedesk_data::dukascopy::day_csv_zst;
 use walkdir::WalkDir;
 
 /// Canonical Numerical Recipes LCG (PATTERNS Pattern C). The constants

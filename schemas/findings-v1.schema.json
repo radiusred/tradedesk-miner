@@ -909,7 +909,7 @@
       "type": "object"
     },
     "TimeRange": {
-      "description": "Half-open UTC time interval [`start_utc`, `end_utc`).",
+      "description": "Half-open UTC time interval [`start_utc`, `end_utc`).\n\nThe miner's findings embed it; it lives here, with the manifest that uses it.",
       "properties": {
         "end_utc": {
           "format": "date-time",

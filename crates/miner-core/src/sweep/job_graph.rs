@@ -26,16 +26,16 @@
 
 use std::collections::BTreeMap;
 
-use crate::aggregator::Timeframe;
 use crate::engine::gap_policy::GapPolicyKind;
 use crate::engine::param_hash::param_hash as compute_param_hash;
 use crate::error::{MinerError, PreflightCode, WireError};
-use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec};
 use crate::scan::hygiene::seed::derive_job_seed;
 use crate::scan::{BootstrapMethod, NullMethod, Registry, ScanArity};
 use crate::sweep::manifest::{
     SweepManifest, merge_hygiene, parse_bootstrap_method, parse_null_method,
 };
+use tradedesk_data::aggregator::Timeframe;
+use tradedesk_data::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec};
 
 // ---------------------------------------------------------------------------
 // ResolvedJob — fully-resolved single-job specification post-expansion

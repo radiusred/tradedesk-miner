@@ -30,7 +30,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Parser;
-use miner_core::cache::BarCache;
 use miner_core::config::{MinerConfig, OutputDest};
 use miner_core::engine::{RunOutcome, run_one};
 use miner_core::error::stderr_emit::emit_to_stderr;
@@ -38,8 +37,9 @@ use miner_core::error::{MinerError, PreflightCode, WireError};
 use miner_core::findings::sink::{FileSink, StdoutSink};
 use miner_core::findings::{Finding, FindingSink, RunEnd, RunId, RunStart, RunSummary};
 use miner_core::sweep::{SweepOptions, run_sweep};
-use miner_reader_dukascopy::DukascopyReader;
 use tracing_subscriber::EnvFilter;
+use tradedesk_data::cache::BarCache;
+use tradedesk_data::dukascopy::DukascopyReader;
 
 mod cli;
 mod scan_args;

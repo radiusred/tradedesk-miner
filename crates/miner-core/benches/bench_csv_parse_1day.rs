@@ -6,7 +6,7 @@
 //!
 //! Kernel under test: `csv::ReaderBuilder::new().has_headers(true).from_reader`
 //! plus serde-deserialise into `RawRow` (mirrors
-//! `crates/miner-reader-dukascopy/src/reader.rs` production callsite). The
+//! the `tradedesk_data::dukascopy` reader's production callsite). The
 //! zstd decompression happens ONCE outside the timed loop so this bench
 //! measures CSV parsing in isolation (decompression is benched separately
 //! in `bench_zstd_decompress_1day`).
@@ -23,9 +23,8 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
-/// Mirrors `crates/miner-reader-dukascopy/src/reader.rs::RawRow`. We
-/// duplicate the type locally so the bench does not introduce a coupling
-/// from `miner-core` to `miner-reader-dukascopy`; the CSV schema (six
+/// Mirrors the private `RawRow` of the `tradedesk_data::dukascopy` reader. We
+/// duplicate the type locally because the reader does not export it; the CSV schema (six
 /// columns: `timestamp,open,high,low,close,volume`) is byte-pinned by
 /// `crates/miner-bench/src/bin/gen-fixtures.rs:85`.
 // All fields are populated by `csv::Reader::deserialize` but never inspected

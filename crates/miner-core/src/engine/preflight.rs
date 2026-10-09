@@ -34,8 +34,8 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, NaiveDate, Utc};
 
 use crate::error::{PreflightCode, WireError};
-use crate::reader::{ClosedRangeUtc, InstrumentSpec};
 use crate::scan::{BootstrapMethod, NullMethod, Registry, Scan, ScanArity};
+use tradedesk_data::reader::{ClosedRangeUtc, InstrumentSpec};
 
 // ---------------------------------------------------------------------------
 // resolve_scan_id_at_version — "id@version" → (String, u32)
@@ -470,8 +470,8 @@ mod tests {
     // validate_arity — Plan 04-02 Task 2 (Behavior Tests 1-4)
     // -----------------------------------------------------------------------
 
-    use crate::reader::Side;
     use crate::scan::{ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
+    use tradedesk_data::reader::Side;
 
     struct StubSingle;
     impl crate::scan::Scan for StubSingle {

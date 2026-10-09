@@ -1,6 +1,6 @@
 //! Phase 3 facade — single library entry point CLI/MCP/HTTP all call.
 //!
-//! Pattern analog: `cache.rs:519-573` ([`crate::cache::BarCache::get_or_build`]) —
+//! Pattern analog: `cache.rs:519-573` ([`tradedesk_data::cache::BarCache::get_or_build`]) —
 //! a single-method facade returning a value with a multi-line algorithm doc.
 //! `engine::run_one` follows the same shape — it OWNS `RunStart`/`RunEnd`
 //! framing emission, `param_hash` computation, run-id assignment, sink
@@ -30,8 +30,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::Utc;
 
-use crate::aggregator::AggParams;
-use crate::cache::BarCache;
 use crate::config::MinerConfig;
 use crate::error::MinerError;
 use crate::findings::run_id::RunId;
@@ -39,12 +37,14 @@ use crate::findings::{
     BootstrapSpec, DataSlice, DryRunFinding, Finding, FindingSink, GapAbortedFinding, NullSpec,
     PerScanCounts, ReproEnvelope, ResultFinding, RunSummary, Source, TimeRange,
 };
-use crate::gap::GapDetector;
-use crate::reader::{ClosedRangeUtc, Reader};
 use crate::scan::hygiene::{
     bootstrap as hygiene_bootstrap, null as hygiene_null, seed as hygiene_seed,
 };
 use crate::scan::{BootstrapMethod, NullMethod, ScanCtx, ScanError, ScanRequest};
+use tradedesk_data::aggregator::AggParams;
+use tradedesk_data::cache::BarCache;
+use tradedesk_data::gap::GapDetector;
+use tradedesk_data::reader::{ClosedRangeUtc, Reader};
 
 use hygiene_buffering_sink::HygieneBufferingSink;
 
@@ -97,7 +97,7 @@ pub enum RunOutcome {
 
 /// Execute one scan request end-to-end.
 ///
-/// Pattern analog: `cache.rs:569-573` ([`crate::cache::BarCache::get_or_build`])
+/// Pattern analog: `cache.rs:569-573` ([`tradedesk_data::cache::BarCache::get_or_build`])
 /// — a single-method facade returning a value with a numbered algorithm doc.
 ///
 /// ## Algorithm
@@ -541,7 +541,7 @@ pub fn run_one_with_registry<R: Reader>(
                 // Build ScanCtx. The ContinuousOnly path inlines the full
                 // manifest into Result.data_slice; the Strict zero-gap fast
                 // path leaves gap_manifest = None (D3-12).
-                let ctx_gap_manifest: Option<&crate::gap::GapManifest> =
+                let ctx_gap_manifest: Option<&tradedesk_data::gap::GapManifest> =
                     if matches!(req.gap_policy, GapPolicyKind::ContinuousOnly) {
                         Some(&manifest)
                     } else {
@@ -738,13 +738,13 @@ enum PairDispatchControl {
 )]
 fn dispatch_pair_unit(
     sub_range: TimeRange,
-    bars_a: &crate::aggregator::BarFrame,
-    bars_b: &crate::aggregator::BarFrame,
+    bars_a: &tradedesk_data::aggregator::BarFrame,
+    bars_b: &tradedesk_data::aggregator::BarFrame,
     sink: &mut dyn FindingSink,
     summary: &mut RunSummary,
     cancel: &Arc<AtomicBool>,
     req: &ScanRequest,
-    joint_manifest: &crate::gap::GapManifest,
+    joint_manifest: &tradedesk_data::gap::GapManifest,
     scan: &dyn crate::scan::Scan,
     reader_source_id: &str,
     run_id: RunId,
@@ -753,7 +753,7 @@ fn dispatch_pair_unit(
     let mut per_sub_req = req.clone();
     per_sub_req.sub_range = sub_range;
 
-    let ctx_gap_manifest: Option<&crate::gap::GapManifest> =
+    let ctx_gap_manifest: Option<&tradedesk_data::gap::GapManifest> =
         if matches!(req.gap_policy, GapPolicyKind::ContinuousOnly) {
             Some(joint_manifest)
         } else {
@@ -1058,7 +1058,10 @@ fn dispatch_pair_arity_body<R: Reader>(
                              summary: &mut RunSummary,
                              sub_range_utc: ClosedRangeUtc|
              -> Result<
-                Option<(crate::aggregator::BarFrame, crate::aggregator::BarFrame)>,
+                Option<(
+                    tradedesk_data::aggregator::BarFrame,
+                    tradedesk_data::aggregator::BarFrame,
+                )>,
                 MinerError,
             > {
                 let bars_a = match cache.get_or_build(
@@ -1131,8 +1134,8 @@ fn dispatch_pair_arity_body<R: Reader>(
                 // post-fusion.
                 let mut loaded: Vec<(
                     TimeRange,
-                    crate::aggregator::BarFrame,
-                    crate::aggregator::BarFrame,
+                    tradedesk_data::aggregator::BarFrame,
+                    tradedesk_data::aggregator::BarFrame,
                 )> = Vec::with_capacity(sub_ranges.len());
                 let mut cache_failed = false;
                 for sub_range in &sub_ranges {
@@ -1293,8 +1296,8 @@ fn clamp_resample_n(n: Option<u32>) -> u32 {
 fn apply_hygiene_mutations(
     mut result: ResultFinding,
     req: &ScanRequest,
-    bars: &crate::aggregator::BarFrame,
-    bars_b: Option<&crate::aggregator::BarFrame>,
+    bars: &tradedesk_data::aggregator::BarFrame,
+    bars_b: Option<&tradedesk_data::aggregator::BarFrame>,
     cancel: &Arc<AtomicBool>,
 ) -> ResultFinding {
     // Early exit: no hygiene requested.
@@ -1682,12 +1685,12 @@ fn apply_pair_hygiene(
 /// vs test builds (Warning 1 polish).
 #[cfg_attr(not(any(test, feature = "test-internal")), allow(unused_variables))]
 fn make_scan_ctx<'a>(
-    bars: &'a crate::aggregator::BarFrame,
+    bars: &'a tradedesk_data::aggregator::BarFrame,
     bars_pair: Option<(
-        &'a crate::aggregator::BarFrame,
-        &'a crate::aggregator::BarFrame,
+        &'a tradedesk_data::aggregator::BarFrame,
+        &'a tradedesk_data::aggregator::BarFrame,
     )>,
-    gap_manifest: Option<&'a crate::gap::GapManifest>,
+    gap_manifest: Option<&'a tradedesk_data::gap::GapManifest>,
     run_id: RunId,
     code_revision: &'a str,
     cancel: Arc<AtomicBool>,
@@ -1783,13 +1786,13 @@ fn emit_run_end(
 )]
 mod tests {
     use super::*;
-    use crate::aggregator::Timeframe;
-    use crate::calendar::Calendar;
     use crate::config::OutputDest;
     use crate::findings::sink::VecSink;
-    use crate::reader::{Blake3Hex, InstrumentSpec, RawBar, RawBarIter, Side};
     use chrono::{DateTime, Duration, NaiveDate, TimeZone};
     use std::collections::BTreeMap;
+    use tradedesk_data::aggregator::Timeframe;
+    use tradedesk_data::calendar::Calendar;
+    use tradedesk_data::reader::{Blake3Hex, InstrumentSpec, RawBar, RawBarIter, Side};
 
     // -----------------------------------------------------------------------
     // FakeReader fixture — controllable Reader for engine integration tests.
@@ -3090,12 +3093,12 @@ mod tests {
 mod cancellation_tests {
     use super::tests::FakeReader;
     use super::*;
-    use crate::aggregator::Timeframe;
     use crate::config::OutputDest;
     use crate::findings::sink::VecSink;
-    use crate::reader::{InstrumentSpec, RawBar, Side};
     use chrono::{Duration, NaiveDate, TimeZone};
     use std::time::Instant;
+    use tradedesk_data::aggregator::Timeframe;
+    use tradedesk_data::reader::{InstrumentSpec, RawBar, Side};
 
     fn build_full_day_1m_bars(date: NaiveDate, seed: u32) -> Vec<RawBar> {
         let day_start = date.and_hms_opt(0, 0, 0).unwrap().and_utc();

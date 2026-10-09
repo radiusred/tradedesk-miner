@@ -45,7 +45,7 @@ tracing.workspace            = true
 tracing-subscriber.workspace  = true
 # Plan 07-02 (gen-fixtures) deps — preserved verbatim:
 miner-core             = { path = "../miner-core" }
-miner-reader-dukascopy = { path = "../miner-reader-dukascopy" }
+tradedesk-data.workspace         = true
 chrono.workspace                 = true
 zstd.workspace                   = true
 walkdir.workspace                = true

@@ -1,6 +1,6 @@
 //! [`Registry`] — versioned `(id, version)` scan catalogue.
 //!
-//! Pattern analog: `cache.rs:519-534` ([`crate::cache::BarCache`]) — a fielded
+//! Pattern analog: `cache.rs:519-534` ([`tradedesk_data::cache::BarCache`]) — a fielded
 //! struct with a `#[must_use]` constructor and a single-method facade. The
 //! inner field is a `BTreeMap<(String, u32), Box<dyn Scan>>` (per CONTEXT
 //! line 204 — the only Phase 3 map type) so iteration order is deterministic

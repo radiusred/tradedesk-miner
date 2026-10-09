@@ -28,17 +28,17 @@ use proptest::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use miner_core::aggregator::{BarFrame, Timeframe};
 use miner_core::engine::gap_policy::GapPolicyKind;
 use miner_core::engine::param_hash;
 use miner_core::findings::{Finding, RunId, TimeRange};
-use miner_core::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 use miner_core::scan::anom::VolRollingScan;
 use miner_core::scan::cross::{
     LeadLagCcfScan, OlsRollingScan, PearsonRollingScan, SpearmanRollingScan,
 };
 use miner_core::scan::ljung_box::LjungBoxScan;
 use miner_core::scan::{Scan, ScanCtx, ScanRequest};
+use tradedesk_data::aggregator::{BarFrame, Timeframe};
+use tradedesk_data::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 
 mod common;
 use common::BufferSink;
@@ -112,7 +112,7 @@ fn run_and_extract_q_stats(closes_slice: &[f64]) -> Vec<f64> {
         scan_id: "stats.autocorr.ljung_box".into(),
         version: 1,
         // Phase 4 (D4-01): single-leg instruments Vec.
-        instruments: vec![miner_core::reader::InstrumentSpec {
+        instruments: vec![tradedesk_data::reader::InstrumentSpec {
             symbol: "EURUSD".into(),
             side: Side::Bid,
         }],
@@ -171,7 +171,7 @@ fn run_and_extract_vol_values(closes_slice: &[f64], window: usize) -> Vec<f64> {
     let req = ScanRequest {
         scan_id: "stats.vol.rolling".into(),
         version: 1,
-        instruments: vec![miner_core::reader::InstrumentSpec {
+        instruments: vec![tradedesk_data::reader::InstrumentSpec {
             symbol: "EURUSD".into(),
             side: Side::Bid,
         }],

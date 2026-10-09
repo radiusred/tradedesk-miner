@@ -55,9 +55,9 @@
 //! the full collision-resistance budget of a 64-bit hash (negligible for the
 //! sweep cardinality cap).
 
-use crate::aggregator::Timeframe;
-use crate::reader::{ClosedRangeUtc, InstrumentSpec};
 use blake3::Hasher;
+use tradedesk_data::aggregator::Timeframe;
+use tradedesk_data::reader::{ClosedRangeUtc, InstrumentSpec};
 
 /// WR-07 helper: write a length-prefixed byte slice into a blake3 hasher.
 /// The prefix is `bytes.len() as u64` in little-endian; on 64-bit
@@ -129,10 +129,10 @@ pub fn derive_job_seed(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aggregator::Timeframe;
-    use crate::reader::{ClosedRangeUtc, InstrumentSpec, Side};
     use chrono::TimeZone;
     use chrono::Utc;
+    use tradedesk_data::aggregator::Timeframe;
+    use tradedesk_data::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 
     fn sample_window() -> ClosedRangeUtc {
         ClosedRangeUtc {

@@ -16,9 +16,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
-use miner_core::Side;
-use miner_reader_dukascopy::day_csv_zst;
 use tempfile::TempDir;
+use tradedesk_data::Side;
+use tradedesk_data::dukascopy::day_csv_zst;
 
 /// Synthetic on-disk Dukascopy cache rooted in a per-test `TempDir`.
 ///

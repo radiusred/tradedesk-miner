@@ -16,13 +16,13 @@ use std::sync::atomic::AtomicBool;
 
 use chrono::{Duration, TimeZone, Utc};
 
-use miner_core::aggregator::{BarFrame, Timeframe};
 use miner_core::engine::gap_policy::GapPolicyKind;
 use miner_core::engine::param_hash;
 use miner_core::findings::{Finding, RunId, TimeRange};
-use miner_core::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 use miner_core::scan::cross::{PearsonRollingScan, SpearmanRollingScan};
 use miner_core::scan::{Scan, ScanCtx};
+use tradedesk_data::aggregator::{BarFrame, Timeframe};
+use tradedesk_data::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 
 use common::BufferSink;
 
@@ -252,7 +252,7 @@ fn scan_corr_rolling_pearson_happy_path_via_engine_facade() {
     use miner_core::config::{MinerConfig, OutputDest};
     use miner_core::engine::{RunOutcome, run_one_with_registry};
     use miner_core::scan::Registry;
-    use miner_reader_dukascopy::DukascopyReader;
+    use tradedesk_data::dukascopy::DukascopyReader;
 
     use common::synthetic_cache::SyntheticCache;
 
@@ -349,7 +349,7 @@ fn scan_corr_rolling_spearman_happy_path_via_engine_facade() {
     use miner_core::config::{MinerConfig, OutputDest};
     use miner_core::engine::{RunOutcome, run_one_with_registry};
     use miner_core::scan::Registry;
-    use miner_reader_dukascopy::DukascopyReader;
+    use tradedesk_data::dukascopy::DukascopyReader;
 
     use common::synthetic_cache::SyntheticCache;
 

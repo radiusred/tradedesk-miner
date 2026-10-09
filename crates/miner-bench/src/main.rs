@@ -62,12 +62,12 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use miner_core::cache::BarCache;
 use miner_core::config::MinerConfig;
 use miner_core::error::MinerError;
 use miner_core::findings::{Finding, FindingSink};
 use miner_core::sweep::{SweepOptions, manifest::parse_manifest_str, run_sweep};
-use miner_reader_dukascopy::DukascopyReader;
+use tradedesk_data::cache::BarCache;
+use tradedesk_data::dukascopy::DukascopyReader;
 
 // ---------------------------------------------------------------------------
 // dhat global allocator — feature-gated.

@@ -22,8 +22,8 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use miner_core::engine::gap_policy::{GapDispatch, GapPolicyKind, dispatch_pair};
 use miner_core::findings::TimeRange;
-use miner_core::gap::{GapManifest, GapReason, GapSpan};
-use miner_core::reader::{ClosedRangeUtc, Side};
+use tradedesk_data::gap::{GapManifest, GapReason, GapSpan};
+use tradedesk_data::reader::{ClosedRangeUtc, Side};
 
 fn t(h: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2024, 1, 1, h, 0, 0).unwrap()

@@ -43,17 +43,17 @@ use std::sync::atomic::AtomicBool;
 
 use chrono::{Duration, NaiveDate};
 
-use miner_core::aggregator::Timeframe;
 use miner_core::config::{MinerConfig, OutputDest};
 use miner_core::engine::gap_policy::GapPolicyKind;
 use miner_core::engine::{param_hash, run_one_with_registry};
 use miner_core::findings::{Finding, TimeRange};
-use miner_core::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 use miner_core::scan::anom::VarianceRatioScan;
 use miner_core::scan::cross::PearsonRollingScan;
 use miner_core::scan::seas::HourOfDayScan;
 use miner_core::scan::{BootstrapMethod, NullMethod, Registry, ScanRequest};
-use miner_reader_dukascopy::DukascopyReader;
+use tradedesk_data::aggregator::Timeframe;
+use tradedesk_data::dukascopy::DukascopyReader;
+use tradedesk_data::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 
 use common::{BufferSink, parse_findings, synthetic_cache::SyntheticCache};
 

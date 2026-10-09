@@ -24,13 +24,13 @@ use std::sync::atomic::AtomicBool;
 
 use chrono::NaiveDate;
 
-use miner_core::cache::BarCache;
 use miner_core::config::{MinerConfig, OutputDest};
 use miner_core::findings::Finding;
-use miner_core::reader::Side;
 use miner_core::sweep::manifest::parse_manifest_str;
 use miner_core::sweep::{SweepOptions, run_sweep};
-use miner_reader_dukascopy::DukascopyReader;
+use tradedesk_data::cache::BarCache;
+use tradedesk_data::dukascopy::DukascopyReader;
+use tradedesk_data::reader::Side;
 
 use common::{BufferSink, synthetic_cache::SyntheticCache};
 

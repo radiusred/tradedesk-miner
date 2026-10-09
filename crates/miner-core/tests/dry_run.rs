@@ -22,14 +22,14 @@ use std::sync::atomic::AtomicBool;
 
 use chrono::{NaiveDate, TimeZone, Utc};
 
-use miner_core::aggregator::Timeframe;
 use miner_core::config::{MinerConfig, OutputDest};
 use miner_core::engine::gap_policy::GapPolicyKind;
 use miner_core::engine::{param_hash, run_one};
 use miner_core::findings::{Finding, TimeRange};
-use miner_core::reader::{ClosedRangeUtc, Side};
 use miner_core::scan::ScanRequest;
-use miner_reader_dukascopy::DukascopyReader;
+use tradedesk_data::aggregator::Timeframe;
+use tradedesk_data::dukascopy::DukascopyReader;
+use tradedesk_data::reader::{ClosedRangeUtc, Side};
 
 use common::{BufferSink, synthetic_cache::SyntheticCache};
 
@@ -56,7 +56,7 @@ fn dry_run_emits_dry_run_finding_only() {
         scan_id: "stats.autocorr.ljung_box".into(),
         version: 1,
         // Phase 4 (D4-01): instruments Vec replaces the singleton pair.
-        instruments: vec![miner_core::reader::InstrumentSpec {
+        instruments: vec![tradedesk_data::reader::InstrumentSpec {
             symbol: "EURUSD".into(),
             side: Side::Bid,
         }],

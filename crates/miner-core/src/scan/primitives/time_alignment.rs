@@ -18,9 +18,9 @@
 
 #![cfg_attr(any(test, debug_assertions), allow(clippy::float_cmp))]
 
-use crate::aggregator::BarFrame;
 use crate::findings::TimeRange;
-use crate::gap::{GapManifest, GapReason, GapSpan};
+use tradedesk_data::aggregator::BarFrame;
+use tradedesk_data::gap::{GapManifest, GapReason, GapSpan};
 
 /// Output of [`inner_join`] — three parallel vectors with the joint
 /// timestamp index (epoch-ms) and per-leg close prices at each joint
@@ -191,9 +191,9 @@ fn conservative_reason(left: &GapReason, right: &GapReason) -> GapReason {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aggregator::Timeframe;
-    use crate::reader::Side;
     use chrono::{DateTime, Duration, TimeZone, Utc};
+    use tradedesk_data::aggregator::Timeframe;
+    use tradedesk_data::reader::Side;
 
     fn t(min: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap() + Duration::minutes(min)

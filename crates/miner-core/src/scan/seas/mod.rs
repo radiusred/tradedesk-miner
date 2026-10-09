@@ -1,7 +1,7 @@
 //! SEAS (seasonality / time-of-day / calendar-effect) scan family namespace.
 //!
 //! Houses the 6 SEAS scans rolled out by Plans 04-09..04-10: hour-of-day,
-//! day-of-week, session (uses [`crate::calendar::Calendar`]), end-of-month /
+//! day-of-week, session (uses [`tradedesk_data::calendar::Calendar`]), end-of-month /
 //! start-of-month, ANOVA + Kruskal-Wallis, event-window. Every SEAS scan is
 //! single-leg (`ScanArity::Single`).
 //!
