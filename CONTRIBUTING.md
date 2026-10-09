@@ -4,11 +4,15 @@ Thanks for your interest. This document covers the development setup, the
 quality gates your changes need to pass, and what to expect when opening a
 pull request.
 
-> **Renamed.** This repository was renamed from `tradedesk-miner` to
-> `tradedesk-miner-private` on 2026-10-07, and `radiusred/tradedesk-miner` is now a
-> public placeholder. Issue and PR comments written before the rename carry the old
-> name in their absolute links (`github.com/radiusred/tradedesk-miner/...`): read
-> those as this repository.
+## What this repository holds
+
+This repository holds the mining layer: the `miner-*` crates, `xtask`, their
+tests, benches, schemas, scripts, CI and release workflows, and the documentation
+for all of them. It holds no trading strategies, no research artefacts
+(hypotheses, registrations, registries, results, verdicts) and no venue- or
+deployment-specific configuration. Those belong elsewhere, and a pull request
+that carries them is declined. Review enforces this boundary for now; tooling to
+check it is still to come.
 
 ## Development setup
 

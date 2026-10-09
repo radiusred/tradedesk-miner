@@ -17,11 +17,9 @@ tradedesk-dukascopy (cache)  →  tradedesk-miner (raw findings)
                              →  tradedesk based app (strategies, backtests, live)
 ```
 
-> **Renamed.** This repository was renamed from `tradedesk-miner` to
-> `tradedesk-miner-private` on 2026-10-07, and `radiusred/tradedesk-miner` is now a
-> public placeholder. Issue and PR comments written before the rename carry the old
-> name in their absolute links (`github.com/radiusred/tradedesk-miner/...`): read
-> those as this repository.
+> **History.** The history of this code before its restore here is kept in
+> `radiusred/tradedesk-miner-private` (private), the record of how the code was built; the
+> reasoning is the [fresh-history Decision](https://github.com/radiusred/trading-hub/issues/2#issuecomment-6078839128).
 
 ## Status
 
