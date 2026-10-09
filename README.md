@@ -32,6 +32,15 @@ documented and deferred — see [docs/future_mcp_http.md](docs/future_mcp_http.m
 The backtester is not part of this repository: it lives in
 [`radiusred/tradedesk`](https://github.com/radiusred/tradedesk).
 
+The data layer comes from
+[`tradedesk-data`](https://github.com/radiusred/tradedesk/tree/main/crates/tradedesk-data),
+a crate in `radiusred/tradedesk` that the backtester uses too: the reader trait, the
+trading calendar, aggregation to higher timeframes, gap detection, the Arrow IPC
+derived-bar cache, and the reader for the Dukascopy cache layout. The miner depends on it
+as a git dependency pinned to a commit in the workspace `Cargo.toml`. Mining and
+backtesting read market data through the same code, and backtesting never needs the
+miner.
+
 ## Install (prebuilt binary — no toolchain required)
 
 Download the right tarball for your platform from the latest

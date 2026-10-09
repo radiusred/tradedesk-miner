@@ -4,24 +4,26 @@
 
 - tradedesk-miner is a high-performance, agent-operable data-mining engine for historical financial OHLCV data.
 - It scans cached Dukascopy bid/ask CSVs and surfaces statistical candidates (anomalies, cross-instrument relationships, seasonality effects) for downstream consumers — primarily the RadiusRed Quant agent.
-- The codebase is organised into seven Cargo crates with a strict one-way dependency direction (six runtime crates plus a dev-only `xtask` workspace member):
+- The codebase is organised into six Cargo crates with a strict one-way dependency direction (five runtime crates plus a dev-only `xtask` workspace member):
   - `miner-core` — the sync + rayon library.
-    - Owns the locked `Finding` envelope, the scan registry, the engine facade (`engine::run_one`), the sweep runner (`sweep::run_sweep`), the derived-bar cache, and the 23 v1 scans (ANOM / CROSS / SEAS).
+    - Owns the locked `Finding` envelope, the scan registry, the engine facade (`engine::run_one`), the sweep runner (`sweep::run_sweep`), and the 23 v1 scans (ANOM / CROSS / SEAS).
     - Pure sync; no `tokio`, no `async fn`.
-  - `miner-reader-dukascopy` — the reference implementation of the `Reader` trait against the existing tradedesk-dukascopy zstd-CSV cache layout.
   - `miner-cli` — the thin clap-derive wrapper exposing `miner scan` / `miner sweep` / `miner scans` / `miner emit-fixture`.
   - `miner-mcp` and `miner-http` — placeholder binaries.
     - MCP and HTTP server implementations are deferred to v2 — see `future_mcp_http.md`.
     - The placeholder shells exist so the workspace graph (FOUND-01) is stable and v2 has anchor points.
   - `miner-bench` — the bench harness.
   - `xtask` — dev-only workspace member hosting `cargo run -p xtask -- gen-schema` and similar developer tooling; not part of the runtime artefact set.
-- Dependency direction: `miner-cli | miner-mcp | miner-http -> miner-reader-dukascopy -> miner-core`.
-- CI gate 3 (`cargo tree -p miner-core --edges normal,build`) enforces this — `miner-core` must show zero `tokio` / `async` transitive dependencies.
+- The data layer is not in this workspace: it is the [`tradedesk-data`](https://github.com/radiusred/tradedesk/tree/main/crates/tradedesk-data) crate from `radiusred/tradedesk`, shared with the tradedesk backtester.
+  - It holds the `Reader` trait and its bar types, the trading calendar, the aggregator, gap detection, the Arrow IPC derived-bar cache, and the `dukascopy` module, which reads the tradedesk-marketdata zstd-CSV cache layout.
+  - It is a git dependency pinned to a commit (`rev`) in the workspace `Cargo.toml`; a task bumps the pin when the miner needs a newer data layer.
+- Dependency direction: `miner-cli | miner-mcp | miner-http -> miner-core -> tradedesk-data`.
+- CI gate 3 (`cargo tree -p miner-core --edges normal,build`) enforces this — `miner-core` must show zero `tokio` / `async` transitive dependencies, `tradedesk-data`'s included.
 - The backtester is not part of this workspace; it lives in [`radiusred/tradedesk`](https://github.com/radiusred/tradedesk).
 
 ## Data Flow (high level)
 
-- `Reader::read_day` ingests zstd-CSVs from the tradedesk-dukascopy cache.
+- `tradedesk-data`'s `Reader::read_1m_bars` ingests zstd-CSVs from the tradedesk-marketdata cache (`tradedesk_data::dukascopy::DukascopyReader`).
   - Path layout: `<root>/<SYMBOL>/<YYYY>/<MM 00-indexed>/<DD>_<bid|ask>.csv.zst`.
   - The 00-indexed month quirk is encapsulated inside the Dukascopy reader and boundary-tested.
 - The aggregator deterministically materialises higher-timeframe UTC-aligned bars (5m / 10m / 15m / 1h / 1d).

@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **The data layer comes from `tradedesk-data`.** The miner reads market data through the [`tradedesk-data`](https://github.com/radiusred/tradedesk/tree/main/crates/tradedesk-data) crate from `radiusred/tradedesk`, a git dependency pinned to commit `2a4dcf9` (the merge of tradedesk PR 174), instead of its own copies. `miner-core` loses `reader`, `aggregator`, `gap`, `calendar` and `cache` and their root re-exports; callers name those types through `tradedesk_data`. `findings::TimeRange` is `tradedesk_data::TimeRange`, re-exported. The derived-bar cache's location, Arrow schema and sidecar are unchanged; its `code_revision` metadata now records the `tradedesk-data` revision, and cache log lines carry the `tradedesk_data::cache` target. The `TimeRange` description in `schemas/findings-v1.schema.json` is now `tradedesk-data`'s doc comment; the schema's shape is unchanged. (#4)
+- `From<DukascopyError> for WireError` lives in `miner-core`'s `error` module, for `tradedesk_data::dukascopy::DukascopyError`; the mapping (`cache_corruption`, the error's message, no context) is unchanged. (#4)
+
+### Removed
+
+- The `miner-reader-dukascopy` crate. Its reader is `tradedesk_data::dukascopy::DukascopyReader`. (#4)
+
 ### Fixed
 
 - **`cross.cointegration.engle_granger` no longer emits zero results across windows containing gaps.** Post-RAD-2352 the partitioner correctly snaps every post-gap sub-range to the requested timeframe boundary, but the Pair-arity engine then dispatched the Engle-Granger kernel once per sub-range. Every per-sub-range call short-circuited with `Engle-Granger needs >= 30 aligned bars; got N`, producing zero `Finding::Result` envelopes on any 1h FX pair whose window contained the usual weekend / overnight Dukascopy gaps. The engine now coalesces the per-sub-range frames into ONE kernel call for whole-sample CROSS scans (new `Scan::coalesce_subranges` opt-in; default `false` for rolling scans), so the min-sample check evaluates the post-join, gap-removed series length rather than per-sub-range slices. (RAD-2397.)
