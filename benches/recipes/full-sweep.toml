@@ -1,38 +1,32 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Radius Red Ltd.
 #
-# benches/recipes/full-sweep.toml — D7-03 Layer 2 reference workload.
+# benches/recipes/full-sweep.toml — wall-clock reference workload.
 #
-# Production-scale sweep target for the `hyperfine` wall-clock harness
-# (scripts/run-bench.sh). Three scan families exercised:
+# Large sweep for the `hyperfine` wall-clock harness (scripts/run-bench.sh).
+# Three scan families are exercised:
 #
 #   1. stats.autocorr.ljung_box@1            (single-arity, stats family)
-#   2. cross.cointegration.engle_granger@1   (pair-arity, cross family — the
-#                                             hottest scan per RESEARCH Open
-#                                             Question 5: full ADF + OLS +
-#                                             half-life inner loop)
+#   2. cross.cointegration.engle_granger@1   (pair-arity, cross family: ADF +
+#                                             OLS + half-life per pair)
 #   3. seas.bucket.hour_of_day@1             (single-arity, seasonality family)
 #
 # Axis cardinality:
-#   * 28 instruments — FX majors + crosses + commodity pairs. The exact list
-#     mirrors the production-deployment convention used by `tradedesk-dukascopy`
-#     consumers; the shape (28 distinct symbol:side identifiers) is what
-#     matters for benchmarking, not the specific symbols. Bid side only —
-#     ask-side fingerprints are the same shape and the wall-clock numbers
-#     would simply double.
-#   * 3 timeframes per the D7-03 spec: 15m / 1h / 1d.
+#   * 28 instruments: FX majors and crosses. The shape (28 distinct
+#     symbol:side identifiers) is what matters for benchmarking, not the
+#     specific symbols. Bid side only; the ask side has the same shape.
+#   * 3 timeframes: 15m / 1h / 1d.
 #   * 6 years: 2019-01-01..2024-12-31 (inclusive end-date per
 #     SweepManifest window grammar).
 #
-# Per RESEARCH Open Question 3: recipes are PLAIN `SweepManifest` TOML — no
-# bench-wrapper type. Bench knobs (`--warmup`, `--runs`) live on the
-# hyperfine command line, not in this file.
+# Recipes are plain `SweepManifest` TOML, with no bench-wrapper type. Bench
+# knobs (`--warmup`, `--runs`) live on the hyperfine command line, not in
+# this file.
 #
-# Per RESEARCH Open Question 5: the engle_granger job is the source of the
-# reference flamegraph captured via `samply record` (see
-# BENCHMARKING.md ## Reference flamegraph).
+# The engle_granger job is the source of the reference flamegraph captured
+# via `samply record` (see BENCHMARKING.md ## Reference flamegraph).
 #
-# This recipe expects a real production-shape Dukascopy cache at
+# This recipe expects a full Dukascopy-layout cache at
 # MINER_CACHE_ROOT — the checked-in fixture cache covers only 2 symbols × 1
 # month and is sized for the single-job.toml dhat target. Running this
 # recipe against the fixture will produce many ScanError envelopes (cache
@@ -40,8 +34,8 @@
 # behaviour but not a useful benchmark workload.
 
 [sweep]
-# Deterministic master seed (same as single-job.toml so the two recipes are
-# byte-stable across regen and feed the same HYG-05 determinism gate).
+# Deterministic master seed (same as single-job.toml); a fixed value keeps
+# the recipe's output byte-stable across runs.
 seed = 0xBEEFCAFE
 # Cap above 28 × 3 × 6 = 504 per job × 3 jobs = 1512 maximum estimated jobs.
 # Default would be 100_000; pinning explicitly here documents the upper
@@ -75,9 +69,8 @@ timeframes = ["15m", "1h", "1d"]
 windows = ["2019-01-01:2024-12-31"]
 params = { lags = 10 }
 
-# Job 2 — cross family: Engle-Granger cointegration pair-arity scan. Five
-# representative pairs (cardinality kept modest because pair-arity scans are
-# the hottest workload — RESEARCH Open Question 5).
+# Job 2 — cross family: Engle-Granger cointegration pair-arity scan over
+# five pairs (pair-arity scans cost more per job, so the count stays small).
 [[jobs]]
 scan = "cross.cointegration.engle_granger@1"
 instruments = [

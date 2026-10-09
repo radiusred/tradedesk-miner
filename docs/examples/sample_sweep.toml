@@ -28,7 +28,7 @@ params = { lags = 5 }
 # Hygiene runs a lightweight bootstrap + null on each finding. The 99/99
 # draw counts are deliberately small so the demo exercises the grammar
 # end-to-end without stress-testing the kernels — bump to 999 for real
-# research sweeps.
+# sweeps.
 [hygiene]
 bootstrap = "stationary"
 bootstrap_n = 99

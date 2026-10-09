@@ -1,5 +1,5 @@
 //! `stats.regime.cusum_break@1` kernel — CUSUM structural-break / regime
-//! detection (RAD-3841, Tier-2 build for RAD-3545).
+//! detection (RAD-3841).
 //!
 //! Detects breaks in the **mean** (drift) and/or **volatility** of the
 //! single-leg log-return series via a "Bai-Perron-lite" binary segmentation

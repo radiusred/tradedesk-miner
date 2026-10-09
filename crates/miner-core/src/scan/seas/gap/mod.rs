@@ -2,9 +2,9 @@
 //!
 //! Identifies session/overnight gaps (close→next-open jump) and reports the gap-size
 //! distribution plus **gap-fill probability** conditioned on direction × size
-//! bucket. Most valuable on equity-index / commodity CFDs; FX trades ~24×5 so
-//! true overnight gaps are sparse — when that happens the finding trips the
-//! `sparse_gaps` flag rather than emitting weak candidates (RAD-3840 AC-3).
+//! bucket. Gaps occur where a market closes between sessions (equity-index /
+//! commodity CFDs); FX trades ~24×5 so true overnight gaps are sparse — when
+//! that happens the finding trips the `sparse_gaps` flag (RAD-3840 AC-3).
 //!
 //! ## D4-02 contract
 //!
@@ -26,10 +26,9 @@
 //! - `raw.series.{gap_sizes, gap_directions, gap_filled, gap_bars_to_fill,
 //!   timestamps_ms}` — one entry per detected gap event.
 //!
-//! Caveats surfaced as flags (per the research): `hold_floor_caveat` trips when
-//! the median bars-to-fill is below the 12-bar arena floor (a gap-fill trade
-//! holds too few bars at this resolution — build at a finer resolution);
-//! `sparse_gaps` trips when fewer than `sparse_gap_min_count` gaps were seen.
+//! Caveats surfaced as flags: `hold_floor_caveat` trips when the median
+//! bars-to-fill is below `hold_floor_bars` (default 12); `sparse_gaps` trips
+//! when fewer than `sparse_gap_min_count` gaps were seen.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
@@ -102,7 +101,7 @@ impl Scan for OvernightGapScan {
                 "resolution_hint": {
                     "type": "string",
                     "enum": ["5m", "10m", "15m", "1h", "1d"],
-                    "description": "Advisory bar resolution. Overnight-gap trades hold ~2 bars; the scan is most useful at 15-min / 30-min bars. Advisory only — the data-driven hold_floor_caveat reflects the actual median bars-to-fill."
+                    "description": "Advisory bar resolution. Advisory only — the data-driven hold_floor_caveat reflects the actual median bars-to-fill."
                 },
                 "fill_lookahead_bars": {
                     "type": "integer",
@@ -117,7 +116,7 @@ impl Scan for OvernightGapScan {
                 "hold_floor_bars": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "Arena minimum-hold floor (bars). hold_floor_caveat trips when the median bars-to-fill is below this; defaults to 12."
+                    "description": "Minimum-hold floor (bars). hold_floor_caveat trips when the median bars-to-fill is below this; defaults to 12."
                 },
                 "sparse_gap_min_count": {
                     "type": "integer",

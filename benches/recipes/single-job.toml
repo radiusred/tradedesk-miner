@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Radius Red Ltd.
 #
-# benches/recipes/single-job.toml — D7-03 Layer 2 dhat profiling target.
+# benches/recipes/single-job.toml — dhat heap-profiling target.
 #
 # Single instrument, single scan family, single 1-month window. Fits inside
 # the synthetic fixture cache produced by `scripts/generate-fixture-cache.sh`
@@ -15,18 +15,16 @@
 #     end-to-end smoke check that the recipe-runner contract holds against
 #     the checked-in fixture cache.
 #
-# Per RESEARCH Open Question 3: recipes are PLAIN `SweepManifest` TOML — no
-# bench-wrapper type. Bench knobs (`--warmup`, `--runs`) come from CLI args
-# on the `miner-bench` binary, NOT from this file.
+# Recipes are plain `SweepManifest` TOML, with no bench-wrapper type. Bench
+# knobs (`--warmup`, `--runs`) come from CLI args on the `miner-bench` binary,
+# not from this file.
 #
-# Per RESEARCH Open Question 5: the reference flamegraph recipe in
-# `BENCHMARKING.md` ## Reference flamegraph uses this same TOML file
-# with `samply record` for the hot-path capture.
+# The reference flamegraph recipe in `BENCHMARKING.md` ## Reference flamegraph
+# uses this same TOML file with `samply record`.
 
 [sweep]
-# Deterministic master seed. Identical hex value to the Phase 5 example at
-# docs/examples/sample_sweep.toml so the bench recipe is byte-stable across
-# regen runs and the determinism gate (HYG-05) is exercised the same way.
+# Deterministic master seed: a fixed value keeps the recipe's output
+# byte-stable across runs.
 seed = 0xBEEFCAFE
 
 [fdr]
@@ -34,10 +32,9 @@ family = "scan_id"
 alpha = 0.05
 
 [[jobs]]
-# Hour-of-day seasonality bucket scan (SEAS-01). Single-arity, Single
-# instrument, supports `bootstrap` hygiene — appropriate for the single-job
-# dhat profiling target because the kernel's allocation surface (24-bucket
-# stats, log-returns vec, bucket-keys vec) is small and predictable.
+# Hour-of-day seasonality bucket scan. Single-arity, one instrument; its
+# allocation surface (24-bucket stats, log-returns vec, bucket-keys vec) is
+# small and predictable, which suits a heap-profiling target.
 scan = "seas.bucket.hour_of_day@1"
 instruments = ["EURUSD:bid"]
 timeframes = ["15m"]

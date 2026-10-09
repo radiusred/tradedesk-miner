@@ -1,6 +1,5 @@
 //! `CusumBreakScan` — `stats.regime.cusum_break@1` single-leg CUSUM
-//! structural-break / regime-detection scan (RAD-3841 / Tier-2 build for
-//! RAD-3545).
+//! structural-break / regime-detection scan (RAD-3841).
 //!
 //! Pattern analog: [`crate::scan::anom::meanrev::OuHalfLifeScan`] (sibling
 //! single-leg ANOM scan) for the surface; emission shape mirrors
@@ -12,9 +11,9 @@
 //!
 //! It detects where the mean (drift) and/or volatility of the single-leg
 //! log-return series structurally changes — usable standalone or as a
-//! *conditioning filter* on other signals, a meta-signal that
-//! strengthens RAD-3626's cointegration-breakdown detection and gates entries
-//! to a single volatility/drift regime. The break statistics and per-segment
+//! *conditioning filter* on other findings, alongside the
+//! cointegration-breakdown detection in `cross.cointegration.rolling`
+//! (RAD-3626). The break statistics and per-segment
 //! stats are surfaced; the consumer decides how to condition on them.
 //!
 //! ## D4-02 surface

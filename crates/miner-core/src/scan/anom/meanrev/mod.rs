@@ -1,5 +1,5 @@
 //! `OuHalfLifeScan` — `stats.meanrev.ou_halflife@1` single-leg OU half-life
-//! scan (RAD-3627 / Tier-1 build for RAD-3545).
+//! scan (RAD-3627).
 //!
 //! Pattern analog: [`crate::scan::anom::adf::AdfScan`] (sibling single-leg
 //! stationarity-family scan) — Pattern A from `04-PATTERNS.md`.
@@ -10,8 +10,8 @@
 //! single series; they do not say *how fast* it decays. This scan closes that
 //! gap: it fits an AR(1) on a single-leg series and reports the
 //! Ornstein-Uhlenbeck mean-reversion rate `λ`, the half-life `ln2/λ`, the AR(1)
-//! coefficient `φ`, and its Dickey-Fuller t-stat — the hold-period-floor /
-//! sizing input (alpha filter pt 7). It is the standalone single-leg analogue
+//! coefficient `φ`, and its Dickey-Fuller t-stat — a hold-period / sizing
+//! input. It is the standalone single-leg analogue
 //! of the half-life already computed on the Engle-Granger cointegration
 //! residual (CROSS-05); both share the
 //! [`crate::scan::primitives::ar1::ou_ar1_fit`] primitive.

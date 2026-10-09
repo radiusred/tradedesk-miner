@@ -2,8 +2,7 @@
 //!
 //! Pattern analog: [`crate::scan::anom::variance_ratio::VarianceRatioScan`]
 //! (Plan 04-05 sibling) — multi-`k` ANOM scan emitting parallel arrays in
-//! `effect.extra` (Pattern A from `04-PATTERNS.md`). Tier-2 build for
-//! RAD-3545 / RAD-3839.
+//! `effect.extra` (Pattern A from `04-PATTERNS.md`). RAD-3839.
 //!
 //! ## Reference
 //!
