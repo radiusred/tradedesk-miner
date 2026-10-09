@@ -1,0 +1,105 @@
+# miner-cli: thin CLI wrapper around miner-core.
+#
+# Plan 05 (this plan) wires the clap parser, the figment config builder, the XDG/CWD
+# config-path resolution, and the `emit-fixture` subcommand. The binary initialises
+# tracing-to-stderr (D-15) and routes findings to stdout via FindingSink (D-19).
+#
+# Plan 04 (parallel, same wave) lands the canonical `miner_core::findings::sink::StdoutSink`
+# and `miner_core::error::stderr_emit::emit_to_stderr`. While Plan 04 is in flight, this
+# crate ships local stubs (`src/stdout_sink.rs`, `src/stderr_emit.rs`) so `emit-fixture`
+# is runnable; when Plan 04 merges these stub modules can be deleted and the imports in
+# `main.rs` flipped to the canonical paths.
+
+[package]
+name = "miner-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false  # v1.0 distributes the `miner` binary via GitHub Releases, not crates.io
+
+[[bin]]
+name = "miner"
+path = "src/main.rs"
+
+# `test-internal` is a parallel mirror of miner-core's `test-internal` feature
+# (Plan 03-02). When enabled it surfaces the cfg-gated
+# `--sleep-after-first-finding-ms` CLI flag and forwards the value into the
+# cfg-gated `ScanRequest.sleep_after_first_finding_ms` field so Plan 03-06's
+# SIGINT integration test can deterministically race the cancel token against
+# the scan kernel. NEVER enable in release profiles.
+[features]
+test-internal = ["miner-core/test-internal"]
+
+[dependencies]
+miner-core              = { path = "../miner-core" }
+miner-reader-dukascopy  = { path = "../miner-reader-dukascopy" }
+clap.workspace              = true
+anyhow.workspace            = true
+tracing.workspace           = true
+tracing-subscriber.workspace = true
+figment.workspace           = true
+serde.workspace             = true
+serde_json.workspace        = true
+directories.workspace       = true
+# Used in `emit_fixture()` for the `started_at_utc` / `ended_at_utc` framing-record
+# timestamps. Workspace pin is `0.4` with `["clock", "serde"]`.
+chrono.workspace            = true
+# Phase 3 (Plan 03-01): SIGINT handler. Installed in `main()` BEFORE `Cli::parse()`
+# per CONTEXT D3-22 / RESEARCH §Pattern 4 — sets an `Arc<AtomicBool>` cancellation flag
+# the facade polls. miner-core knows nothing of `ctrlc` (one-way dep direction preserved).
+ctrlc.workspace             = true
+
+[dev-dependencies]
+# Plan 03-05 Blocker 1 — enable miner-core's `test-internal` feature for ALL
+# test builds of this crate (`cargo test -p miner-cli` activates `[dev-dependencies]`
+# feature unification). This makes the cfg-gated
+# `ScanRequest.sleep_after_first_finding_ms` field reachable in scan_args.rs's
+# unit tests + the integration tests without requiring `--features test-internal`
+# at the test invocation. The runtime `[dependencies]` line above keeps default
+# features only; release `cargo build` activates neither cfg(test) nor the feature
+# and the sleep hook stays absent from production binaries.
+miner-core   = { path = "../miner-core", features = ["test-internal"] }
+# Local tempdir for integration tests that need an isolated config file.
+tempfile     = "3"
+# Serialises env-var mutation across tests that touch `MINER_*` vars; figment::Jail
+# could not be used here because miner-cli depends on `figment` with the workspace
+# feature set (no `test` feature), and adding the `test` feature only for a binary
+# crate's dev-deps would pull in extra dev-deps for the whole workspace.
+#
+# Plan 05-05 enables the `file_locks` feature so `#[file_serial(miner_bin)]` can
+# serialise tests that share the `target/debug/miner` binary across separate
+# integration-test processes (each test file is its own process; the `serial`
+# attribute alone only serialises within a single process).
+serial_test  = { version = "3", features = ["file_locks"] }
+# End-to-end binary harness; used by Plan 07's `cli_streams` integration test to spawn
+# the actual built `miner` binary via `assert_cmd::Command::cargo_bin("miner")`.
+assert_cmd   = "2"
+predicates   = "3"
+# Plan 07 Task 2 — schema validation of each stdout line against the committed
+# `schemas/findings-v1.schema.json` artifact. Workspace-pinned to 0.46 (matches
+# miner-core's dev-dep).
+jsonschema.workspace = true
+# Plan 07 Task 2 — parsing the subprocess stdout bytes as `serde_json::Value` and
+# masking the four volatile envelope fields for the OUT-03 twice-run byte-identity
+# regression gate.
+serde_json.workspace = true
+# Phase 3 (Plan 03-01): unix-only SIGINT integration test (sigint_preserves_stream.rs)
+# uses `nix::sys::signal::kill` to deliver SIGINT to a child `miner` subprocess. Declared
+# inline here (not at workspace level) because the dep is dev-only AND unix-only — the
+# integration test file gates with `#![cfg(unix)]`. See RESEARCH line 76 + 03-PATTERNS
+# lines 1027-1048.
+nix          = { version = "0.31", default-features = false, features = ["signal"] }
+# Plan 03-06: SyntheticCache writes synthetic Dukascopy .csv.zst day files
+# via the same path layout the production reader expects (mirrors
+# crates/miner-core/tests/full_determinism.rs::write_synthetic_day).
+zstd.workspace = true
+# Plan 03-06: SyntheticCache builder + miner-reader-dukascopy::day_csv_zst
+# (the public path-layout helper) — same dev-dep cycle pattern miner-core
+# uses (T-02-21 accepted).
+miner-reader-dukascopy = { path = "../miner-reader-dukascopy" }
+# Plan 03-06: chrono is already in miner-cli's runtime deps via [dependencies],
+# but the tests need NaiveDate which lives behind the same workspace pin.
+
+[lints]
+workspace = true

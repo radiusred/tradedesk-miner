@@ -1,0 +1,51 @@
+---
+source: crates/miner-core/tests/scan_cusum_break.rs
+expression: schema
+---
+{
+  "arity": "Single",
+  "effect_extra_keys": [
+    "break_index",
+    "break_ts_ms",
+    "post_mean",
+    "post_median",
+    "post_n",
+    "post_std",
+    "pre_mean",
+    "pre_median",
+    "pre_n",
+    "pre_std",
+    "regime_index",
+    "target"
+  ],
+  "effect_metric": "cusum_break",
+  "effect_size_kind": "mean_shift | vol_shift (per detected break)",
+  "effect_value": "normalized CUSUM statistic at the detected break",
+  "params": {
+    "min_segment": {
+      "default": 30,
+      "minimum": 2,
+      "type": "integer"
+    },
+    "target": {
+      "default": "both",
+      "enum": [
+        "mean",
+        "vol",
+        "both"
+      ],
+      "type": "string"
+    },
+    "threshold": {
+      "default": 1.358,
+      "exclusiveMinimum": 0,
+      "type": "number"
+    }
+  },
+  "raw_series_keys": [
+    "closes",
+    "timestamps_ms"
+  ],
+  "scan_id": "stats.regime.cusum_break",
+  "version": 1
+}

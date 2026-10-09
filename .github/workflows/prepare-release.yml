@@ -1,0 +1,295 @@
+name: Prepare Release
+
+# Mirrors the radiusred sibling-repo release pattern (tradedesk + tradedesk-dukascopy):
+#   workflow_dispatch ONLY (never auto-fires) → analyze → approval gate
+#   (release-approval environment) → execute (branch + PR + enable auto-merge
+#   → exit).
+#
+# The siblings call radiusred/.github reusable-release.yml, which assumes
+# Python + Hatch and bumps pyproject.toml — incompatible with a Cargo
+# workspace. This file mirrors the same structure, secrets, and
+# environment-gating contract but inlines a Cargo-aware version bump.
+#
+# No idle wait-for-merge runner. The execute job used to poll
+# the release PR for up to 60 minutes waiting for a human to merge it, billing
+# a runner for that entire idle window. It now:
+#   1. opens a `release/vX.Y.Z` branch with the version bump commit
+#   2. opens a PR to main and enables auto-merge (rebase), then EXITS
+# The org-wide `protect-main` ruleset (PR + ≥1 reviewer + linear history +
+# rebase-only) still gates the merge: GitHub auto-merges the PR on its own
+# once the required approval lands — no runner held open in between. Tagging
+# and creating the GitHub Release then happen in finalize-release.yml, which
+# is triggered when the release PR merges.
+#
+# Required repo settings (Settings → Secrets and variables → Actions):
+#   Variable  RELEASE_APP_CLIENT_ID    — radiusred-release GitHub App client id
+#   Secret    RELEASE_APP_PRIVATE_KEY  — the App's private key (PEM)
+# Required GitHub Environment:
+#   release-approval — Settings → Environments → require reviewers
+# Required repo setting for hands-off merge:
+#   Settings → General → Pull Requests → "Allow auto-merge". If it is off the
+#   workflow still exits cleanly; a reviewer just rebase-merges manually and
+#   finalize-release.yml takes over from there.
+#
+# Publishing of binaries to the Release page happens in publish.yml, which
+# fires after finalize-release.yml creates the draft Release.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze commits and compute next version
+    runs-on: ubuntu-latest
+    outputs:
+      bump_type: ${{ steps.calc.outputs.bump_type }}
+      new_tag: ${{ steps.calc.outputs.new_tag }}
+      current_version: ${{ steps.calc.outputs.current_version }}
+    steps:
+      - name: Generate App token
+        uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Calculate version (conventional commits → semver bump)
+        id: calc
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Current workspace version is the single source of truth
+          # (Cargo.toml [workspace.package].version; all crates inherit).
+          current_version=$(awk '
+            /^\[workspace\.package\]/ {in_section=1; next}
+            /^\[/ && in_section {exit}
+            in_section && /^version[[:space:]]*=[[:space:]]*"/ {
+              gsub(/^version[[:space:]]*=[[:space:]]*"|"[[:space:]]*$/, "")
+              print
+              exit
+            }
+          ' Cargo.toml)
+          if [ -z "$current_version" ]; then
+            echo "::error::Could not read [workspace.package].version from Cargo.toml"
+            exit 1
+          fi
+
+          # Last tag (if any); fall back to v0.0.0 sentinel.
+          last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+
+          # Conventional Commits → bump type.
+          # major: any `<type>(scope)?!:` header OR `BREAKING CHANGE:` footer
+          # minor: any `feat(scope)?:`
+          # patch: anything else (fix, chore, docs, refactor, test, …)
+          headers=$(git log "${last_tag}..HEAD" --pretty=format:%s 2>/dev/null || git log --pretty=format:%s)
+          bodies=$(git log "${last_tag}..HEAD" --pretty=format:%B 2>/dev/null || git log --pretty=format:%B)
+
+          bump=patch
+          if echo "$headers" | grep -Eq '^[a-z]+(\([^)]+\))?!:'; then
+            bump=major
+          elif echo "$bodies" | grep -qE 'BREAKING[- ]CHANGE:'; then
+            bump=major
+          elif echo "$headers" | grep -Eqi '^feat(\([^)]+\))?:'; then
+            bump=minor
+          fi
+
+          IFS=. read -r major minor patch <<< "$current_version"
+          case "$bump" in
+            major) new_version="$((major + 1)).0.0" ;;
+            minor) new_version="${major}.$((minor + 1)).0" ;;
+            patch) new_version="${major}.${minor}.$((patch + 1))" ;;
+          esac
+          new_tag="v${new_version}"
+
+          {
+            echo "### Release Plan for ${GITHUB_REPOSITORY}"
+            echo ""
+            echo "- Current version: \`${current_version}\`"
+            echo "- Detected bump: **${bump}** (from $(echo "$headers" | wc -l | tr -d ' ') commit(s) since \`${last_tag}\`)"
+            echo "- New version: \`${new_version}\`"
+            echo "- New tag: \`${new_tag}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo "bump_type=${bump}"
+            echo "new_tag=${new_tag}"
+            echo "current_version=${current_version}"
+          } >> "$GITHUB_OUTPUT"
+
+  gate:
+    name: Approval Checkpoint
+    needs: analyze
+    runs-on: ubuntu-latest
+    environment: release-approval
+    steps:
+      - run: |
+          echo "Release approved by environment reviewer."
+          echo "  bump: ${{ needs.analyze.outputs.bump_type }}"
+          echo "  ${{ needs.analyze.outputs.current_version }} → ${{ needs.analyze.outputs.new_tag }}"
+
+  execute:
+    name: Bump workspace version, open PR, enable auto-merge
+    needs: [analyze, gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Generate App token
+        uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Skip if already released
+        # If the GitHub Release for NEW_TAG already exists, finalize already ran
+        # for this version — nothing to open. Makes re-runs idempotent.
+        id: detect
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW_TAG: ${{ needs.analyze.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$NEW_TAG" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release ${NEW_TAG} already exists; nothing to open."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump workspace version on release branch
+        if: steps.detect.outputs.skip != 'true'
+        id: bump
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW_TAG: ${{ needs.analyze.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          BRANCH="release/${NEW_TAG}"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            # A prior run already cut this release branch (e.g. a re-run after
+            # the PR was opened but not yet merged). Resume instead of failing:
+            # reuse the existing branch and let the Open Release PR / Enable
+            # Auto-Merge steps pick up the open PR. Do NOT delete the branch —
+            # that would close the in-flight release PR.
+            echo "::notice::Release branch $BRANCH already exists on origin; resuming with the existing branch and its open release PR."
+            echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git checkout -b "$BRANCH"
+
+          # Patch [workspace.package].version in the root Cargo.toml only.
+          # Every crate inherits via `version.workspace = true`, so a single
+          # write keeps the whole workspace in lockstep.
+          new_version="${NEW_TAG#v}"
+          python3 - "$new_version" <<'PY'
+          import re
+          import sys
+
+          new = sys.argv[1]
+          path = "Cargo.toml"
+          src = open(path, "r", encoding="utf-8").read()
+
+          pattern = re.compile(
+              r'(\[workspace\.package\][^\[]*?\nversion\s*=\s*")[^"]*(")',
+              re.DOTALL,
+          )
+          out, n = pattern.subn(rf'\g<1>{new}\g<2>', src, count=1)
+          if n != 1:
+              sys.stderr.write("ERROR: failed to locate [workspace.package].version\n")
+              sys.exit(1)
+
+          open(path, "w", encoding="utf-8").write(out)
+          print(f"Bumped [workspace.package].version → {new}")
+          PY
+
+          # Refresh Cargo.lock so its workspace-member entries carry the bumped
+          # version; CI builds --locked, so a stale lock would fail the next PR.
+          # `cargo update --workspace` re-resolves the workspace members only:
+          # each member's version line is rewritten and every registry
+          # dependency stays pinned at its locked version. It is not offline:
+          # this runner starts with an empty registry cache, so it fetches the
+          # sparse index entries it needs (no crate downloads), and `--offline`
+          # would fail here. The step used to run `cargo metadata --no-deps`,
+          # which never rewrites the lock: that is how the members sat at
+          # 1.0.3 in Cargo.lock against a 1.3.0 workspace until PR #27.
+          cargo update --workspace
+
+          git add Cargo.toml Cargo.lock
+          if git diff --cached --quiet; then
+            echo "::error::Cargo.toml already at ${new_version} but no release branch existed. Manual intervention required." >&2
+            exit 1
+          fi
+          git commit -m "chore: release ${NEW_TAG}"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Open release PR
+        if: steps.detect.outputs.skip != 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW_TAG: ${{ needs.analyze.outputs.new_tag }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
+        run: |
+          set -euo pipefail
+          # Reuse an existing open release PR if one is already present (resumed
+          # run), otherwise open a fresh one. Keeps re-runs idempotent.
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --base main --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$PR_NUMBER" ]; then
+            PR_URL=$(gh pr view "$PR_NUMBER" --json url --jq .url)
+            echo "::notice::Reusing existing open release PR #$PR_NUMBER for $BRANCH."
+          else
+            PR_URL=$(gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: release ${NEW_TAG}" \
+              --body "Automated release bump for ${NEW_TAG}. Reviewer: please approve; the PR will rebase-merge automatically once approved (auto-merge), and finalize-release.yml will then tag and create the GitHub Release.")
+            PR_NUMBER=$(gh pr view "$PR_URL" --json number --jq .number)
+          fi
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "::notice::Release PR ${PR_URL}"
+
+      - name: Enable auto-merge
+        if: steps.detect.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          PR_URL: ${{ steps.pr.outputs.pr_url }}
+        run: |
+          set -euo pipefail
+          # Enable auto-merge so GitHub rebase-merges the PR on its own once the
+          # required human approval (and any required checks) land. The runner
+          # exits NOW instead of idling in a 60-min poll loop. Best-effort: if
+          # the repo does not have "Allow auto-merge" enabled, fall back to a
+          # manual-merge notice. Either way finalize-release.yml tags + creates
+          # the draft Release whenever the PR merges.
+          if gh pr merge "$PR_NUMBER" --auto --rebase; then
+            echo "::notice::Auto-merge enabled on ${PR_URL}. It will rebase-merge once approved."
+          else
+            echo "::warning::Could not enable auto-merge on ${PR_URL} (is 'Allow auto-merge' enabled on this repo?). Approve and rebase-merge it manually; finalize-release.yml will then tag and create the draft Release."
+          fi

@@ -1,0 +1,5 @@
+# `cargo xtask <subcommand>` shorthand for `cargo run --package xtask -- <subcommand>`.
+# Plan 06 lands the first subcommand (`gen-schema`); this alias is set up here so the
+# developer ergonomics match the canonical matklad xtask pattern from day one.
+[alias]
+xtask = "run --package xtask --"

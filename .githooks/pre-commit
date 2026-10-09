@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+#
+# tradedesk-miner pre-commit hook — local enforcement of CI gates so build
+# breaks don't reach origin/main. Mirrors `.github/workflows/ci.yml`:
+#   - cargo fmt --all -- --check          (ci.yml step "cargo fmt --check")
+#   - cargo clippy --workspace --all-targets -- -D warnings
+#                                         (ci.yml gate 2 — also catches the
+#                                          clippy.toml disallowed_macros list
+#                                          that protects the stdout sink)
+#
+# Behaviour:
+#   1. Run `cargo fmt --all -- --check`. On drift the hook AUTO-RUNS
+#      `cargo fmt --all` to fix it, prints the modified files, and ABORTS the
+#      commit so the author reviews + re-stages. Set `MINER_AUTOFIX=1` to skip
+#      review and let the hook re-stage automatically.
+#   2. Run `cargo clippy --workspace --all-targets -- -D warnings`. Clippy has
+#      no autofix path here — failure aborts the commit with the clippy error
+#      output and asks the author to fix the lints manually.
+#
+# Performance:
+#   - cargo fmt is sub-second once the toolchain is warm.
+#   - cargo clippy on a warm target dir is ~5s; cold can be 30s+. To skip the
+#     clippy gate for fast WIP commits, set `MINER_SKIP_CLIPPY=1`. CI will
+#     still enforce the gate.
+#
+# Install: run `scripts/install-git-hooks.sh` from the repo root.
+# Bypass:  `git commit --no-verify` (CI gates will still fail — do not abuse).
+
+set -euo pipefail
+
+# Locate cargo. The hook must work from GUIs (VS Code, etc.) which do not
+# always inherit interactive PATH. Probe the canonical install location.
+if ! command -v cargo > /dev/null 2>&1; then
+    if [ -x "$HOME/.cargo/bin/cargo" ]; then
+        export PATH="$HOME/.cargo/bin:$PATH"
+    else
+        echo "pre-commit: cargo not on PATH and not at \$HOME/.cargo/bin/cargo — install Rust toolchain first" >&2
+        exit 1
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Gate A — cargo fmt
+# ---------------------------------------------------------------------------
+
+if cargo fmt --all -- --check > /dev/null 2>&1; then
+    : # clean
+else
+    echo "pre-commit: cargo fmt drift detected — auto-formatting workspace..." >&2
+    cargo fmt --all
+
+    # Determine which Rust files moved as a result.
+    MODIFIED_RS=$(git status --porcelain -- '*.rs' | awk '{print $2}')
+
+    if [ "${MINER_AUTOFIX:-0}" = "1" ]; then
+        echo "pre-commit: MINER_AUTOFIX=1 — re-staging auto-formatted files." >&2
+        # shellcheck disable=SC2086
+        git add -- $MODIFIED_RS
+    else
+        cat >&2 <<EOF
+
+pre-commit: applied rustfmt fixes to the following files:
+
+$(echo "$MODIFIED_RS" | sed 's/^/  /')
+
+Review the changes, \`git add\` what you want to commit, and run \`git commit\` again.
+Set \`MINER_AUTOFIX=1\` in your environment to skip review and let the hook re-stage automatically.
+
+EOF
+        exit 1
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Gate B — cargo clippy (workspace + all targets, deny warnings)
+# ---------------------------------------------------------------------------
+
+if [ "${MINER_SKIP_CLIPPY:-0}" = "1" ]; then
+    echo "pre-commit: MINER_SKIP_CLIPPY=1 — skipping clippy gate (CI will still enforce)." >&2
+    exit 0
+fi
+
+echo "pre-commit: running cargo clippy --workspace --all-targets -- -D warnings..." >&2
+if ! cargo clippy --workspace --all-targets --quiet -- -D warnings; then
+    cat >&2 <<EOF
+
+pre-commit: clippy reported lints — commit aborted.
+
+Fix the lints above and re-stage, or set \`MINER_SKIP_CLIPPY=1\` to bypass
+this gate locally. CI gate 2 (.github/workflows/ci.yml) will still enforce
+clippy at push time; bypassing here only delays the failure.
+
+EOF
+    exit 1
+fi
