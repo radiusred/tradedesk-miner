@@ -65,3 +65,6 @@ allow-wildcard-paths = true
 [sources]
 unknown-registry = "deny"
 unknown-git      = "deny"
+# The one git source: the tradedesk data layer, pinned by `rev` in the workspace
+# Cargo.toml until it is published to crates.io.
+allow-git        = ["https://github.com/radiusred/tradedesk"]

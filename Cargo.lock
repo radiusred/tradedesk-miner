@@ -1852,6 +1852,7 @@ dependencies = [
  "thiserror 1.0.69",
  "toml",
  "tracing",
+ "tradedesk-data",
  "ulid",
  "zstd",
 ]
@@ -3445,6 +3446,25 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tradedesk-data"
+version = "0.1.0"
+source = "git+https://github.com/radiusred/tradedesk?rev=2a4dcf9f83f3be77570761ba836e437597ff96dd#2a4dcf9f83f3be77570761ba836e437597ff96dd"
+dependencies = [
+ "arrow",
+ "blake3",
+ "chrono",
+ "csv",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tracing",
+ "walkdir",
+ "zstd",
 ]
 
 [[package]]

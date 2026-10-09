@@ -79,6 +79,10 @@ rayon.workspace         = true
 # kernel (Plan 05-02 deferred). Real-input FFT only; transitively pulls
 # rustfft. Both verified sync-only — FOUND-04 invariant preserved.
 realfft.workspace       = true
+# The market-data layer: reader trait, calendar, aggregator, gap detection, Arrow bar
+# cache and the Dukascopy cache-layout reader. Sync only (no async runtime), so the
+# FOUND-04 invariant holds through it.
+tradedesk-data.workspace = true
 
 [dev-dependencies]
 jsonschema.workspace = true
