@@ -28,8 +28,10 @@ quotes for 2024-01-01" (the `00` in the month component is **January**, not
 This is the single most-surprising convention. Dukascopy's producer-side
 tooling stores months as `0..=11` directory names (Python's `datetime.month`
 convention minus one), so January is `00` and December is `11`. The miner
-reader encapsulates the quirk in one place — see the `day_csv_zst`
-constructor at `crates/miner-reader-dukascopy/src/path_layout.rs` (the
+reader (`tradedesk-data`'s `dukascopy` module, which the miner depends on)
+encapsulates the quirk in one place — see the `day_csv_zst` constructor at
+`crates/tradedesk-data/src/dukascopy/path_layout.rs` in
+[`radiusred/tradedesk`](https://github.com/radiusred/tradedesk/tree/main/crates/tradedesk-data) (the
 `DukascopyMonth` newtype is a sealed wrapper whose only constructors run
 through the `1..=12` calendar assertion). Composing a cache path by hand
 without going through `day_csv_zst` will silently misfile the data, which
@@ -57,7 +59,7 @@ sample of real bytes.
 Each `.csv.zst` is a zstd-compressed CSV of 1-minute OHLCV bars. After
 decompression the file has a header row plus one data row per minute, and
 miner accepts it through `csv::ReaderBuilder::has_headers(true)` — see
-`day_bar_iter` in `crates/miner-reader-dukascopy/src/reader.rs` for the
+`day_bar_iter` in `tradedesk-data`'s `src/dukascopy/reader.rs` for the
 end-to-end pipeline.
 
 | Column      | CSV type | In-memory type   | Meaning                                                                    | Source           |
@@ -238,7 +240,7 @@ disk and never redistributes them.
 - **Does contain the path layout and CSV schema.** The on-disk structure
   the reader expects is itself a fact, not a copyrighted artefact; it is
   documented in this file and pinned by the path-layout tests in
-  `crates/miner-reader-dukascopy/src/path_layout.rs`.
+  `tradedesk-data`'s `src/dukascopy/path_layout.rs`.
 
 ### What you need for real data
 
@@ -255,9 +257,10 @@ those before downloading or redistributing any bytes.
 Verified against tradedesk-dukascopy commit f218d41 (2026-05-13). If the
 producer-side conventions (00-indexed months, tick-volume semantics, CSV
 column order, timestamp format) drift in a future `tradedesk-dukascopy`
-release, the reader's tests at `crates/miner-reader-dukascopy/src/` are
-the canonical regression gate; re-verify against the newer commit and
-update this line.
+release, the reader's tests in `tradedesk-data` (`src/dukascopy/` and
+`tests/reader_smoke.rs` in `radiusred/tradedesk`) are the canonical
+regression gate; re-verify against the newer commit, bump the miner's
+`tradedesk-data` pin, and update this line.
 
 ## See Also
 

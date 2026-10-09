@@ -57,7 +57,7 @@ script writes `dhat-heap.json` to CWD; inspect either via
 | Not yet captured | — | — | Populate from `dhat-heap.json` top-5 |
 
 The scan hot path (everything outside `miner_core::sweep::*` +
-`miner_core::scan::*` + `miner_core::cache::*`) targets ≤ 5 % allocation
+`miner_core::scan::*` + `tradedesk_data::cache::*`) targets ≤ 5 % allocation
 overhead. This is a regression-aware goal, not a CI gate — there is no
 automated threshold check; reviewers compare new snapshots against the
 historically captured numbers.
