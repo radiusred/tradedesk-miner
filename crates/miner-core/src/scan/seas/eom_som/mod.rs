@@ -21,7 +21,7 @@
 //!
 //! ## Calendar
 //!
-//! Trading days come from [`crate::calendar::Calendar`] (Phase 2 D2-08). The
+//! Trading days come from [`tradedesk_data::calendar::Calendar`] (Phase 2 D2-08). The
 //! v1 default is [`Calendar::fx_major`] — Fri-22:00 UTC to Sun-22:00 UTC
 //! closed plus Christmas Day and New Year's Day.
 
@@ -30,7 +30,6 @@ use std::sync::atomic::Ordering;
 
 use chrono::Utc;
 
-use crate::calendar::Calendar;
 use crate::findings::{
     Base64Bytes, DataSlice, Dtype, Effect, EffectSize, Finding, FindingSink, Raw, RawArray,
     ResultFinding, Source,
@@ -39,6 +38,7 @@ use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
 use crate::scan::seas::bucketing::bucket_stats;
 use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
+use tradedesk_data::calendar::Calendar;
 
 pub mod kernel;
 
@@ -349,15 +349,15 @@ fn max_abs_finite(xs: &[f64]) -> f64 {
 #[allow(clippy::cast_lossless)]
 mod tests {
     use super::*;
-    use crate::aggregator::{BarFrame, Timeframe};
     use crate::engine::gap_policy::GapPolicyKind;
     use crate::findings::TimeRange;
     use crate::findings::run_id::RunId;
     use crate::findings::sink::VecSink;
-    use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
     use chrono::{DateTime, Duration, TimeZone};
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
+    use tradedesk_data::aggregator::{BarFrame, Timeframe};
+    use tradedesk_data::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
 
     fn blake3_hex_zero() -> Blake3Hex {
         let bytes: [u8; 64] = [b'0'; 64];

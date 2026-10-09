@@ -1784,13 +1784,13 @@ dependencies = [
  "ctrlc",
  "dhat",
  "miner-core",
- "miner-reader-dukascopy",
  "serde",
  "serde_json",
  "sha2",
  "toml",
  "tracing",
  "tracing-subscriber",
+ "tradedesk-data",
  "walkdir",
  "zstd",
 ]
@@ -1808,7 +1808,6 @@ dependencies = [
  "figment",
  "jsonschema",
  "miner-core",
- "miner-reader-dukascopy",
  "nix",
  "predicates",
  "serde",
@@ -1817,6 +1816,7 @@ dependencies = [
  "tempfile",
  "tracing",
  "tracing-subscriber",
+ "tradedesk-data",
  "zstd",
 ]
 
@@ -1824,7 +1824,6 @@ dependencies = [
 name = "miner-core"
 version = "1.3.0"
 dependencies = [
- "arrow",
  "base64",
  "blake3",
  "chrono",
@@ -1834,7 +1833,6 @@ dependencies = [
  "insta",
  "jsonschema",
  "miner-core",
- "miner-reader-dukascopy",
  "nalgebra 0.33.3",
  "ndarray",
  "ndarray-stats",
@@ -1871,23 +1869,6 @@ version = "1.3.0"
 dependencies = [
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "miner-reader-dukascopy"
-version = "1.3.0"
-dependencies = [
- "blake3",
- "chrono",
- "csv",
- "miner-core",
- "proptest",
- "serde",
- "tempfile",
- "thiserror 1.0.69",
- "tracing",
- "walkdir",
- "zstd",
 ]
 
 [[package]]

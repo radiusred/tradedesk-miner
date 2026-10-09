@@ -466,15 +466,15 @@ fn window_as_f64(window: usize) -> f64 {
 #[allow(clippy::cast_lossless, clippy::float_cmp)]
 mod tests {
     use super::*;
-    use crate::aggregator::{BarFrame, Timeframe};
     use crate::engine::gap_policy::GapPolicyKind;
     use crate::findings::TimeRange;
     use crate::findings::run_id::RunId;
     use crate::findings::sink::VecSink;
-    use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
     use chrono::{DateTime, Duration, TimeZone};
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
+    use tradedesk_data::aggregator::{BarFrame, Timeframe};
+    use tradedesk_data::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
 
     // -----------------------------------------------------------------------
     // Fixtures — two-leg synthetic BarFrames with shared timestamps so the

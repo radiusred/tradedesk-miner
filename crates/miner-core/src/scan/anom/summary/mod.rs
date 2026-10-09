@@ -317,15 +317,15 @@ fn ts_to_f64(ms: i64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aggregator::{BarFrame, Timeframe};
     use crate::engine::gap_policy::GapPolicyKind;
     use crate::findings::TimeRange;
     use crate::findings::run_id::RunId;
     use crate::findings::sink::VecSink;
-    use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
     use chrono::{DateTime, Duration, TimeZone};
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
+    use tradedesk_data::aggregator::{BarFrame, Timeframe};
+    use tradedesk_data::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
 
     fn blake3_hex_zero() -> Blake3Hex {
         let bytes: [u8; 64] = [b'0'; 64];

@@ -4,6 +4,10 @@
 //! vocabulary, the `FindingSink` trait interface, and the config schema types.
 //! Plans 04 (sink + `stderr_emit` implementations) and 05 (figment builder) build
 //! on top.
+//!
+//! Market data comes through the `tradedesk-data` crate from radiusred/tradedesk: the
+//! reader trait, the trading calendar, aggregation, gap detection and the Arrow bar
+//! cache. The scans, the engine, findings, configuration and the sweep runner live here.
 
 // Plan 04-13: Test fixtures and golden-comparison assertions legitimately use
 // patterns that clippy::pedantic flags. These allows scope to cfg(test) only —
@@ -38,15 +42,10 @@
     )
 )]
 
-pub mod aggregator;
-pub mod cache;
-pub mod calendar;
 pub mod config;
 pub mod engine;
 pub mod error;
 pub mod findings;
-pub mod gap;
-pub mod reader;
 pub mod scan;
 // Phase 5 (Plan 05-04 / OP-04): sweep runner — TOML manifest fanout +
 // rayon-parallel job execution + deterministic-order drain + BH-FDR
@@ -77,22 +76,9 @@ pub use error::{MinerError, PreflightCode, ScanErrorCode, WireError};
 
 pub use config::{CliOverrides, MinerConfig, OutputDest, build_figment};
 
-// Phase 2 (Plan 02-01) extensions:
-pub use calendar::Calendar;
-pub use reader::{Blake3Hex, ClosedRangeUtc, RawBar, Reader, Side};
-
-// Phase 2 (Plan 02-02) extensions:
-pub use aggregator::{
-    AGGREGATOR_VERSION, AggParams, AggregateError, BarFrame, Timeframe, aggregate,
-};
-
-// Phase 2 (Plan 02-04) extensions:
-pub use gap::{GapDetector, GapManifest, GapReason, GapSpan};
-
-// Phase 2 (Plan 02-05) extensions:
-pub use cache::{
-    ARROW_SCHEMA_VERSION, BarCache, CacheError, FingerprintSidecar, build_arrow_schema,
-};
+// The Phase 2 data layer (reader trait, calendar, aggregator, gap detection, bar cache)
+// is the `tradedesk-data` crate's public surface; the miner names it through
+// `tradedesk_data`, not through re-exports here.
 
 // Phase 3 (scan-engine-facade-cli) extensions:
 pub use engine::{GapDispatch, GapPolicyKind, RunOutcome, run_one};

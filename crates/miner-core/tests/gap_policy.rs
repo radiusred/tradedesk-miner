@@ -21,8 +21,8 @@
 use chrono::{DateTime, TimeZone, Utc};
 use miner_core::engine::gap_policy::{GapDispatch, GapPolicyKind, dispatch};
 use miner_core::findings::TimeRange;
-use miner_core::gap::{GapManifest, GapReason, GapSpan};
-use miner_core::reader::{ClosedRangeUtc, Side};
+use tradedesk_data::gap::{GapManifest, GapReason, GapSpan};
+use tradedesk_data::reader::{ClosedRangeUtc, Side};
 
 fn t(h: u32) -> DateTime<Utc> {
     if h >= 24 {

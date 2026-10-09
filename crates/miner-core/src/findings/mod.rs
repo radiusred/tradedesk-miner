@@ -44,7 +44,7 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::gap::GapManifest;
+use tradedesk_data::gap::GapManifest;
 
 pub mod base64_bytes;
 pub mod run_id;
@@ -58,12 +58,9 @@ pub use sink::FindingSink;
 // Common types — used by multiple variants
 // ---------------------------------------------------------------------------
 
-/// Half-open UTC time interval [`start_utc`, `end_utc`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct TimeRange {
-    pub start_utc: DateTime<Utc>,
-    pub end_utc: DateTime<Utc>,
-}
+/// Half-open UTC time interval [`start_utc`, `end_utc`): `tradedesk-data`'s, which the
+/// gap manifest embeds too, so a gap range and a findings range are one type.
+pub use tradedesk_data::TimeRange;
 
 /// The input range a scan actually consumed (post gap-partitioning).
 ///

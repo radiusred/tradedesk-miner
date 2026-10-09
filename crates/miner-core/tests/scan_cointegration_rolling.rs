@@ -25,13 +25,13 @@ use std::sync::atomic::AtomicBool;
 
 use chrono::{Duration, TimeZone, Utc};
 
-use miner_core::aggregator::{BarFrame, Timeframe};
 use miner_core::engine::gap_policy::GapPolicyKind;
 use miner_core::engine::param_hash;
 use miner_core::findings::{Finding, RawArray, RunId, TimeRange};
-use miner_core::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 use miner_core::scan::cross::CointegrationRollingScan;
 use miner_core::scan::{Scan, ScanCtx, ScanRequest};
+use tradedesk_data::aggregator::{BarFrame, Timeframe};
+use tradedesk_data::reader::{ClosedRangeUtc, InstrumentSpec, Side};
 
 use common::BufferSink;
 

@@ -18,8 +18,8 @@
 #![allow(dead_code)]
 
 use chrono::{DateTime, Duration, Utc};
-use miner_core::aggregator::{BarFrame, Timeframe};
-use miner_core::reader::Side;
+use tradedesk_data::aggregator::{BarFrame, Timeframe};
+use tradedesk_data::reader::Side;
 
 /// Build a deterministic AR(1)-shaped `BarFrame` with `n` bars starting at
 /// `start_ts` spaced by `tf_minutes`. The LCG implementation is identical to

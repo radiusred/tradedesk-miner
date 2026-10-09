@@ -355,15 +355,15 @@ fn string_to_raw_array(s: &str) -> RawArray {
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
-    use crate::aggregator::{BarFrame, Timeframe};
     use crate::engine::gap_policy::GapPolicyKind;
     use crate::findings::TimeRange;
     use crate::findings::run_id::RunId;
     use crate::findings::sink::VecSink;
-    use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
     use chrono::{DateTime, Duration, TimeZone};
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
+    use tradedesk_data::aggregator::{BarFrame, Timeframe};
+    use tradedesk_data::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
 
     // -----------------------------------------------------------------------
     // Fixtures

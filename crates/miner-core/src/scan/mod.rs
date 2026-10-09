@@ -7,7 +7,7 @@
 //!
 //! ## Module shape
 //!
-//! - [`Scan`] — the polymorphic trait. Mirrors [`crate::reader::Reader`]'s
+//! - [`Scan`] — the polymorphic trait. Mirrors [`tradedesk_data::reader::Reader`]'s
 //!   `Send + Sync + &'static str id` shape (`reader.rs:198-258`). Unlike `Reader`,
 //!   `Scan` does NOT carry an associated `Error` type because every scan shares the
 //!   single [`ScanError`] enum (kernel / cancel / io); readers each have their own
@@ -19,7 +19,7 @@
 //! - [`ScanRequest`] — the typed, post-preflight, resolved request the facade
 //!   hands to a scan. Includes the canonical `dry_run: bool` signal per D3-21.
 //! - [`ScanError`] — `thiserror`-derived enum following the
-//!   `crate::aggregator::AggregateError` shape (`aggregator.rs:201-219`).
+//!   `tradedesk_data::aggregator::AggregateError` shape (`aggregator.rs:201-219`).
 //! - [`ScanFindingShape`] — re-exported from [`shape`] for `miner scans`
 //!   catalogue introspection.
 //!
@@ -39,11 +39,11 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::aggregator::{BarFrame, Timeframe};
 use crate::engine::gap_policy::GapPolicyKind;
 use crate::findings::{FindingSink, RunId, TimeRange};
-use crate::gap::GapManifest;
-use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec};
+use tradedesk_data::aggregator::{BarFrame, Timeframe};
+use tradedesk_data::gap::GapManifest;
+use tradedesk_data::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec};
 
 pub mod anom;
 pub mod cross;
@@ -380,7 +380,7 @@ pub struct ScanCtx<'a> {
 pub struct BarFrameView<'a> {
     pub source_id: &'a str,
     pub symbol: &'a str,
-    pub side: crate::reader::Side,
+    pub side: tradedesk_data::reader::Side,
     pub tf: Timeframe,
     pub ts_open_utc: &'a [DateTime<Utc>],
     pub open: &'a [f64],
@@ -641,7 +641,7 @@ impl ScanRequest {
 
 /// Errors raised by a [`Scan::run`] implementation.
 ///
-/// Mirrors [`crate::aggregator::AggregateError`]'s `thiserror`-derived shape —
+/// Mirrors [`tradedesk_data::aggregator::AggregateError`]'s `thiserror`-derived shape —
 /// no `Serialize` derive (kernel errors become `Finding::ScanError` via the
 /// engine's `ScanErrorCode::as_str` mapping; serde stays at the engine
 /// boundary, not the kernel boundary).
@@ -689,7 +689,7 @@ const _: fn() = || {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::reader::Side;
+    use tradedesk_data::reader::Side;
 
     /// Compile-time regression gate (mirrors `reader.rs:272-274`
     /// `reader_trait_object_safe`). If `Scan` becomes non-dyn-compatible the
@@ -1091,9 +1091,9 @@ mod tests {
     /// behaviour.
     #[test]
     fn scan_request_dry_run_defaults_false_when_absent() {
-        use crate::aggregator::Timeframe;
         use crate::engine::gap_policy::GapPolicyKind;
-        use crate::reader::Side;
+        use tradedesk_data::aggregator::Timeframe;
+        use tradedesk_data::reader::Side;
         let json = serde_json::json!({
             "scan_id": "stats.autocorr.ljung_box",
             "version": 1,
@@ -1191,9 +1191,9 @@ mod tests {
     /// gives an inclusive upper bound).
     #[test]
     fn scan_ctx_bars_up_to_partitions_at_cutoff() {
-        use crate::aggregator::Timeframe;
-        use crate::reader::Side;
         use chrono::{Duration, TimeZone};
+        use tradedesk_data::aggregator::Timeframe;
+        use tradedesk_data::reader::Side;
         let t0 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let ts = vec![
             t0,

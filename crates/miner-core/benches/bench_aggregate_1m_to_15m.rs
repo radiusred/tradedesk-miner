@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: 2026 The tradedesk-miner authors
 
 //! Plan 07-06 Task 2 — criterion microbench for the 1m→15m aggregator hot
-//! kernel (`miner_core::aggregator::aggregate`, callsite at
-//! `crates/miner-core/src/aggregator.rs:304`).
+//! kernel (`tradedesk_data::aggregator::aggregate`, in radiusred/tradedesk's
+//! `crates/tradedesk-data/src/aggregator.rs`).
 //!
 //! Input shape: 250 synthetic trading days × 1440 1-minute bars = 360 000
 //! `RawBar`s, driven through an in-memory `Reader` impl. The bars are
@@ -27,8 +27,8 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
-use miner_core::reader::RawBarIter;
-use miner_core::{
+use tradedesk_data::reader::RawBarIter;
+use tradedesk_data::{
     AggParams, Blake3Hex, Calendar, ClosedRangeUtc, RawBar, Reader, Side, Timeframe, aggregate,
 };
 

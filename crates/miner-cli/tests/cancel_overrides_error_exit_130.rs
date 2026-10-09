@@ -32,9 +32,9 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use chrono::NaiveDate;
-use miner_core::Side;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
+use tradedesk_data::Side;
 
 mod fixtures;
 use fixtures::SyntheticCache;

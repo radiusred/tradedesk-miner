@@ -33,13 +33,13 @@ use std::sync::atomic::AtomicBool;
 
 use chrono::{Duration, TimeZone, Utc};
 
-use miner_core::aggregator::{BarFrame, Timeframe};
 use miner_core::engine::gap_policy::GapPolicyKind;
 use miner_core::engine::param_hash;
 use miner_core::findings::{Finding, RunId, TimeRange};
-use miner_core::reader::{ClosedRangeUtc, Side};
 use miner_core::scan::ljung_box::LjungBoxScan;
 use miner_core::scan::{Scan, ScanCtx, ScanRequest};
+use tradedesk_data::aggregator::{BarFrame, Timeframe};
+use tradedesk_data::reader::{ClosedRangeUtc, Side};
 
 use common::BufferSink;
 
@@ -96,7 +96,7 @@ fn ljung_box_matches_statsmodels_golden() {
         version: 1,
         // Phase 4 (D4-01): instruments Vec replaces the singleton
         // instrument + side pair.
-        instruments: vec![miner_core::reader::InstrumentSpec {
+        instruments: vec![tradedesk_data::reader::InstrumentSpec {
             symbol: "EURUSD".into(),
             side: Side::Bid,
         }],

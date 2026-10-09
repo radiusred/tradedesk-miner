@@ -42,7 +42,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::Utc;
 use rayon::prelude::*;
 
-use crate::cache::BarCache;
 use crate::config::MinerConfig;
 use crate::engine::{RunOutcome, run_one_with_registry};
 use crate::error::{MinerError, ScanErrorCode};
@@ -50,9 +49,10 @@ use crate::findings::{
     DataSlice, DryRunFinding, FdrFamilySummary, Finding, FindingFdrEntry, FindingSink, RunSummary,
     ScanErrorFinding, Source, SweepSummaryFinding, SweepTotals, TimeRange, run_id::RunId,
 };
-use crate::reader::Reader;
 use crate::scan::ScanRequest;
 use crate::sweep::manifest::{SweepManifest, validate};
+use tradedesk_data::cache::BarCache;
+use tradedesk_data::reader::Reader;
 
 // ---------------------------------------------------------------------------
 // SweepOptions
@@ -838,11 +838,11 @@ mod tests {
     /// the job.
     #[test]
     fn build_synthetic_per_job_error_preserves_preflight_code_and_message() {
-        use crate::aggregator::Timeframe;
         use crate::error::{PreflightCode, WireError};
         use crate::findings::TimeRange;
-        use crate::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
         use chrono::TimeZone;
+        use tradedesk_data::aggregator::Timeframe;
+        use tradedesk_data::reader::{Blake3Hex, ClosedRangeUtc, InstrumentSpec, Side};
 
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 2, 1, 0, 0, 0).unwrap();

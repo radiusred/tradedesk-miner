@@ -1,7 +1,7 @@
 //! `param_hash` — blake3 hash of canonical resolved-params JSON (D3-13).
 //!
-//! Pattern analog: `miner-reader-dukascopy/src/reader.rs::fingerprint_day`
-//! (lines 123-141) — the `blake3::hash(&bytes) → hash.to_hex() → bytes.try_into()
+//! Pattern analog: the `tradedesk_data::dukascopy` reader's `fingerprint_day`
+//! — the `blake3::hash(&bytes) → hash.to_hex() → bytes.try_into()
 //! → Blake3Hex::from_hex_bytes` idiom.
 //!
 //! ## D3-13 canonicalisation
@@ -26,12 +26,11 @@
 //! function signature itself: `param_hash(resolved: &serde_json::Value)`
 //! takes ONLY the resolved-params value, structurally precluding the bug.
 
-use crate::reader::Blake3Hex;
+use tradedesk_data::reader::Blake3Hex;
 
 /// Compute the canonical blake3 hash of the resolved-params object.
 ///
-/// Mirrors the dukascopy reader's `fingerprint_day` idiom
-/// (`crates/miner-reader-dukascopy/src/reader.rs:123-141`):
+/// Mirrors the `tradedesk_data::dukascopy` reader's `fingerprint_day` idiom:
 /// `serde_json::to_vec → blake3::hash → to_hex → try_into → Blake3Hex::from_hex_bytes`.
 ///
 /// ## Pitfall reminder

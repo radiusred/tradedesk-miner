@@ -33,7 +33,8 @@ test-internal = ["miner-core/test-internal"]
 
 [dependencies]
 miner-core              = { path = "../miner-core" }
-miner-reader-dukascopy  = { path = "../miner-reader-dukascopy" }
+# The data layer: the Dukascopy reader and the bar cache the binary constructs.
+tradedesk-data.workspace    = true
 clap.workspace              = true
 anyhow.workspace            = true
 tracing.workspace           = true
@@ -94,10 +95,8 @@ nix          = { version = "0.31", default-features = false, features = ["signal
 # via the same path layout the production reader expects (mirrors
 # crates/miner-core/tests/full_determinism.rs::write_synthetic_day).
 zstd.workspace = true
-# Plan 03-06: SyntheticCache builder + miner-reader-dukascopy::day_csv_zst
-# (the public path-layout helper) — same dev-dep cycle pattern miner-core
-# uses (T-02-21 accepted).
-miner-reader-dukascopy = { path = "../miner-reader-dukascopy" }
+# Plan 03-06: the SyntheticCache builder uses `tradedesk_data::dukascopy::day_csv_zst`
+# (the public path-layout helper), reached through the `tradedesk-data` dependency above.
 # Plan 03-06: chrono is already in miner-cli's runtime deps via [dependencies],
 # but the tests need NaiveDate which lives behind the same workspace pin.
 

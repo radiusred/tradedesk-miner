@@ -18,7 +18,7 @@
 )]
 
 use chrono::NaiveDate;
-use miner_core::Side;
+use tradedesk_data::Side;
 
 mod fixtures;
 use fixtures::SyntheticCache;
