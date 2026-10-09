@@ -126,6 +126,12 @@ rayon              = "1.10"
 realfft            = "3.5"   # added by Plan 07-05
 criterion          = { version = "0.7", features = ["html_reports"] }
 dhat               = "0.3"
+# The market-data layer (the `Reader` trait, the trading calendar, aggregation, gap
+# detection, the Arrow bar cache and the Dukascopy cache-layout reader), shared with the
+# tradedesk backtester. A git dependency pinned to a commit on radiusred/tradedesk `main`
+# (crates.io publication is a later milestone); a task bumps `rev` when the miner needs a
+# newer data layer. This rev is the merge of radiusred/tradedesk PR 174.
+tradedesk-data     = { git = "https://github.com/radiusred/tradedesk", rev = "2a4dcf9f83f3be77570761ba836e437597ff96dd" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
