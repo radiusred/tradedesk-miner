@@ -24,14 +24,15 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use tradedesk_data::aggregator::Timeframe;
 
 use crate::findings::{
     DataSlice, Effect, EffectSize, Finding, FindingSink, Raw, RawArray, ResultFinding, Source,
 };
 use crate::scan::primitives::raw_array::f64_slice_to_raw_array;
 use crate::scan::primitives::returns::log_returns;
-use crate::scan::{Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
+use crate::scan::{ParamSpan, Scan, ScanArity, ScanCtx, ScanError, ScanFindingShape, ScanRequest};
 
 pub mod kernel;
 
@@ -111,6 +112,46 @@ impl Scan for EventWindowScan {
     /// Phase 5 (Plan 05-03 / D5-04 / HYG-03) — opt-in to bootstrap CI.
     fn supports_bootstrap(&self) -> bool {
         true
+    }
+
+    /// M33-R1 — each event names a post window that runs from the event's bar
+    /// (the last bar opening at or before the event) for `post_window_bars`
+    /// bars. With no gap that window ends at
+    /// `floor_tf(event) + post_window_bars * tf`; a gap only moves bars later,
+    /// and the window check bounds those. Malformed params give no spans.
+    fn param_spans(
+        &self,
+        resolved_params: &serde_json::Value,
+        timeframe: Timeframe,
+    ) -> Vec<ParamSpan> {
+        let post_bars = match resolved_params.get("post_window_bars") {
+            None => DEFAULT_POST_WINDOW_BARS,
+            Some(v) => match v.as_i64() {
+                Some(n) if n >= 1 => n,
+                _ => return Vec::new(),
+            },
+        };
+        let Some(events) = resolved_params
+            .get("event_timestamps")
+            .and_then(|v| v.as_array())
+        else {
+            return Vec::new();
+        };
+        let tf_ms = timeframe.duration().num_milliseconds();
+        events
+            .iter()
+            .filter_map(serde_json::Value::as_i64)
+            .filter_map(|event_ms| {
+                let bar_open_ms = event_ms.div_euclid(tf_ms).checked_mul(tf_ms)?;
+                let end_ms = post_bars
+                    .checked_mul(tf_ms)
+                    .and_then(|w| bar_open_ms.checked_add(w))?;
+                Some(ParamSpan {
+                    kind: "event_window",
+                    end_exclusive: DateTime::<Utc>::from_timestamp_millis(end_ms)?,
+                })
+            })
+            .collect()
     }
 
     #[allow(

@@ -31,10 +31,11 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
 
 use crate::error::{PreflightCode, WireError};
 use crate::scan::{BootstrapMethod, NullMethod, Registry, Scan, ScanArity};
+use tradedesk_data::aggregator::Timeframe;
 use tradedesk_data::reader::{ClosedRangeUtc, InstrumentSpec};
 
 // ---------------------------------------------------------------------------
@@ -367,6 +368,157 @@ fn parse_iso_utc(s: &str) -> Result<DateTime<Utc>, String> {
     DateTime::parse_from_rfc3339(s)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| format!("invalid ISO 8601 datetime {s:?}: {e}"))
+}
+
+/// Parse one strict-UTC instant in a `--window` side form: `YYYY-MM-DD`
+/// (00:00 UTC) or `YYYY-MM-DDTHH:MM:SSZ`. Used for the `--not-after` date
+/// fence so a fence and a window are written the same way.
+///
+/// # Errors
+/// Returns a human-readable message when the value is in neither form or
+/// carries a non-`Z` offset (A3).
+pub fn parse_iso_utc_instant(s: &str) -> Result<DateTime<Utc>, String> {
+    parse_iso_utc(s)
+}
+
+// ---------------------------------------------------------------------------
+// Date fence — M33-R1
+// ---------------------------------------------------------------------------
+
+/// The last timestamp a request can use, in the form the fence compares.
+///
+/// The fence `F` is an instant. A bound *reaches* the fence when the request
+/// can use a timestamp at or after `F`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FenceBound {
+    /// The request uses timestamps strictly before this instant (the end of
+    /// a half-open `scan --window`, or a span end). Reaches `F` when `> F`.
+    Exclusive(DateTime<Utc>),
+    /// The request uses this instant itself (the datetime end of a closed
+    /// sweep window). Reaches `F` when `>= F`.
+    Inclusive(DateTime<Utc>),
+}
+
+impl FenceBound {
+    /// `true` when a request with this bound can use a timestamp at or after
+    /// `fence`.
+    #[must_use]
+    pub fn reaches(self, fence: DateTime<Utc>) -> bool {
+        match self {
+            FenceBound::Exclusive(t) => t > fence,
+            FenceBound::Inclusive(t) => t >= fence,
+        }
+    }
+
+    fn instant(self) -> DateTime<Utc> {
+        match self {
+            FenceBound::Exclusive(t) | FenceBound::Inclusive(t) => t,
+        }
+    }
+}
+
+/// Refuse `bound` when it reaches `fence`. No fence → always `Ok`.
+///
+/// `reached_by` names what reached the fence (`"window"`,
+/// `"event_window"`, …) for the error context.
+///
+/// # Errors
+/// Returns [`WireError::preflight`] with [`PreflightCode::DateFence`]. The
+/// context carries `not_after` (the fence), `reached_by`, `bound` (the
+/// offending instant) and `bound_kind` (`"exclusive"` / `"inclusive"`).
+pub fn check_fence(
+    fence: Option<DateTime<Utc>>,
+    reached_by: &str,
+    bound: FenceBound,
+) -> Result<(), WireError> {
+    let Some(fence) = fence else {
+        return Ok(());
+    };
+    if !bound.reaches(fence) {
+        return Ok(());
+    }
+    let fmt = |t: DateTime<Utc>| t.to_rfc3339_opts(SecondsFormat::Secs, true);
+    let bound_kind = match bound {
+        FenceBound::Exclusive(_) => "exclusive",
+        FenceBound::Inclusive(_) => "inclusive",
+    };
+    Err(WireError::preflight(
+        PreflightCode::DateFence,
+        format!(
+            "{reached_by} reaches the date fence: it can use data up to {} ({bound_kind}); \
+             not_after is {}",
+            fmt(bound.instant()),
+            fmt(fence)
+        ),
+    )
+    .with_context("not_after", serde_json::Value::String(fmt(fence)))
+    .with_context(
+        "reached_by",
+        serde_json::Value::String(reached_by.to_string()),
+    )
+    .with_context("bound", serde_json::Value::String(fmt(bound.instant())))
+    .with_context(
+        "bound_kind",
+        serde_json::Value::String(bound_kind.to_string()),
+    ))
+}
+
+/// Fence check for one scan request: the half-open window (`[start, end)`,
+/// so the end is exclusive) and every span the scan's params name
+/// ([`Scan::param_spans`]).
+///
+/// # Errors
+/// [`PreflightCode::DateFence`] per [`check_fence`].
+pub fn validate_scan_fence(
+    scan: &dyn Scan,
+    window: ClosedRangeUtc,
+    timeframe: Timeframe,
+    resolved_params: &serde_json::Value,
+    fence: Option<DateTime<Utc>>,
+) -> Result<(), WireError> {
+    if fence.is_none() {
+        return Ok(());
+    }
+    check_fence(fence, "window", FenceBound::Exclusive(window.end))?;
+    validate_param_spans_fence(scan, timeframe, resolved_params, fence)
+}
+
+/// Fence check for the spans a scan's params name ([`Scan::param_spans`]).
+///
+/// # Errors
+/// [`PreflightCode::DateFence`] per [`check_fence`].
+pub fn validate_param_spans_fence(
+    scan: &dyn Scan,
+    timeframe: Timeframe,
+    resolved_params: &serde_json::Value,
+    fence: Option<DateTime<Utc>>,
+) -> Result<(), WireError> {
+    if fence.is_none() {
+        return Ok(());
+    }
+    for span in scan.param_spans(resolved_params, timeframe) {
+        check_fence(fence, span.kind, FenceBound::Exclusive(span.end_exclusive))?;
+    }
+    Ok(())
+}
+
+/// The fence bound of a sweep-manifest window string. Sweep `windows` are
+/// documented closed at both ends (`docs/sweep_manifest.md`), so the end is
+/// read as included: a date-only end `D` includes the whole day
+/// (`Exclusive(D + 1 day)`); a datetime end includes that instant
+/// (`Inclusive(end)`).
+///
+/// # Errors
+/// [`PreflightCode::InvalidParameter`] when the string is not a valid
+/// window (same rules as [`parse_iso_utc_window`]).
+pub fn closed_window_fence_bound(s: &str) -> Result<FenceBound, WireError> {
+    let range = parse_iso_utc_window(s)?;
+    let date_only_end = split_window(s).is_some_and(|(_, rhs)| !rhs.contains('T'));
+    if date_only_end {
+        Ok(FenceBound::Exclusive(range.end + chrono::Duration::days(1)))
+    } else {
+        Ok(FenceBound::Inclusive(range.end))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -837,6 +989,158 @@ mod tests {
             err.message.contains("empty window"),
             "error message must mention empty window; got {:?}",
             err.message
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Date fence — M33-R1
+    // -----------------------------------------------------------------------
+
+    fn utc(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(y, mo, d, h, mi, 0).unwrap()
+    }
+
+    /// A half-open end may sit on the fence (it uses data strictly before
+    /// it); one second past the fence reaches it.
+    #[test]
+    fn fence_exclusive_bound_edges() {
+        let f = utc(2030, 1, 1, 0, 0);
+        assert!(!FenceBound::Exclusive(utc(2029, 12, 31, 23, 59)).reaches(f));
+        assert!(!FenceBound::Exclusive(f).reaches(f));
+        assert!(FenceBound::Exclusive(f + chrono::Duration::seconds(1)).reaches(f));
+    }
+
+    /// An included end on the fence uses the fence instant: it reaches it.
+    #[test]
+    fn fence_inclusive_bound_edges() {
+        let f = utc(2030, 1, 1, 0, 0);
+        assert!(!FenceBound::Inclusive(f - chrono::Duration::seconds(1)).reaches(f));
+        assert!(FenceBound::Inclusive(f).reaches(f));
+    }
+
+    #[test]
+    fn check_fence_without_fence_is_ok() {
+        assert!(check_fence(None, "window", FenceBound::Inclusive(utc(2100, 1, 1, 0, 0))).is_ok());
+    }
+
+    #[test]
+    fn check_fence_error_carries_code_and_context() {
+        let f = utc(2030, 1, 1, 0, 0);
+        let err = check_fence(
+            Some(f),
+            "window",
+            FenceBound::Exclusive(utc(2030, 1, 2, 0, 0)),
+        )
+        .expect_err("must refuse");
+        assert_eq!(err.code, "date_fence");
+        assert_eq!(
+            err.context.get("not_after"),
+            Some(&serde_json::json!("2030-01-01T00:00:00Z"))
+        );
+        assert_eq!(
+            err.context.get("reached_by"),
+            Some(&serde_json::json!("window"))
+        );
+        assert_eq!(
+            err.context.get("bound"),
+            Some(&serde_json::json!("2030-01-02T00:00:00Z"))
+        );
+        assert_eq!(
+            err.context.get("bound_kind"),
+            Some(&serde_json::json!("exclusive"))
+        );
+    }
+
+    /// `scan --window` is half-open: `S:F` is accepted, `S:F+1d` is refused.
+    #[test]
+    fn validate_scan_fence_half_open_window() {
+        let scan = StubSingle;
+        let f = Some(utc(2030, 1, 1, 0, 0));
+        let at = parse_iso_utc_window("2029-12-01:2030-01-01").unwrap();
+        let past = parse_iso_utc_window("2029-12-01:2030-01-02").unwrap();
+        let params = serde_json::json!({});
+        assert!(validate_scan_fence(&scan, at, Timeframe::Tf1h, &params, f).is_ok());
+        let err = validate_scan_fence(&scan, past, Timeframe::Tf1h, &params, f)
+            .expect_err("window past the fence");
+        assert_eq!(err.code, "date_fence");
+        assert!(validate_scan_fence(&scan, past, Timeframe::Tf1h, &params, None).is_ok());
+    }
+
+    /// Sweep windows are closed: a date-only end includes the whole end day,
+    /// a datetime end includes that instant.
+    #[test]
+    fn closed_window_fence_bound_reads_the_end_as_included() {
+        let f = utc(2030, 1, 1, 0, 0);
+        let b = closed_window_fence_bound("2029-12-01:2029-12-31").unwrap();
+        assert_eq!(b, FenceBound::Exclusive(f));
+        assert!(!b.reaches(f), "2029-12-31 included ends at the fence");
+        let b = closed_window_fence_bound("2029-12-01:2030-01-01").unwrap();
+        assert!(
+            b.reaches(f),
+            "2030-01-01 included is on and after the fence"
+        );
+        let b = closed_window_fence_bound("2029-12-01T00:00:00Z:2030-01-01T00:00:00Z").unwrap();
+        assert_eq!(b, FenceBound::Inclusive(f));
+        assert!(b.reaches(f));
+        let b = closed_window_fence_bound("2029-12-01T00:00:00Z:2029-12-31T23:59:59Z").unwrap();
+        assert!(!b.reaches(f));
+        assert_eq!(
+            closed_window_fence_bound("garbage").unwrap_err().code,
+            "invalid_parameter"
+        );
+    }
+
+    /// The event-window scan names its post windows; a span that ends past
+    /// the fence is refused even when the request window is clear of it.
+    #[test]
+    fn validate_scan_fence_event_window_spans() {
+        let reg = bootstrap();
+        let scan = resolve_scan("seas.event.pre_post_window@1", &reg).expect("registered");
+        let f = utc(2030, 1, 1, 0, 0);
+        let window = parse_iso_utc_window("2029-11-01:2029-12-01").unwrap();
+        let ms = |t: DateTime<Utc>| t.timestamp_millis();
+
+        // Event at 2029-12-31 21:30, 1h bars, 2 post bars: bar opens 21:00,
+        // post window ends 23:00 — before the fence.
+        let ok = serde_json::json!({
+            "event_timestamps": [ms(utc(2029, 12, 31, 21, 30))],
+            "post_window_bars": 2
+        });
+        assert!(validate_scan_fence(scan, window, Timeframe::Tf1h, &ok, Some(f)).is_ok());
+
+        // Same event, 4 post bars: ends 2030-01-01 01:00 — refused.
+        let bad = serde_json::json!({
+            "event_timestamps": [ms(utc(2029, 12, 31, 21, 30))],
+            "post_window_bars": 4
+        });
+        let err = validate_scan_fence(scan, window, Timeframe::Tf1h, &bad, Some(f))
+            .expect_err("event window past the fence");
+        assert_eq!(err.code, "date_fence");
+        assert_eq!(
+            err.context.get("reached_by"),
+            Some(&serde_json::json!("event_window"))
+        );
+        assert_eq!(
+            err.context.get("bound"),
+            Some(&serde_json::json!("2030-01-01T01:00:00Z"))
+        );
+
+        // Default post_window_bars (5) on 1d bars: an event 3 days before the
+        // fence reaches it.
+        let dflt = serde_json::json!({ "event_timestamps": [ms(utc(2029, 12, 29, 0, 0))] });
+        assert!(validate_scan_fence(scan, window, Timeframe::Tf1d, &dflt, Some(f)).is_err());
+    }
+
+    /// A scan with no param spans (the default) is checked on its window only.
+    #[test]
+    fn default_scan_has_no_param_spans() {
+        let scan = StubSingle;
+        assert!(
+            scan.param_spans(
+                &serde_json::json!({"event_timestamps": [0]}),
+                Timeframe::Tf1h
+            )
+            .is_empty()
         );
     }
 

@@ -84,4 +84,6 @@ pub use config::{CliOverrides, MinerConfig, OutputDest, build_figment};
 pub use engine::{GapDispatch, GapPolicyKind, RunOutcome, run_one};
 pub use findings::DryRunFinding;
 pub use scan::ljung_box::LjungBoxScan;
-pub use scan::{Registry, Scan, ScanCtx, ScanError, ScanFindingShape, ScanRequest, bootstrap};
+pub use scan::{
+    ParamSpan, Registry, Scan, ScanCtx, ScanError, ScanFindingShape, ScanRequest, bootstrap,
+};
