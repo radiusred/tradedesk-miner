@@ -18,8 +18,10 @@
 //! - `[fdr]` — `family = "scan_id"` default (scope: per-`scan_id@version`);
 //!   `alpha = 0.05`.
 //! - `[[jobs]]` — each block carries `scan`, `instruments`,
-//!   `timeframes`, `windows`, optional `gap_policy`, optional `params`
-//!   (`BTreeMap`), optional per-block `hygiene`.
+//!   `timeframes`, `windows`, optional `gap_policy`, optional `calendar`,
+//!   optional `params` (`BTreeMap`), optional per-block `hygiene`.
+//! - `[sweep].calendar` — the market calendar for every block that sets
+//!   none (M33-R2); default `fx_new_york`.
 //!
 //! ## Threat model (T-05-04-V5-DEEP / T-05-04-V5-SIZE)
 //!
@@ -45,6 +47,7 @@ use serde::Deserialize;
 use chrono::{DateTime, Utc};
 use tradedesk_data::aggregator::Timeframe;
 
+use crate::engine::market_calendar::{CalendarSpec, MarketCalendar};
 use crate::engine::preflight;
 use crate::error::{MinerError, PreflightCode, WireError};
 use crate::scan::Registry;
@@ -72,6 +75,10 @@ pub struct SweepConfig {
     pub seed: Option<u64>,
     #[serde(default = "default_max_jobs")]
     pub max_jobs: u64,
+    /// Market calendar for every `[[jobs]]` block that sets none: a preset
+    /// name or a table. Default `fx_new_york`.
+    #[serde(default)]
+    pub calendar: Option<CalendarSpec>,
 }
 
 impl Default for SweepConfig {
@@ -84,6 +91,7 @@ impl Default for SweepConfig {
         Self {
             seed: None,
             max_jobs: default_max_jobs(),
+            calendar: None,
         }
     }
 }
@@ -149,6 +157,11 @@ pub struct JobBlock {
     pub windows: Vec<String>,
     #[serde(default)]
     pub gap_policy: Option<String>,
+    /// Market calendar for this block: a preset name or a table. A hole in
+    /// the data while the market is closed is not a gap. Overrides
+    /// `[sweep].calendar`.
+    #[serde(default)]
+    pub calendar: Option<CalendarSpec>,
     #[serde(default)]
     pub params: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
@@ -183,6 +196,51 @@ pub fn parse_manifest_str(s: &str) -> Result<SweepManifest, MinerError> {
             PreflightCode::InvalidParameter,
             format!("TOML parse error: {e}"),
         ))
+    })
+}
+
+// ---------------------------------------------------------------------------
+// resolve_calendar — M33-R2 market calendar for a block
+// ---------------------------------------------------------------------------
+
+/// The market calendar for `[[jobs]]` block `block_idx`: the block's
+/// `calendar`, else [`resolve_sweep_calendar`].
+///
+/// # Errors
+/// `MinerError::Preflight(WireError::preflight(InvalidParameter, ...))` when
+/// the calendar names an unknown preset or a field does not parse.
+pub fn resolve_calendar(
+    manifest: &SweepManifest,
+    block_idx: usize,
+) -> Result<MarketCalendar, MinerError> {
+    match manifest
+        .jobs
+        .get(block_idx)
+        .and_then(|b| b.calendar.as_ref())
+    {
+        Some(spec) => resolve_spec(spec, &format!("[[jobs[{block_idx}]]]")),
+        None => resolve_sweep_calendar(manifest),
+    }
+}
+
+/// The sweep-level market calendar: `[sweep].calendar`, else the default
+/// preset (`fx_new_york`).
+///
+/// # Errors
+/// As [`resolve_calendar`].
+pub fn resolve_sweep_calendar(manifest: &SweepManifest) -> Result<MarketCalendar, MinerError> {
+    match manifest.sweep.calendar.as_ref() {
+        Some(spec) => resolve_spec(spec, "[sweep]"),
+        None => Ok(MarketCalendar::default()),
+    }
+}
+
+fn resolve_spec(spec: &CalendarSpec, scope: &str) -> Result<MarketCalendar, MinerError> {
+    spec.resolve().map_err(|msg| {
+        MinerError::Preflight(
+            WireError::preflight(PreflightCode::InvalidParameter, format!("{scope} {msg}"))
+                .with_context("calendar", serde_json::to_value(spec).unwrap_or_default()),
+        )
     })
 }
 
@@ -302,8 +360,13 @@ pub fn validate(manifest: &SweepManifest, registry: &Registry) -> Result<u64, Mi
         ));
     }
 
+    // M33-R2: the sweep-level market calendar must resolve.
+    resolve_sweep_calendar(manifest)?;
+
     // Per-block validation.
     for (block_idx, block) in manifest.jobs.iter().enumerate() {
+        // M33-R2: the block's market calendar must resolve.
+        resolve_calendar(manifest, block_idx)?;
         let scan = crate::engine::preflight::resolve_scan(&block.scan, registry)
             .map_err(MinerError::Preflight)?;
 
@@ -830,6 +893,7 @@ mod tests {
             timeframes: vec!["15m".to_string()],
             windows: vec!["2024-01-01:2024-01-02".to_string()],
             gap_policy: None,
+            calendar: None,
             params: BTreeMap::new(),
             hygiene: None,
         });
@@ -895,6 +959,7 @@ mod tests {
             timeframes: vec!["15m".to_string()],
             windows: vec!["2024-01-01:2024-01-02".to_string()],
             gap_policy: None,
+            calendar: None,
             params: BTreeMap::new(),
             hygiene: Some(HygieneBlock {
                 bootstrap: None,
@@ -914,5 +979,88 @@ mod tests {
             "message must mention null_n + ceiling; got {:?}",
             w.message
         );
+    }
+
+    /// M33-R2: `[sweep].calendar` (a preset) applies to blocks without their
+    /// own; a block's inline table overrides it; no calendar anywhere gives
+    /// the default preset.
+    #[test]
+    fn calendar_sweep_default_and_block_override() {
+        let toml = r#"
+            [sweep]
+            calendar = "fx_utc"
+
+            [[jobs]]
+            scan = "stats.autocorr.ljung_box@1"
+            instruments = ["EURUSD:bid"]
+            timeframes = ["1h"]
+            windows = ["2024-01-01:2024-01-02"]
+
+            [[jobs]]
+            scan = "stats.autocorr.ljung_box@1"
+            instruments = ["EURUSD:bid"]
+            timeframes = ["1h"]
+            windows = ["2024-01-01:2024-01-02"]
+            [jobs.calendar]
+            time_zone = "America/New_York"
+            week_open = "sun 18:00"
+            week_close = "fri 17:00"
+            daily_breaks = [{ start = "17:00", end = "18:00" }]
+        "#;
+        let m: SweepManifest = toml::from_str(toml).expect("parse");
+        let reg = registry_bootstrap();
+        validate(&m, &reg).expect("valid");
+        assert_eq!(
+            resolve_calendar(&m, 0).unwrap(),
+            MarketCalendar::preset("fx_utc").unwrap()
+        );
+        let block = serde_json::to_value(resolve_calendar(&m, 1).unwrap()).unwrap();
+        assert_eq!(block["week_open"], "sun 18:00");
+        assert_eq!(block["daily_breaks"][0]["end"], "18:00");
+
+        let jobs = crate::sweep::job_graph::expand(&m, &reg).expect("expand");
+        assert_eq!(jobs[0].calendar, MarketCalendar::preset("fx_utc").unwrap());
+        assert_eq!(jobs[1].calendar, resolve_calendar(&m, 1).unwrap());
+
+        let bare: SweepManifest = toml::from_str(
+            r#"
+            [[jobs]]
+            scan = "stats.autocorr.ljung_box@1"
+            instruments = ["EURUSD:bid"]
+            timeframes = ["1h"]
+            windows = ["2024-01-01:2024-01-02"]
+        "#,
+        )
+        .expect("parse");
+        assert_eq!(
+            resolve_calendar(&bare, 0).unwrap(),
+            MarketCalendar::default()
+        );
+    }
+
+    /// M33-R2: an unknown preset or a bad table field is refused at preflight
+    /// with `invalid_parameter`, naming the scope.
+    #[test]
+    fn calendar_invalid_is_refused_at_preflight() {
+        let cases = [
+            ("[sweep]\ncalendar = \"fx_mars\"\n", "", "[sweep]"),
+            (
+                "",
+                "[jobs.calendar]\ntime_zone = \"Nowhere/City\"\nweek_open = \"sun 17:00\"\nweek_close = \"fri 17:00\"\n",
+                "[[jobs[0]]]",
+            ),
+        ];
+        for (head, tail, scope) in cases {
+            let toml = format!(
+                "{head}\n[[jobs]]\nscan = \"stats.autocorr.ljung_box@1\"\ninstruments = [\"EURUSD:bid\"]\ntimeframes = [\"1h\"]\nwindows = [\"2024-01-01:2024-01-02\"]\n{tail}"
+            );
+            let m: SweepManifest = toml::from_str(&toml).expect("parse");
+            let err = validate(&m, &registry_bootstrap()).expect_err("must reject");
+            let MinerError::Preflight(w) = err else {
+                panic!("expected Preflight error; got {err:?}");
+            };
+            assert_eq!(w.code, "invalid_parameter");
+            assert!(w.message.starts_with(scope), "{}", w.message);
+        }
     }
 }

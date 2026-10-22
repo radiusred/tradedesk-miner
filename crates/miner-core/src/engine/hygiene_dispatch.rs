@@ -1236,6 +1236,7 @@ mod tests {
                 end_utc: end,
             },
             gap_policy: GapPolicyKind::ContinuousOnly,
+            calendar: crate::engine::MarketCalendar::default(),
             resolved_params: params.clone(),
             param_hash: param_hash::param_hash(params).expect("hash ok"),
             dry_run: false,

@@ -78,6 +78,7 @@ fn scan_seas_gap_overnight_happy_path() {
             end_utc: end,
         },
         gap_policy: GapPolicyKind::ContinuousOnly,
+        calendar: miner_core::engine::MarketCalendar::default(),
         resolved_params,
         param_hash: blake3_hex_zero(),
         dry_run: false,

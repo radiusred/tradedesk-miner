@@ -14,6 +14,22 @@
 //! - `continuous_only` + zero gaps → one `Result` with
 //!   `data_slice.gap_manifest = Some(GapManifest { gaps: vec![] })` (D3-12).
 //!
+//! ## Market calendar (M33-R2)
+//!
+//! A hole in the data while the market is closed is not a gap. The engine calls
+//! [`dispatch_at_timeframe`] / [`dispatch_pair_at_timeframe`] with the request's
+//! [`MarketCalendar`]; they:
+//!
+//! 1. remove the calendar's closed minutes from every gap span
+//!    ([`without_closed_time`]), so a weekend, a holiday or a daily break on the market's
+//!    own clock never splits a window;
+//! 2. project the rest onto the timeframe ([`effective_manifest_for_timeframe`]);
+//! 3. dispatch ([`dispatch`]);
+//! 4. under `continuous_only`, drop a sub-range that holds no open minute
+//!    ([`drop_closed_subranges`]): closed time between two real gaps is not a result.
+//!
+//! So a multi-year window gives one result unless a real data gap splits it.
+//!
 //! [`dispatch`] is a PURE function — given the same `(manifest, requested,
 //! policy)` triple it returns the same [`GapDispatch`]. No clock reads, no
 //! file IO, no allocations beyond the returned `Vec<TimeRange>`.
@@ -22,6 +38,7 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::engine::market_calendar::MarketCalendar;
 use crate::findings::TimeRange;
 use tradedesk_data::aggregator::{Timeframe, align_up};
 use tradedesk_data::gap::{GapManifest, GapReason, GapSpan};
@@ -252,6 +269,126 @@ pub fn snap_subranges_to_timeframe(subs: Vec<TimeRange>, tf: Timeframe) -> Vec<T
 }
 
 // ---------------------------------------------------------------------------
+// without_closed_time / drop_closed_subranges — M33-R2 calendar-aware gaps.
+// ---------------------------------------------------------------------------
+
+/// Remove the minutes in which `calendar` says the market is closed from every gap span.
+///
+/// A span is cut into its runs of open minutes (a minute is open when
+/// [`MarketCalendar::is_open_at`] holds at its start). A span with no open minute is
+/// dropped. Whole-day reasons (`MissingSourceFile`, `CorruptSourceFile`) keep their
+/// payload on each run; an `IntraDayGap` run gets `affected_minutes` = its length.
+///
+/// The calendar can only remove gaps. A minute that the gap detector's own calendar
+/// treats as closed is never checked for data, so this function cannot add a gap there.
+///
+/// Pure function: no IO, no clock reads. The output is sorted as
+/// `GapDetector::detect` sorts its manifest.
+#[must_use]
+pub fn without_closed_time(manifest: &GapManifest, calendar: &MarketCalendar) -> GapManifest {
+    let minute = chrono::Duration::minutes(1);
+    let mut gaps: Vec<GapSpan> = Vec::with_capacity(manifest.gaps.len());
+    for span in &manifest.gaps {
+        let mut run_start: Option<DateTime<Utc>> = None;
+        let mut ts = span.start_utc;
+        while ts < span.end_utc {
+            let open = calendar.is_open_at(ts);
+            match (open, run_start) {
+                (true, None) => run_start = Some(ts),
+                (false, Some(start)) => {
+                    gaps.push(open_run(span, start, ts));
+                    run_start = None;
+                }
+                _ => {}
+            }
+            ts += minute;
+        }
+        if let Some(start) = run_start {
+            gaps.push(open_run(span, start, span.end_utc));
+        }
+    }
+    sort_spans(&mut gaps);
+    GapManifest {
+        source_id: manifest.source_id.clone(),
+        symbol: manifest.symbol.clone(),
+        side: manifest.side,
+        queried_range: manifest.queried_range.clone(),
+        gaps,
+    }
+}
+
+/// One open run `[start, end)` cut from `span`, with the span's reason.
+fn open_run(span: &GapSpan, start: DateTime<Utc>, end: DateTime<Utc>) -> GapSpan {
+    let reason = match &span.reason {
+        GapReason::IntraDayGap { .. } => GapReason::IntraDayGap {
+            affected_minutes: u32::try_from((end - start).num_minutes()).unwrap_or(u32::MAX),
+        },
+        other => other.clone(),
+    };
+    GapSpan {
+        start_utc: start,
+        end_utc: end,
+        reason,
+    }
+}
+
+/// Drop every sub-range of a `SubRanges` dispatch that holds no open minute.
+///
+/// When the market is closed between two real gaps (a missing Friday file and a missing
+/// Monday file around a weekend), [`dispatch`] returns the closed time between them as a
+/// gap-free sub-range. It holds no bars, so it is not a result. `Aborted` and a
+/// single-element dispatch of the whole requested window (the zero-gap fast path) pass
+/// through unchanged.
+#[must_use]
+pub fn drop_closed_subranges(
+    dispatch: GapDispatch,
+    requested: ClosedRangeUtc,
+    calendar: &MarketCalendar,
+) -> GapDispatch {
+    match dispatch {
+        GapDispatch::SubRanges(subs)
+            if !(subs.len() == 1
+                && subs[0].start_utc == requested.start
+                && subs[0].end_utc == requested.end) =>
+        {
+            GapDispatch::SubRanges(
+                subs.into_iter()
+                    .filter(|sub| has_open_minute(sub, calendar))
+                    .collect(),
+            )
+        }
+        other => other,
+    }
+}
+
+/// Whether some minute of `range` is open. Stops at the first open minute.
+fn has_open_minute(range: &TimeRange, calendar: &MarketCalendar) -> bool {
+    let mut ts = range.start_utc;
+    while ts < range.end_utc {
+        if calendar.is_open_at(ts) {
+            return true;
+        }
+        ts += chrono::Duration::minutes(1);
+    }
+    false
+}
+
+/// Sort by `start_utc`, then `end_utc`, then [`GapReason::discriminant_ord`]: the
+/// `GapDetector::detect` order.
+fn sort_spans(gaps: &mut [GapSpan]) {
+    gaps.sort_by(|a, b| {
+        a.start_utc
+            .cmp(&b.start_utc)
+            .then_with(|| a.end_utc.cmp(&b.end_utc))
+            .then_with(|| {
+                a.reason
+                    .discriminant_ord()
+                    .cmp(&b.reason.discriminant_ord())
+            })
+    });
+}
+
+// ---------------------------------------------------------------------------
 // effective_manifest_for_timeframe — RAD-2642 timeframe-aware gap filter.
 // ---------------------------------------------------------------------------
 
@@ -288,6 +425,9 @@ pub fn snap_subranges_to_timeframe(subs: Vec<TimeRange>, tf: Timeframe) -> Vec<T
 ///    `MissingSourceFile` / `CorruptSourceFile` span covers
 ///    `[day 00:00, day+1 00:00)` — at least 24 hours — which already
 ///    covers ≥1 bucket at every supported timeframe (15m / 1h / 1d).
+///    After [`without_closed_time`] such a span holds only the day's open
+///    minutes and can be shorter than a bucket; it is still retained,
+///    because no data exists for those open minutes.
 /// 2. **Intra-day gaps are coalesced and snapped.** Contiguous runs of
 ///    `IntraDayGap` entries (sorted by `start_utc`) are merged into a
 ///    single half-open interval `[run_start, run_end)`. For each run
@@ -365,16 +505,7 @@ pub fn effective_manifest_for_timeframe(manifest: &GapManifest, tf: Timeframe) -
 
     let mut gaps = whole_day;
     gaps.extend(effective_intraday);
-    gaps.sort_by(|a, b| {
-        a.start_utc
-            .cmp(&b.start_utc)
-            .then_with(|| a.end_utc.cmp(&b.end_utc))
-            .then_with(|| {
-                a.reason
-                    .discriminant_ord()
-                    .cmp(&b.reason.discriminant_ord())
-            })
-    });
+    sort_spans(&mut gaps);
 
     GapManifest {
         source_id: manifest.source_id.clone(),
@@ -389,23 +520,27 @@ pub fn effective_manifest_for_timeframe(manifest: &GapManifest, tf: Timeframe) -
 // dispatch_at_timeframe — RAD-2642 single-leg timeframe-aware dispatch.
 // ---------------------------------------------------------------------------
 
-/// Timeframe-aware single-leg dispatch — projects the manifest through
-/// [`effective_manifest_for_timeframe`] before delegating to [`dispatch`].
+/// Calendar- and timeframe-aware single-leg dispatch — removes the
+/// calendar's closed minutes ([`without_closed_time`]), projects the rest
+/// through [`effective_manifest_for_timeframe`], delegates to [`dispatch`]
+/// and drops closed-only sub-ranges ([`drop_closed_subranges`]).
 ///
 /// New engine call-sites should prefer this entry point over the raw
 /// `dispatch` so that `continuous_only` (and `strict`) reflect the user's
-/// natural notion of "gap at the requested timeframe" instead of the
-/// 1-minute gap-detector resolution. The raw `dispatch` remains the pure
-/// primitive that the unit tests pin.
+/// natural notion of "gap at the requested timeframe, while the market is
+/// open" instead of the 1-minute gap-detector resolution. The raw
+/// `dispatch` remains the pure primitive that the unit tests pin.
 #[must_use]
 pub fn dispatch_at_timeframe(
     manifest: &GapManifest,
     requested: ClosedRangeUtc,
     policy: GapPolicyKind,
     tf: Timeframe,
+    calendar: &MarketCalendar,
 ) -> GapDispatch {
-    let effective = effective_manifest_for_timeframe(manifest, tf);
-    dispatch(&effective, requested, policy)
+    let open_only = without_closed_time(manifest, calendar);
+    let effective = effective_manifest_for_timeframe(&open_only, tf);
+    drop_closed_subranges(dispatch(&effective, requested, policy), requested, calendar)
 }
 
 // ---------------------------------------------------------------------------
@@ -442,10 +577,9 @@ pub fn dispatch_pair(
 // dispatch_pair_at_timeframe — RAD-2642 two-leg timeframe-aware dispatch.
 // ---------------------------------------------------------------------------
 
-/// Timeframe-aware two-leg dispatch — mirror of [`dispatch_at_timeframe`]
-/// for CROSS scans (Plan 04-07). Computes the joint manifest via
-/// `intersect_gaps`, projects it through [`effective_manifest_for_timeframe`],
-/// then delegates to [`dispatch`].
+/// Calendar- and timeframe-aware two-leg dispatch — mirror of
+/// [`dispatch_at_timeframe`] for CROSS scans (Plan 04-07). Computes the
+/// joint manifest via `intersect_gaps`, then takes the same steps on it.
 #[must_use]
 pub fn dispatch_pair_at_timeframe(
     manifest_a: &GapManifest,
@@ -453,10 +587,10 @@ pub fn dispatch_pair_at_timeframe(
     requested: ClosedRangeUtc,
     policy: GapPolicyKind,
     tf: Timeframe,
+    calendar: &MarketCalendar,
 ) -> GapDispatch {
     let joint = crate::scan::primitives::time_alignment::intersect_gaps(manifest_a, manifest_b);
-    let effective = effective_manifest_for_timeframe(&joint, tf);
-    dispatch(&effective, requested, policy)
+    dispatch_at_timeframe(&joint, requested, policy, tf, calendar)
 }
 
 // ---------------------------------------------------------------------------
@@ -468,7 +602,7 @@ pub fn dispatch_pair_at_timeframe(
 mod tests {
     use super::*;
     use crate::findings::TimeRange;
-    use chrono::{DateTime, Duration, TimeZone, Utc};
+    use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
     use proptest::prelude::*;
     use tradedesk_data::gap::{GapReason, GapSpan};
     use tradedesk_data::reader::Side;
@@ -482,6 +616,12 @@ mod tests {
         } else {
             Utc.with_ymd_and_hms(2024, 1, 1, h, 0, 0).unwrap()
         }
+    }
+
+    /// The gap detector's own calendar: these tests predate M33-R2 and pin
+    /// its behaviour.
+    fn fx_utc() -> MarketCalendar {
+        MarketCalendar::preset("fx_utc").unwrap()
     }
 
     fn empty_manifest() -> GapManifest {
@@ -1122,7 +1262,13 @@ mod tests {
             Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
             Utc.with_ymd_and_hms(2024, 2, 1, 0, 0, 0).unwrap(),
         );
-        let d = dispatch_at_timeframe(&m, req, GapPolicyKind::ContinuousOnly, Timeframe::Tf1d);
+        let d = dispatch_at_timeframe(
+            &m,
+            req,
+            GapPolicyKind::ContinuousOnly,
+            Timeframe::Tf1d,
+            &fx_utc(),
+        );
         match d {
             GapDispatch::SubRanges(v) => {
                 assert_eq!(
@@ -1151,7 +1297,7 @@ mod tests {
             .collect();
         let m = manifest_with_gaps(runs);
         let req = requested(t(0), t(6));
-        let d = dispatch_at_timeframe(&m, req, GapPolicyKind::Strict, Timeframe::Tf15m);
+        let d = dispatch_at_timeframe(&m, req, GapPolicyKind::Strict, Timeframe::Tf15m, &fx_utc());
         match d {
             GapDispatch::SubRanges(v) => {
                 assert_eq!(
@@ -1267,6 +1413,373 @@ mod tests {
                     let dur = tf.duration().num_minutes();
                     prop_assert_eq!(g.start_utc.timestamp() / 60 % dur, 0);
                     prop_assert_eq!(g.end_utc.timestamp() / 60 % dur, 0);
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // M33-R2 — calendar-aware gaps (without_closed_time, drop_closed_subranges,
+    // dispatch_at_timeframe with a calendar). Synthetic manifests only.
+    // -----------------------------------------------------------------------
+
+    fn utc(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(y, mo, d, h, mi, 0).unwrap()
+    }
+
+    /// One-minute `IntraDayGap` spans covering `[start, end)`, as
+    /// `GapDetector::detect` emits them.
+    fn minute_gaps(start: DateTime<Utc>, end: DateTime<Utc>) -> Vec<GapSpan> {
+        let mut out = Vec::new();
+        let mut ts = start;
+        while ts < end {
+            out.push(gap(ts, ts + Duration::minutes(1)));
+            ts += Duration::minutes(1);
+        }
+        out
+    }
+
+    fn sorted_manifest(mut gaps: Vec<GapSpan>) -> GapManifest {
+        sort_spans(&mut gaps);
+        manifest_with_gaps(gaps)
+    }
+
+    fn sub_ranges(d: GapDispatch) -> Vec<TimeRange> {
+        match d {
+            GapDispatch::SubRanges(v) => v,
+            GapDispatch::Aborted(m) => panic!("expected SubRanges, got Aborted({m:?})"),
+        }
+    }
+
+    fn new_york() -> MarketCalendar {
+        MarketCalendar::preset("fx_new_york").unwrap()
+    }
+
+    /// A calendar with a daily break 17:00-18:00 New York, as many index and metals
+    /// markets have.
+    fn new_york_with_daily_break() -> MarketCalendar {
+        MarketCalendar::try_from(crate::engine::market_calendar::MarketCalendarSpec {
+            time_zone: "America/New_York".into(),
+            week_open: "sun 18:00".into(),
+            week_close: "fri 17:00".into(),
+            trading_day_start: "18:00".into(),
+            daily_breaks: vec![crate::engine::market_calendar::DailyBreakSpec {
+                start: "17:00".into(),
+                end: "18:00".into(),
+            }],
+            closed_every_year: vec!["12-25".into(), "01-01".into()],
+            closed_dates: vec!["2024-03-29".into()],
+        })
+        .unwrap()
+    }
+
+    /// The fixed-UTC detector calendar leaves each northern-summer Friday
+    /// 21:00-22:00 UTC "open" with no data. Over 8 summer weeks at 15m that split
+    /// the window 8 times under `fx_utc`; under `fx_new_york` the hour is closed
+    /// and the window gives one sub-range.
+    #[test]
+    fn summer_friday_close_is_not_a_gap_under_fx_new_york() {
+        let mut gaps = Vec::new();
+        for week in 0..8 {
+            let fri = utc(2024, 6, 7, 21, 0) + Duration::weeks(week);
+            gaps.extend(minute_gaps(fri, fri + Duration::hours(1)));
+        }
+        let m = sorted_manifest(gaps);
+        let req = requested(utc(2024, 6, 3, 0, 0), utc(2024, 8, 5, 0, 0));
+        for tf in [Timeframe::Tf15m, Timeframe::Tf1h] {
+            let legacy = sub_ranges(dispatch_at_timeframe(
+                &m,
+                req,
+                GapPolicyKind::ContinuousOnly,
+                tf,
+                &fx_utc(),
+            ));
+            assert_eq!(legacy.len(), 9, "{tf:?}: fx_utc splits at each Friday hour");
+            let ny = sub_ranges(dispatch_at_timeframe(
+                &m,
+                req,
+                GapPolicyKind::ContinuousOnly,
+                tf,
+                &new_york(),
+            ));
+            assert_eq!(
+                ny,
+                vec![TimeRange {
+                    start_utc: req.start,
+                    end_utc: req.end
+                }],
+                "{tf:?}: one result over the whole window"
+            );
+            // strict does not abort on closed time either.
+            assert!(matches!(
+                dispatch_at_timeframe(&m, req, GapPolicyKind::Strict, tf, &new_york()),
+                GapDispatch::SubRanges(_)
+            ));
+        }
+    }
+
+    /// A daily break on the market's clock (both sides of a daylight-saving change)
+    /// and a closed date never split a multi-week window.
+    #[test]
+    fn daily_break_and_closed_date_are_not_gaps() {
+        let cal = new_york_with_daily_break();
+        let mut gaps = Vec::new();
+        // 2024-02-26 .. 2024-04-05 spans the US change on 2024-03-10: the break is
+        // 22:00-23:00 UTC before it and 21:00-22:00 UTC after it.
+        let mut day = utc(2024, 2, 26, 0, 0);
+        while day < utc(2024, 4, 5, 0, 0) {
+            let brk = if day < utc(2024, 3, 10, 0, 0) {
+                day + Duration::hours(22)
+            } else {
+                day + Duration::hours(21)
+            };
+            gaps.extend(minute_gaps(brk, brk + Duration::hours(1)));
+            day += Duration::days(1);
+        }
+        // A closed date with no data: the trading day 2024-03-29 runs from
+        // 18:00 New York on 03-28 (22:00 UTC) to 17:00 New York on 03-29.
+        gaps.extend(minute_gaps(
+            utc(2024, 3, 28, 22, 0),
+            utc(2024, 3, 29, 21, 0),
+        ));
+        let m = sorted_manifest(gaps);
+        let req = requested(utc(2024, 2, 26, 0, 0), utc(2024, 4, 5, 0, 0));
+        for tf in [Timeframe::Tf15m, Timeframe::Tf1h, Timeframe::Tf1d] {
+            let subs = sub_ranges(dispatch_at_timeframe(
+                &m,
+                req,
+                GapPolicyKind::ContinuousOnly,
+                tf,
+                &cal,
+            ));
+            assert_eq!(subs.len(), 1, "{tf:?}: got {subs:?}");
+        }
+        assert!(without_closed_time(&m, &cal).gaps.is_empty());
+    }
+
+    /// A real gap in open hours still splits the window, also among closed holes.
+    #[test]
+    fn real_gap_in_open_hours_still_splits() {
+        let mut gaps = Vec::new();
+        for week in 0..4 {
+            let fri = utc(2024, 6, 7, 21, 0) + Duration::weeks(week);
+            gaps.extend(minute_gaps(fri, fri + Duration::hours(1)));
+        }
+        // Wednesday 2024-06-19 10:00-12:00 UTC: open, no data.
+        gaps.extend(minute_gaps(
+            utc(2024, 6, 19, 10, 0),
+            utc(2024, 6, 19, 12, 0),
+        ));
+        let m = sorted_manifest(gaps);
+        let req = requested(utc(2024, 6, 3, 0, 0), utc(2024, 7, 8, 0, 0));
+        let subs = sub_ranges(dispatch_at_timeframe(
+            &m,
+            req,
+            GapPolicyKind::ContinuousOnly,
+            Timeframe::Tf1h,
+            &new_york(),
+        ));
+        assert_eq!(
+            subs,
+            vec![
+                TimeRange {
+                    start_utc: req.start,
+                    end_utc: utc(2024, 6, 19, 10, 0)
+                },
+                TimeRange {
+                    start_utc: utc(2024, 6, 19, 12, 0),
+                    end_utc: req.end
+                },
+            ]
+        );
+        match dispatch_at_timeframe(&m, req, GapPolicyKind::Strict, Timeframe::Tf1h, &new_york()) {
+            GapDispatch::Aborted(abort) => {
+                assert_eq!(abort.gaps.len(), 1, "only the real gap: {:?}", abort.gaps);
+                assert_eq!(abort.gaps[0].start_utc, utc(2024, 6, 19, 10, 0));
+            }
+            other @ GapDispatch::SubRanges(_) => panic!("expected Aborted, got {other:?}"),
+        }
+    }
+
+    /// A missing daily file on a closed trading day is not a gap; a missing file
+    /// on an open day is cut to its open minutes and keeps its reason.
+    #[test]
+    fn missing_file_is_cut_to_open_minutes() {
+        let missing = |y, mo, d| GapSpan {
+            start_utc: utc(y, mo, d, 0, 0),
+            end_utc: utc(y, mo, d, 0, 0) + Duration::days(1),
+            reason: GapReason::MissingSourceFile {
+                date: NaiveDate::from_ymd_opt(y, mo, d).unwrap(),
+            },
+        };
+        let cal = new_york_with_daily_break();
+        // 2024-03-29: the UTC day overlaps the closed trading day 03-29 and, from
+        // 22:00 UTC, the weekend. No open minute: dropped.
+        let m = manifest_with_gaps(vec![missing(2024, 3, 29)]);
+        assert!(without_closed_time(&m, &cal).gaps.is_empty());
+        // Wednesday 2024-01-10 (EST): open except the break 22:00-23:00 UTC.
+        let m = manifest_with_gaps(vec![missing(2024, 1, 10)]);
+        let out = without_closed_time(&m, &cal);
+        let reason = GapReason::MissingSourceFile {
+            date: NaiveDate::from_ymd_opt(2024, 1, 10).unwrap(),
+        };
+        assert_eq!(
+            out.gaps,
+            vec![
+                GapSpan {
+                    start_utc: utc(2024, 1, 10, 0, 0),
+                    end_utc: utc(2024, 1, 10, 22, 0),
+                    reason: reason.clone(),
+                },
+                GapSpan {
+                    start_utc: utc(2024, 1, 10, 23, 0),
+                    end_utc: utc(2024, 1, 11, 0, 0),
+                    reason,
+                },
+            ]
+        );
+    }
+
+    /// Closed time between two real gaps is not returned as a sub-range: a missing
+    /// Friday file and a missing Sunday file around a weekend give one gap.
+    #[test]
+    fn closed_only_subrange_is_dropped() {
+        let missing = |d: u32| GapSpan {
+            start_utc: utc(2024, 1, d, 0, 0),
+            end_utc: utc(2024, 1, d + 1, 0, 0),
+            reason: GapReason::MissingSourceFile {
+                date: NaiveDate::from_ymd_opt(2024, 1, d).unwrap(),
+            },
+        };
+        // Friday 2024-01-12 and Sunday 2024-01-14 (EST: the week opens 22:00 UTC).
+        let m = manifest_with_gaps(vec![missing(12), missing(14)]);
+        let req = requested(utc(2024, 1, 8, 0, 0), utc(2024, 1, 20, 0, 0));
+        let subs = sub_ranges(dispatch_at_timeframe(
+            &m,
+            req,
+            GapPolicyKind::ContinuousOnly,
+            Timeframe::Tf1h,
+            &new_york(),
+        ));
+        assert_eq!(
+            subs,
+            vec![
+                TimeRange {
+                    start_utc: req.start,
+                    end_utc: utc(2024, 1, 12, 0, 0)
+                },
+                TimeRange {
+                    start_utc: utc(2024, 1, 15, 0, 0),
+                    end_utc: req.end
+                },
+            ],
+            "the weekend between the two missing files is not a sub-range"
+        );
+        // Without the drop, raw dispatch returns the closed weekend as a sub-range.
+        let open_only = without_closed_time(&m, &new_york());
+        let raw = sub_ranges(dispatch(&open_only, req, GapPolicyKind::ContinuousOnly));
+        assert_eq!(raw.len(), 3, "{raw:?}");
+    }
+
+    /// The zero-gap fast path returns the requested window unchanged, even when the
+    /// window holds no open minute.
+    #[test]
+    fn fast_path_window_is_not_dropped() {
+        let req = requested(utc(2024, 6, 15, 0, 0), utc(2024, 6, 16, 0, 0));
+        let subs = sub_ranges(dispatch_at_timeframe(
+            &empty_manifest(),
+            req,
+            GapPolicyKind::ContinuousOnly,
+            Timeframe::Tf1h,
+            &new_york(),
+        ));
+        assert_eq!(subs.len(), 1);
+    }
+
+    /// The two-leg dispatch applies the calendar to the joint manifest.
+    #[test]
+    fn pair_dispatch_uses_the_calendar() {
+        let fri = utc(2024, 6, 7, 21, 0);
+        let a = sorted_manifest(minute_gaps(fri, fri + Duration::hours(1)));
+        let b = sorted_manifest(minute_gaps(
+            fri + Duration::weeks(1),
+            fri + Duration::weeks(1) + Duration::hours(1),
+        ));
+        let req = requested(utc(2024, 6, 3, 0, 0), utc(2024, 6, 24, 0, 0));
+        let ny = sub_ranges(dispatch_pair_at_timeframe(
+            &a,
+            &b,
+            req,
+            GapPolicyKind::ContinuousOnly,
+            Timeframe::Tf1h,
+            &new_york(),
+        ));
+        assert_eq!(ny.len(), 1);
+        let legacy = sub_ranges(dispatch_pair_at_timeframe(
+            &a,
+            &b,
+            req,
+            GapPolicyKind::ContinuousOnly,
+            Timeframe::Tf1h,
+            &fx_utc(),
+        ));
+        assert_eq!(legacy.len(), 3);
+    }
+
+    proptest! {
+        /// For random one-minute holes over two weeks, at 5m:
+        /// - no sub-range holds a whole 5m bucket in which the market is open
+        ///   for at least one minute and every open minute is a hole (a real gap
+        ///   at that timeframe);
+        /// - every hole in closed time is ignored: the result equals the result
+        ///   for the open holes alone.
+        #[test]
+        fn calendar_dispatch_never_hides_an_open_gap_proptest(
+            offsets in proptest::collection::vec(0u32..20_160, 0..400),
+            runs in proptest::collection::vec((0u32..20_160, 1u32..240), 0..6),
+            cal_idx in 0usize..3,
+        ) {
+            let cal = match cal_idx {
+                0 => new_york(),
+                1 => fx_utc(),
+                _ => new_york_with_daily_break(),
+            };
+            let anchor = utc(2024, 3, 4, 0, 0);
+            let mut minutes: std::collections::BTreeSet<u32> = offsets.into_iter().collect();
+            for (s, len) in runs {
+                for m in s..(s + len).min(20_160) {
+                    minutes.insert(m);
+                }
+            }
+            let at = |m: u32| anchor + Duration::minutes(i64::from(m));
+            let all: Vec<GapSpan> = minutes.iter().map(|&m| gap(at(m), at(m + 1))).collect();
+            let open: Vec<GapSpan> = minutes
+                .iter()
+                .filter(|&&m| cal.is_open_at(at(m)))
+                .map(|&m| gap(at(m), at(m + 1)))
+                .collect();
+            let req = requested(anchor, at(20_160));
+            let tf = Timeframe::Tf5m;
+            let d_all = dispatch_at_timeframe(
+                &manifest_with_gaps(all), req, GapPolicyKind::ContinuousOnly, tf, &cal);
+            let d_open = dispatch_at_timeframe(
+                &manifest_with_gaps(open), req, GapPolicyKind::ContinuousOnly, tf, &cal);
+            prop_assert_eq!(&d_all, &d_open);
+
+            let subs = sub_ranges(d_all);
+            for sub in &subs {
+                let mut b = align_up(sub.start_utc, tf);
+                while b + tf.duration() <= sub.end_utc {
+                    let bucket: Vec<u32> = (0..5)
+                        .map(|k| u32::try_from((b - anchor).num_minutes()).unwrap() + k)
+                        .collect();
+                    let open_mins: Vec<u32> =
+                        bucket.iter().copied().filter(|&m| cal.is_open_at(at(m))).collect();
+                    prop_assert!(
+                        open_mins.is_empty() || !open_mins.iter().all(|m| minutes.contains(m)),
+                        "sub-range {sub:?} holds bucket {b} with no data in open time"
+                    );
+                    b += tf.duration();
                 }
             }
         }

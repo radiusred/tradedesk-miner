@@ -14,7 +14,8 @@
 //! ```text
 //! miner scan <scan_id@version> --instrument SYMBOL:side [--instrument SYMBOL:side]... \
 //!     --timeframe <5m|10m|15m|1h|1d> --window <ISO_FROM>:<ISO_TO> \
-//!     [--gap-policy <strict|continuous_only>] [--dry-run] [--params <KEY=VAL>...]
+//!     [--gap-policy <strict|continuous_only>] [--calendar <PRESET|PATH>] [--dry-run] \
+//!     [--params <KEY=VAL>...]
 //! ```
 //!
 //! Plan 04-02 (D4-02 / PATTERNS.md Pattern K): the legacy `--instrument SYMBOL`
@@ -27,6 +28,8 @@
 //! Defaults:
 //! - `--gap-policy`: `continuous_only` (D3-19 — the policy that "does
 //!   something" by default; `strict` is opt-in).
+//! - `--calendar`: `fx_new_york` (M33-R2). A hole in the data while the
+//!   market is closed is not a gap.
 //!
 //! ## Cfg-gated test-only hook (Blocker 1 — Pitfall 8)
 //!
@@ -40,6 +43,7 @@
 
 use clap::Args;
 use miner_core::engine::gap_policy::GapPolicyKind;
+use miner_core::engine::market_calendar::{self, MarketCalendar};
 use miner_core::engine::preflight;
 use miner_core::error::{PreflightCode, WireError};
 use miner_core::findings::TimeRange;
@@ -79,6 +83,14 @@ pub struct ScanArgs {
     /// `continuous_only` per D3-19.
     #[arg(long, default_value = "continuous_only")]
     pub gap_policy: String,
+
+    /// Market calendar for the gap policy: a preset (`fx_new_york`,
+    /// `fx_utc`) or the path of a TOML file that holds a calendar table
+    /// (`time_zone`, `week_open`, `week_close`, optional `daily_breaks`,
+    /// `closed_every_year`, `closed_dates`). A hole in the data while the
+    /// market is closed is not a gap.
+    #[arg(long, default_value = miner_core::engine::market_calendar::DEFAULT_CALENDAR)]
+    pub calendar: String,
 
     /// Emit one `Finding::DryRun` envelope and exit 0 (D3-21). The facade
     /// still wraps in `RunStart`/`RunEnd` framing so the dry-run output is
@@ -206,6 +218,8 @@ impl ScanArgs {
             )
         })?;
 
+        let calendar = resolve_calendar_arg(&self.calendar)?;
+
         // 3. params KEY=VAL with A9 typed-fallback.
         let resolved_params = preflight::parse_params_kv(&self.params)?;
 
@@ -241,7 +255,8 @@ impl ScanArgs {
             self.dry_run,
             resolved_params,
             param_hash,
-        );
+        )
+        .with_calendar(calendar);
 
         // 5b. Phase 5 (Plan 05-05) — universal hygiene flag plumbing. Each
         // optional string flag parses into the typed BootstrapMethod /
@@ -272,6 +287,30 @@ impl ScanArgs {
 
         Ok(req)
     }
+}
+
+/// Resolve `--calendar`: a preset name, else the path of a TOML file holding a
+/// calendar table (M33-R2).
+///
+/// # Errors
+/// [`PreflightCode::InvalidParameter`] when the value is neither a preset nor a
+/// readable file, or when the file's calendar does not parse.
+fn resolve_calendar_arg(value: &str) -> Result<MarketCalendar, WireError> {
+    let refuse = |msg: String| {
+        WireError::preflight(PreflightCode::InvalidParameter, msg)
+            .with_context("calendar", serde_json::Value::String(value.to_string()))
+    };
+    if market_calendar::PRESETS.contains(&value) {
+        return MarketCalendar::preset(value).map_err(refuse);
+    }
+    let text = std::fs::read_to_string(value).map_err(|e| {
+        refuse(format!(
+            "calendar must be one of {:?} or a readable TOML file; {value:?}: {e}",
+            market_calendar::PRESETS
+        ))
+    })?;
+    MarketCalendar::from_toml_str(&text)
+        .map_err(|e| refuse(format!("calendar file {value:?}: {e}")))
 }
 
 /// Parse a wire-form bootstrap method string. Mirrors
@@ -600,6 +639,55 @@ mod tests {
         let args = unwrap_scan_args(&cli);
         let err = args.to_scan_request("rev").expect_err("must reject");
         assert_eq!(err.code, "invalid_parameter");
+    }
+
+    /// M33-R2: `--calendar` defaults to `fx_new_york`, takes a preset, or the
+    /// path of a TOML calendar file.
+    #[test]
+    fn scan_args_calendar_default_preset_and_file() {
+        let cli = parse_argv(&[]);
+        let req = unwrap_scan_args(&cli).to_scan_request("rev").expect("ok");
+        assert_eq!(req.calendar, MarketCalendar::default());
+
+        let cli = parse_argv(&["--calendar", "fx_utc"]);
+        let req = unwrap_scan_args(&cli).to_scan_request("rev").expect("ok");
+        assert_eq!(req.calendar, MarketCalendar::preset("fx_utc").unwrap());
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("cal.toml");
+        std::fs::write(
+            &path,
+            "time_zone = \"Europe/London\"\nweek_open = \"mon 01:00\"\nweek_close = \"fri 21:00\"\n",
+        )
+        .unwrap();
+        let path_str = path.to_str().unwrap();
+        let cli = parse_argv(&["--calendar", path_str]);
+        let req = unwrap_scan_args(&cli).to_scan_request("rev").expect("ok");
+        let echo = serde_json::to_value(&req.calendar).unwrap();
+        assert_eq!(echo["time_zone"], "Europe/London");
+        assert_eq!(echo["week_close"], "fri 21:00");
+    }
+
+    /// M33-R2: a value that is neither a preset nor a readable calendar file is
+    /// refused with `invalid_parameter`.
+    #[test]
+    fn scan_args_invalid_calendar() {
+        let cli = parse_argv(&["--calendar", "fx_mars"]);
+        let err = unwrap_scan_args(&cli)
+            .to_scan_request("rev")
+            .expect_err("must reject");
+        assert_eq!(err.code, "invalid_parameter");
+        assert!(err.message.contains("fx_new_york"), "{}", err.message);
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("bad.toml");
+        std::fs::write(&path, "time_zone = \"UTC\"\nweek_open = \"sun 22:00\"\n").unwrap();
+        let cli = parse_argv(&["--calendar", path.to_str().unwrap()]);
+        let err = unwrap_scan_args(&cli)
+            .to_scan_request("rev")
+            .expect_err("must reject");
+        assert_eq!(err.code, "invalid_parameter");
+        assert!(err.message.contains("week_close"), "{}", err.message);
     }
 
     #[test]

@@ -70,6 +70,7 @@ fn ljung_box_request(window: ClosedRangeUtc, tf: Timeframe) -> ScanRequest {
             end_utc: window.end,
         },
         gap_policy: GapPolicyKind::ContinuousOnly,
+        calendar: miner_core::engine::MarketCalendar::default(),
         resolved_params: resolved,
         param_hash,
         dry_run: false,

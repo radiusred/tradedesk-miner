@@ -62,6 +62,7 @@ fn scan_seas_event_window_happy_path() {
             end_utc: end,
         },
         gap_policy: GapPolicyKind::ContinuousOnly,
+        calendar: miner_core::engine::MarketCalendar::default(),
         resolved_params,
         param_hash,
         dry_run: false,

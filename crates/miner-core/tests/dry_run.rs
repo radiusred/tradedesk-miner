@@ -68,6 +68,7 @@ fn dry_run_emits_dry_run_finding_only() {
             end_utc: end,
         },
         gap_policy: GapPolicyKind::ContinuousOnly,
+        calendar: miner_core::engine::MarketCalendar::default(),
         resolved_params: resolved.clone(),
         param_hash,
         dry_run: true, // <-- the canonical signal under test

@@ -540,6 +540,14 @@ fn build_sweep_run_start(
         "blocks".to_string(),
         serde_json::Value::Number(serde_json::Number::from(manifest.jobs.len())),
     );
+    // M33-R2: the sweep-level market calendar, resolved (validate() has
+    // already accepted it). A block's own `calendar` overrides it.
+    if let Ok(calendar) = crate::sweep::manifest::resolve_sweep_calendar(manifest) {
+        request.insert(
+            "calendar".to_string(),
+            serde_json::to_value(calendar).unwrap_or_default(),
+        );
+    }
     request.insert("dry_run".to_string(), serde_json::Value::Bool(false));
     request.insert(
         "not_after".to_string(),
@@ -728,6 +736,7 @@ fn job_to_scan_request(job: &crate::sweep::job_graph::ResolvedJob) -> ScanReques
         window: job.window,
         sub_range,
         gap_policy: job.gap_policy,
+        calendar: job.calendar.clone(),
         resolved_params: job.resolved_params.clone(),
         // Blake3Hex is Copy — direct value pass-through.
         param_hash: job.param_hash,
@@ -868,6 +877,7 @@ mod tests {
                 end_utc: end,
             },
             gap_policy: crate::GapPolicyKind::ContinuousOnly,
+            calendar: crate::engine::MarketCalendar::default(),
             resolved_params: serde_json::json!({}),
             param_hash: Blake3Hex::from_hex_bytes(&[b'0'; 64]),
             dry_run: false,

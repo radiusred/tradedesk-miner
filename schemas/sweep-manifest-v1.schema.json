@@ -1,5 +1,35 @@
 {
   "$defs": {
+    "CalendarSpec": {
+      "anyOf": [
+        {
+          "description": "A preset name (`fx_new_york` or `fx_utc`).",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/MarketCalendarSpec",
+          "description": "A calendar defined in full."
+        }
+      ],
+      "description": "A calendar as a user writes it: a preset name or a full table."
+    },
+    "DailyBreakSpec": {
+      "additionalProperties": false,
+      "description": "One daily break as a user writes it: local `\"HH:MM\"` start and end.",
+      "properties": {
+        "end": {
+          "type": "string"
+        },
+        "start": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
     "FdrConfig": {
       "description": "`[fdr]` block — FDR scope + alpha.",
       "properties": {
@@ -48,6 +78,18 @@
     "JobBlock": {
       "description": "One `[[jobs]]` block — single scan id, multi-instrument / multi-tf /\nmulti-window / multi-param-grid axis declaration.\n\n`instruments` is `serde_json::Value` (NOT a typed `Vec<String>` or\n`Vec<Vec<String>>`) because Single-arity scans take a flat\n`Vec<String>` whereas Pair-arity scans take a nested\n`Vec<Vec<String>>` (D5-01 arity split). The shape is dispatched per-\nblock in `job_graph::parse_instruments_grid` against the registry-\nresolved `Scan::arity()`.",
       "properties": {
+        "calendar": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CalendarSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Market calendar for this block: a preset name or a table. A hole in\nthe data while the market is closed is not a gap. Overrides\n`[sweep].calendar`."
+        },
         "gap_policy": {
           "default": null,
           "type": [
@@ -95,9 +137,74 @@
       ],
       "type": "object"
     },
+    "MarketCalendarSpec": {
+      "additionalProperties": false,
+      "description": "The table form of a calendar. Every time and date is on the local clock of `time_zone`.",
+      "properties": {
+        "closed_dates": {
+          "default": [],
+          "description": "Single trading days closed, as `\"YYYY-MM-DD\"`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "closed_every_year": {
+          "default": [],
+          "description": "Trading days closed every year, as `\"MM-DD\"`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "daily_breaks": {
+          "default": [],
+          "description": "Daily breaks, each a local `[start, end)`; `end < start` runs across midnight.",
+          "items": {
+            "$ref": "#/$defs/DailyBreakSpec"
+          },
+          "type": "array"
+        },
+        "time_zone": {
+          "description": "IANA time zone name, for example `\"America/New_York\"` or `\"UTC\"`.",
+          "type": "string"
+        },
+        "trading_day_start": {
+          "default": "00:00",
+          "description": "Local time at which a trading day begins, `\"HH:MM\"`. `\"00:00\"` (the\ndefault): the local calendar day. Later: the trading day named D begins\nat this time on the day before D. Closed days are trading days.",
+          "type": "string"
+        },
+        "week_close": {
+          "description": "Weekly close: a weekday and a local time, `\"fri 17:00\"`.",
+          "type": "string"
+        },
+        "week_open": {
+          "description": "Weekly open: a weekday and a local time, `\"sun 17:00\"`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "time_zone",
+        "week_open",
+        "week_close"
+      ],
+      "type": "object"
+    },
     "SweepConfig": {
       "description": "`[sweep]` block — sweep-level seed + cardinality ceiling.",
       "properties": {
+        "calendar": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CalendarSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Market calendar for every `[[jobs]]` block that sets none: a preset\nname or a table. Default `fx_new_york`."
+        },
         "max_jobs": {
           "default": 100000,
           "format": "uint64",

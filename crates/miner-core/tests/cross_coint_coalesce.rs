@@ -85,6 +85,7 @@ fn engle_granger_request(window: ClosedRangeUtc) -> ScanRequest {
             end_utc: window.end,
         },
         gap_policy: GapPolicyKind::ContinuousOnly,
+        calendar: miner_core::engine::MarketCalendar::default(),
         resolved_params: resolved,
         param_hash,
         dry_run: false,

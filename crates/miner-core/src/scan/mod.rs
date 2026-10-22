@@ -40,6 +40,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::gap_policy::GapPolicyKind;
+use crate::engine::market_calendar::MarketCalendar;
 use crate::findings::{FindingSink, RunId, TimeRange};
 use tradedesk_data::aggregator::{BarFrame, Timeframe};
 use tradedesk_data::gap::GapManifest;
@@ -532,6 +533,11 @@ pub struct ScanRequest {
     /// Gap policy — `strict` or `continuous_only` (D3-19 default
     /// `continuous_only`).
     pub gap_policy: GapPolicyKind,
+    /// Market calendar (M33-R2): a hole in the data while the market is
+    /// closed is not a gap. Defaults to the `fx_new_york` preset; set it with
+    /// [`ScanRequest::with_calendar`].
+    #[serde(default)]
+    pub calendar: MarketCalendar,
     /// Resolved, post-defaults parameter object (the input to `param_hash`
     /// per D3-13).
     pub resolved_params: serde_json::Value,
@@ -633,6 +639,7 @@ impl ScanRequest {
             window,
             sub_range,
             gap_policy,
+            calendar: MarketCalendar::default(),
             resolved_params,
             param_hash,
             dry_run,
@@ -657,6 +664,13 @@ impl ScanRequest {
     ///
     /// NEVER reachable in release production builds — the cfg gate matches the
     /// matching field gate (`#[cfg(any(test, feature = "test-internal"))]`).
+    /// Set the market calendar the gap policy uses (M33-R2).
+    #[must_use]
+    pub fn with_calendar(mut self, calendar: MarketCalendar) -> Self {
+        self.calendar = calendar;
+        self
+    }
+
     #[cfg(any(test, feature = "test-internal"))]
     #[must_use]
     pub fn with_sleep_after_first_finding_ms(mut self, value: Option<u64>) -> Self {
@@ -782,6 +796,7 @@ mod tests {
                 end_utc: end,
             },
             gap_policy: GapPolicyKind::ContinuousOnly,
+            calendar: crate::engine::MarketCalendar::default(),
             resolved_params: serde_json::json!({"lags": 5}),
             param_hash: blake3_hex_zero(),
             dry_run: false,
@@ -827,6 +842,7 @@ mod tests {
                 end_utc: end,
             },
             gap_policy: GapPolicyKind::ContinuousOnly,
+            calendar: crate::engine::MarketCalendar::default(),
             resolved_params: serde_json::json!({}),
             param_hash: blake3_hex_zero(),
             dry_run: false,
@@ -1291,6 +1307,7 @@ mod tests {
                 end_utc: end,
             },
             gap_policy: GapPolicyKind::ContinuousOnly,
+            calendar: crate::engine::MarketCalendar::default(),
             resolved_params: serde_json::json!({"lags": 20}),
             param_hash: blake3_hex_zero(),
             dry_run,

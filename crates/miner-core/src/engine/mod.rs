@@ -52,12 +52,14 @@ pub mod framing;
 pub mod gap_policy;
 pub(crate) mod hygiene_buffering_sink;
 pub(crate) mod hygiene_dispatch;
+pub mod market_calendar;
 pub mod param_hash;
 pub mod preflight;
 
 // Plan 04 imports these via `use miner_core::engine::*;` — re-export the
 // two enums so callers don't need to spell out the inner module path.
 pub use gap_policy::{GapDispatch, GapPolicyKind};
+pub use market_calendar::{CalendarSpec, MarketCalendar};
 
 // ---------------------------------------------------------------------------
 // RunOutcome — internal enum the CLI maps to an exit code (D3-24).
@@ -437,8 +439,13 @@ pub fn run_one_with_registry<R: Reader>(
     // full, unfiltered `manifest` continues to flow into the result
     // envelope's `data_slice.gap_manifest` so data-quality information
     // is preserved.
-    let dispatch_result =
-        gap_policy::dispatch_at_timeframe(&manifest, req.window, req.gap_policy, req.timeframe);
+    let dispatch_result = gap_policy::dispatch_at_timeframe(
+        &manifest,
+        req.window,
+        req.gap_policy,
+        req.timeframe,
+        &req.calendar,
+    );
 
     // -----------------------------------------------------------------------
     // Step 6 — Dispatch.
@@ -990,6 +997,7 @@ fn dispatch_pair_arity_body<R: Reader>(
         req.window,
         req.gap_policy,
         req.timeframe,
+        &req.calendar,
     );
 
     match dispatch_result {
@@ -1985,6 +1993,7 @@ mod tests {
                 end_utc: window_end,
             },
             gap_policy,
+            calendar: crate::engine::MarketCalendar::default(),
             resolved_params: resolved,
             param_hash,
             dry_run,
@@ -2924,6 +2933,7 @@ mod tests {
                 end_utc: end,
             },
             gap_policy: GapPolicyKind::ContinuousOnly,
+            calendar: crate::engine::MarketCalendar::default(),
             resolved_params: resolved,
             param_hash,
             dry_run: false,
@@ -3332,6 +3342,7 @@ mod cancellation_tests {
                 end_utc: end,
             },
             gap_policy: GapPolicyKind::ContinuousOnly,
+            calendar: crate::engine::MarketCalendar::default(),
             resolved_params: resolved,
             param_hash,
             dry_run: false,
