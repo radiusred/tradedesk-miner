@@ -139,7 +139,7 @@ else:
 
 The wire-form `code` (preflight `WireError`) and `error_code` (mid-stream `ScanError`) fields take values from two locked enums under `crates/miner-core/src/error/codes.rs`. The Rust types live in `codes.rs`; `mod.rs` only re-exports them, so a grep against `mod.rs` would miss every code — the source of truth for the literal wire strings is the `as_str()` arms in `codes.rs`.
 
-**Preflight rejections** — single `WireError` on stderr, exit code 1, no `Result` envelope emitted. Nine `PreflightCode` variants:
+**Preflight rejections** — single `WireError` on stderr, exit code 1, no `Result` envelope emitted. Ten `PreflightCode` variants:
 
 - `invalid_parameter` (`PreflightCode::InvalidParameter`) — a CLI / sweep-manifest parameter failed type / range / enum validation. Inspect `context` for offending field. Retry only after fixing the request.
 - `unknown_scan` (`UnknownScan`) — `[[jobs]].scan` or `miner scan <id>` does not resolve to a registered scan. Run `miner scans` to enumerate available IDs. Do not retry.
@@ -149,6 +149,7 @@ The wire-form `code` (preflight `WireError`) and `error_code` (mid-stream `ScanE
 - `invalid_config` (`InvalidConfig`) — a config file or env value failed parse or type-check. Inspect `context`; fix the config and retry.
 - `sweep_too_large` (`SweepTooLarge`) — cartesian expansion exceeds `[sweep].max_jobs` (default `100_000`; see [sweep_manifest.md](sweep_manifest.md#sweeptoolarge-preflight-rejection)). Tighten the manifest or bump `max_jobs` deliberately; do not blindly retry.
 - `hygiene_not_supported` (`HygieneNotSupported`) — bootstrap or null-distribution was requested on a scan whose `Scan::supports_bootstrap()` / `supports_null_method()` returned `false`. Remove the hygiene flag for that scan, or move it to one that supports it.
+- `date_fence` (`DateFence`) — the request reaches the date fence (`--not-after` / `not_after`; see [Date fence](#date-fence)). `context` carries `not_after`, `reached_by` (`window` or a span kind such as `event_window`), `bound` and `bound_kind`; a sweep adds `block` (and `window` for a window). Move the window or the event list before the fence; do not retry as-is.
 - `internal_error` (`InternalError`) — catastrophic failure unrelated to inputs. Inspect stderr `tracing` log lines for the underlying cause; file a bug. Retry with the same inputs is rarely productive.
 
 **Mid-stream `ScanError`s** — the run continues; only the offending job is lost; exit code is still 1. Four `ScanErrorCode` variants:
@@ -230,11 +231,24 @@ When exit code is `1`, scan the drained stderr lines for the last well-formed JS
 `MinerConfig` settings resolve via a layered precedence (`crates/miner-core/src/config/`):
 
 1. **CLI flag** — highest precedence; e.g. `--cache-root /tmp/cache`.
-2. **Environment variable** — `MINER_CACHE_ROOT`, `MINER_BAR_CACHE_ROOT`, `MINER_OUTPUT`.
+2. **Environment variable** — `MINER_CACHE_ROOT`, `MINER_BAR_CACHE_ROOT`, `MINER_OUTPUT`, `MINER_NOT_AFTER`.
 3. **TOML config file** — discovered via XDG / CWD lookup; layered with `figment`.
 4. **Error** — no default; missing required fields trigger `missing_required_config`.
 
 Agents that drive miner across many users / project roots should prefer explicit CLI flags (precedence 1) for reproducibility — relying on environment variables makes the invocation context-sensitive and harder to cache deterministically.
+
+## Date fence
+
+`--not-after <TIMESTAMP>` (global flag; env `MINER_NOT_AFTER`; TOML key `not_after`) sets a date fence: an instant the run must not use data at or after. It takes the `--window` forms: `YYYY-MM-DD` (00:00 UTC) or `YYYY-MM-DDTHH:MM:SSZ`; any other offset is `invalid_config`. With no fence set, nothing changes.
+
+Preflight refuses, with `date_fence` and before `RunStart` (so `--dry-run` is refused too), any request that reaches the fence:
+
+- **`miner scan --window S:E`** is half-open, `[S, E)`: refused when `E` is after the fence. `E` equal to the fence is accepted — the run uses data strictly before it.
+- **Sweep `windows`** are documented closed at both ends, so the sweep reads each end as included: a date-only end `D` includes all of day `D` (refused when `D + 1 day` is after the fence); a datetime end is refused when it is at or after the fence. This is the stricter of the two readings, so the fence holds whichever one a consumer assumes.
+- **Event windows** — a scan whose params name absolute timestamps reports the span each one reaches (`Scan::param_spans`). For `seas.event.pre_post_window` that is, for each event, the event's bar plus `post_window_bars` bars: refused when it ends after the fence, even if the request window is clear of it.
+- **Forward returns** — the engine loads bars for the request window only, so a forward-looking statistic (a forward return, a gap-fill look-ahead) computed inside a run cannot read past the window end. The window check bounds every forward return.
+
+`RunStart.request.not_after` states the fence (RFC 3339, `Z`) on every run, `null` when none is set — for `miner scan` and `miner sweep` alike.
 
 ## Hygiene opt-in
 
