@@ -1154,6 +1154,33 @@ mod tests {
         assert!(validate_scan_fence(scan, window, Timeframe::Tf1d, &dflt, Some(f)).is_err());
     }
 
+    /// A post window whose end `i64` milliseconds or `DateTime<Utc>` cannot
+    /// hold still reaches the fence: refused, never dropped from the check.
+    #[test]
+    fn validate_scan_fence_unrepresentable_event_window_end() {
+        let reg = bootstrap();
+        let scan = resolve_scan("seas.event.pre_post_window@1", &reg).expect("registered");
+        let f = utc(2030, 1, 1, 0, 0);
+        let window = parse_iso_utc_window("2029-11-01:2029-12-01").unwrap();
+        let event = utc(2029, 12, 31, 22, 30).timestamp_millis();
+        for post_bars in [2_i64, 1_000_000_000_000, i64::MAX] {
+            let params = serde_json::json!({
+                "event_timestamps": [event],
+                "post_window_bars": post_bars
+            });
+            let err = validate_scan_fence(scan, window, Timeframe::Tf1h, &params, Some(f))
+                .expect_err("post window reaches the fence");
+            assert_eq!(err.code, "date_fence", "post_window_bars={post_bars}");
+            assert_eq!(
+                err.context.get("reached_by"),
+                Some(&serde_json::json!("event_window"))
+            );
+        }
+        // An event timestamp past the end of DateTime<Utc> is refused too.
+        let far = serde_json::json!({ "event_timestamps": [i64::MAX], "post_window_bars": 1 });
+        assert!(validate_scan_fence(scan, window, Timeframe::Tf1h, &far, Some(f)).is_err());
+    }
+
     /// A scan with no param spans (the default) is checked on its window only.
     #[test]
     fn default_scan_has_no_param_spans() {

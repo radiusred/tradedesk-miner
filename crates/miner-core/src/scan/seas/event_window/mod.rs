@@ -121,7 +121,10 @@ impl Scan for EventWindowScan {
     /// the window therefore uses bars that open up to
     /// `ceil_tf(event) + (post_window_bars - 1) * tf`, so its exclusive end is
     /// `ceil_tf(event) + post_window_bars * tf`. A gap only moves bars later,
-    /// and the window check bounds those. Malformed params give no spans.
+    /// and the window check bounds those. An end that `i64` milliseconds or
+    /// `DateTime<Utc>` cannot hold saturates (to `DateTime::<Utc>::MAX_UTC`
+    /// going forward), so a huge post window still reaches the fence and is
+    /// refused, never dropped. Malformed params give no spans.
     fn param_spans(
         &self,
         resolved_params: &serde_json::Value,
@@ -144,19 +147,25 @@ impl Scan for EventWindowScan {
         events
             .iter()
             .filter_map(serde_json::Value::as_i64)
-            .filter_map(|event_ms| {
+            .map(|event_ms| {
                 // First bar open at or after the event (ceil to the timeframe).
+                // Saturating arithmetic only moves the end later (or to the
+                // i64 bound), so the fence check stays fail-closed.
                 let first_open_ms = event_ms
                     .div_euclid(tf_ms)
-                    .checked_add(i64::from(event_ms.rem_euclid(tf_ms) != 0))?
-                    .checked_mul(tf_ms)?;
-                let end_ms = post_bars
-                    .checked_mul(tf_ms)
-                    .and_then(|w| first_open_ms.checked_add(w))?;
-                Some(ParamSpan {
+                    .saturating_add(i64::from(event_ms.rem_euclid(tf_ms) != 0))
+                    .saturating_mul(tf_ms);
+                let end_ms = first_open_ms.saturating_add(post_bars.saturating_mul(tf_ms));
+                let end_exclusive =
+                    DateTime::<Utc>::from_timestamp_millis(end_ms).unwrap_or(if end_ms < 0 {
+                        DateTime::<Utc>::MIN_UTC
+                    } else {
+                        DateTime::<Utc>::MAX_UTC
+                    });
+                ParamSpan {
                     kind: "event_window",
-                    end_exclusive: DateTime::<Utc>::from_timestamp_millis(end_ms)?,
-                })
+                    end_exclusive,
+                }
             })
             .collect()
     }
