@@ -231,4 +231,15 @@ fn sweep_subcommand_smoke_dry_run() {
         dry_run["planned_job_count"], 2,
         "planned_job_count must equal cartesian-expanded count; got: {dry_run}"
     );
+    // M33-R3: one coverage entry per job, in job-graph order.
+    let coverage = dry_run["coverage"].as_array().expect("coverage array");
+    let indexes: Vec<u64> = coverage
+        .iter()
+        .map(|c| c["job_index"].as_u64().expect("job_index"))
+        .collect();
+    assert_eq!(indexes, vec![0, 1], "coverage: {coverage:?}");
+    assert!(
+        coverage.iter().all(|c| c["status"] == "covered"),
+        "coverage: {coverage:?}"
+    );
 }

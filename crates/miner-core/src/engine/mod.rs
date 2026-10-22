@@ -48,6 +48,7 @@ use tradedesk_data::reader::{ClosedRangeUtc, Reader};
 
 use hygiene_buffering_sink::HygieneBufferingSink;
 
+pub mod coverage;
 pub mod framing;
 pub mod gap_policy;
 pub(crate) mod hygiene_buffering_sink;
@@ -115,7 +116,10 @@ pub enum RunOutcome {
 ///    `RunStart.request` (Blocker 2 closure; D3-21).
 /// 4. **Dry-run short-circuit** (Blocker 2 / Warning 9 pin): if
 ///    `req.dry_run == true`, emit one `Finding::DryRun` and jump to
-///    framing-close. `RunSummary.results_emitted` stays at zero — `RunSummary`
+///    framing-close. The envelope's `coverage` lists the gap-free
+///    sub-ranges the gap policy gives (M33-R3, [`coverage::job_coverage`]):
+///    gap detection reads timestamps, no bars are aggregated and no scan
+///    runs. `RunSummary.results_emitted` stays at zero — `RunSummary`
 ///    is NOT extended with any new counter field; the dry-run signal lives
 ///    in `Finding::DryRun` + `RunStart.request.dry_run` only.
 /// 5. **Gap detection** (Warning 8 wrap): `GapDetector::detect(...)` may
@@ -321,6 +325,9 @@ pub fn run_one_with_registry<R: Reader>(
     // Step 4 — Dry-run short-circuit (Blocker 2 / D3-21 / Warning 9 pin).
     // -----------------------------------------------------------------------
     if req.dry_run {
+        // M33-R3: the coverage check reads the cache's timestamps (gap
+        // detection) but aggregates no bars and runs no scan kernel.
+        let coverage = vec![coverage::job_coverage(0, req, reader)];
         let planned_data_slice = DataSlice {
             range: TimeRange {
                 start_utc: req.window.start,
@@ -345,6 +352,7 @@ pub fn run_one_with_registry<R: Reader>(
             // planned_job_count None; only the sweep --dry-run path populates
             // this with the cartesian-expanded job count.
             planned_job_count: None,
+            coverage,
         });
         sink.write_envelope(&dry_run_finding)?;
         // Pitfall 3: results_emitted stays at 0 — DryRun does NOT increment
@@ -2478,6 +2486,52 @@ mod tests {
     /// envelope on stdout (D-09 / OUT-04 framing invariant violation). The
     /// previous reader-error wraps-via-MinerError-Scan test name is
     /// deliberately gone — see CR-01 closure notes in 03-07-PLAN.md.
+    /// M33-R3: a reader error in a dry run is a `status: error` coverage
+    /// entry, not a `scan_error` envelope, and no counter moves.
+    #[test]
+    fn dry_run_reader_error_is_a_coverage_entry() {
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, true);
+        let mut reader = FakeReader::new();
+        reader.force_err = true;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp_config(&tmp);
+        let mut sink = VecSink::new();
+        let outcome = run_one(
+            &req,
+            &cfg,
+            &reader,
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("dry run returns Ok");
+        assert_eq!(outcome, RunOutcome::Ok);
+
+        let findings = parse_findings(&sink);
+        assert_eq!(
+            findings.len(),
+            3,
+            "run_start, dry_run, run_end: {findings:?}"
+        );
+        let Finding::DryRun(dr) = &findings[1] else {
+            panic!("expected dry_run; got {:?}", findings[1]);
+        };
+        assert_eq!(dr.coverage.len(), 1);
+        let entry = &dr.coverage[0];
+        assert_eq!(entry.status, crate::findings::CoverageStatus::Error);
+        assert!(entry.sub_ranges.is_empty());
+        assert_eq!(
+            entry.message.as_deref(),
+            Some("reader: forced reader error")
+        );
+        let Finding::RunEnd(re) = &findings[2] else {
+            panic!("expected run_end");
+        };
+        assert_eq!(re.summary.scan_errors, 0);
+        assert_eq!(re.summary.results_emitted, 0);
+    }
+
     #[test]
     fn run_one_reader_error_emits_run_start_and_run_end_with_scan_error() {
         let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();

@@ -237,6 +237,23 @@ fn dry_run_emits_dry_run_finding_only() {
         lines.iter().all(|l| l["kind"] != "result"),
         "no Result must be emitted in a dry run",
     );
+    // M33-R3: one coverage entry; the full synthetic day is one sub-range.
+    let coverage = lines[1]["coverage"].as_array().expect("coverage array");
+    assert_eq!(coverage.len(), 1, "coverage: {coverage:?}");
+    assert_eq!(coverage[0]["status"], "covered");
+    assert_eq!(
+        coverage[0]["sub_ranges"],
+        serde_json::json!([{
+            "start_utc": "2024-06-12T00:00:00Z",
+            "end_utc": "2024-06-13T00:00:00Z"
+        }])
+    );
+    // The dry_run line, coverage included, passes the committed schema.
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(schema_path()).expect("read schema"))
+            .expect("schema JSON");
+    let validator = jsonschema::validator_for(&schema).expect("valid schema");
+    assert!(validator.is_valid(&lines[1]), "dry_run line: {}", lines[1]);
 }
 
 // ---------------------------------------------------------------------------

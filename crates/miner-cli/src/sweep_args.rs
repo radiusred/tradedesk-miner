@@ -48,8 +48,9 @@ pub struct SweepArgs {
     pub manifest: PathBuf,
 
     /// Short-circuit to `DryRunFinding` emission (per Plan 05-04). The sweep
-    /// runner emits one `Finding::DryRun` with `planned_job_count` and skips
-    /// all scan bodies. Exit 0.
+    /// runner emits one `Finding::DryRun` with `planned_job_count` and, per
+    /// job, the gap-free sub-ranges the gap policy gives (`coverage`, from
+    /// the cache's timestamps), and skips all scan bodies. Exit 0.
     #[arg(long)]
     pub dry_run: bool,
 

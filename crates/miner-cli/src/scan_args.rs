@@ -95,7 +95,8 @@ pub struct ScanArgs {
     /// Emit one `Finding::DryRun` envelope and exit 0 (D3-21). The facade
     /// still wraps in `RunStart`/`RunEnd` framing so the dry-run output is
     /// structurally indistinguishable from a normal run except for the
-    /// envelope kind.
+    /// envelope kind. Its `coverage` lists the gap-free sub-ranges the gap
+    /// policy gives, from the cache's timestamps; no scan runs (M33-R3).
     #[arg(long)]
     pub dry_run: bool,
 
