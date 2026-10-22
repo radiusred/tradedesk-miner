@@ -26,6 +26,26 @@
       ],
       "type": "object"
     },
+    "CoverageStatus": {
+      "description": "M33-R3 — what a dry run found for one job's data coverage.",
+      "oneOf": [
+        {
+          "const": "covered",
+          "description": "The gap policy lets the job run over `sub_ranges` (possibly empty, when\ngaps cover the whole window).",
+          "type": "string"
+        },
+        {
+          "const": "gap_aborted",
+          "description": "`strict` policy and an open-market gap remains: the run would emit\n`gap_aborted`. `sub_ranges` is empty; `gaps` lists the gaps.",
+          "type": "string"
+        },
+        {
+          "const": "error",
+          "description": "The reader failed while the gaps were detected; `message` says why.",
+          "type": "string"
+        }
+      ]
+    },
     "DataSlice": {
       "description": "The input range a scan actually consumed (post gap-partitioning).\n\n`gap_manifest_ref` is reserved for the Phase-7 content-addressed\ndeduplication path. `gap_manifest` is populated by Phase 3's\n`continuous_only` gap policy (D3-10 / D3-12) — the full Phase-2\n`GapManifest` is inlined into every `Result` finding's `data_slice` so the\nfinding is self-describing without cross-referencing.\n\nBoth optional fields MUST serialise as JSON `null` when absent (NOT\nomitted) — the same convention used by `dsr` / `fdr_q` on `ResultFinding`.\nDO NOT add `#[serde(skip_serializing_if = \"Option::is_none\")]` to either\nfield (03-PATTERNS line 572).",
       "properties": {
@@ -67,6 +87,14 @@
     "DryRunFinding": {
       "description": "Payload for the `dry_run` framing-like envelope (D3-21).\n\nCarries the run-level provenance (`run_id`, `produced_at_utc`, `request`,\n`resolved_params`) plus the planning shape (`planned_data_slice`,\n`estimated_findings_count`). FRAMING-like — does NOT carry the seven locked\nenvelope fields (`schema_version`, `scan_id_at_version`, `param_hash`,\n`code_revision`, `data_slice`, `dsr`, `fdr_q`); those belong to the\n`Result` family.\n\nPitfall 3 invariant (pinned by `dry_run_does_not_increment_results_emitted`):\nemitting `Finding::DryRun(_)` MUST NOT increment `RunSummary.results_emitted`\n— dry-run runs leave all three summary counters at zero. The dry-run signal\nis carried in `ScanRequest.dry_run` (echoed into `RunStart.request`) and in\nthe `Finding::DryRun` variant; there is NO `dry_run_emitted` counter (Warning\n9 — pinned by `run_summary_has_no_dry_run_emitted_field`).",
       "properties": {
+        "coverage": {
+          "default": [],
+          "description": "**M33-R3.** The coverage check: for each planned job, the gap-free\nsub-ranges the gap policy gives, from the cache's timestamps only (no\nstatistic is computed). One entry for `miner scan --dry-run`; one per\njob, in job-graph order, for `miner sweep --dry-run`.\n`#[serde(default)]` keeps older `dry_run` envelopes parseable.",
+          "items": {
+            "$ref": "#/$defs/JobCoverage"
+          },
+          "type": "array"
+        },
         "estimated_findings_count": {
           "description": "Best-effort planning estimate of how many `Finding::Result` envelopes\nthe actual run would emit. `0` is a valid value (the scan computes none\non the provided slice).",
           "format": "uint64",
@@ -432,6 +460,69 @@
         "start_utc",
         "end_utc",
         "reason"
+      ],
+      "type": "object"
+    },
+    "JobCoverage": {
+      "description": "M33-R3 — one job's entry in [`DryRunFinding::coverage`].",
+      "properties": {
+        "gap_policy": {
+          "type": "string"
+        },
+        "gaps": {
+          "description": "The open-market gaps at the job's timeframe inside the window (the\njoint set of both legs for a two-leg scan): the gaps that split the\nwindow, or that abort it under `strict`.",
+          "items": {
+            "$ref": "#/$defs/TimeRange"
+          },
+          "type": "array"
+        },
+        "job_index": {
+          "description": "Position of the job in the sweep's job graph; `0` for a single scan.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "message": {
+          "description": "The reader error, when `status` is `error`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scan_id@version": {
+          "type": "string"
+        },
+        "sources": {
+          "description": "One entry per leg, parallel to the request's instruments.",
+          "items": {
+            "$ref": "#/$defs/Source"
+          },
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/CoverageStatus"
+        },
+        "sub_ranges": {
+          "description": "The sub-ranges the run would scan: after the market calendar, the\ntimeframe projection and the snap to the timeframe's buckets.",
+          "items": {
+            "$ref": "#/$defs/TimeRange"
+          },
+          "type": "array"
+        },
+        "window": {
+          "$ref": "#/$defs/TimeRange",
+          "description": "The requested window, half-open `[start_utc, end_utc)`."
+        }
+      },
+      "required": [
+        "job_index",
+        "scan_id@version",
+        "sources",
+        "window",
+        "gap_policy",
+        "status",
+        "sub_ranges",
+        "gaps"
       ],
       "type": "object"
     },

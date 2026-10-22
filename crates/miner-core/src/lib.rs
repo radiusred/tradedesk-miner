@@ -82,7 +82,7 @@ pub use config::{CliOverrides, MinerConfig, OutputDest, build_figment};
 
 // Phase 3 (scan-engine-facade-cli) extensions:
 pub use engine::{GapDispatch, GapPolicyKind, RunOutcome, run_one};
-pub use findings::DryRunFinding;
+pub use findings::{CoverageStatus, DryRunFinding, JobCoverage};
 pub use scan::ljung_box::LjungBoxScan;
 pub use scan::{
     ParamSpan, Registry, Scan, ScanCtx, ScanError, ScanFindingShape, ScanRequest, bootstrap,

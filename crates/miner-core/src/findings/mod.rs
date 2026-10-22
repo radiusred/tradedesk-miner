@@ -445,6 +445,52 @@ pub struct DryRunFinding {
     /// a new `Finding::SweepDryRun` variant.
     #[serde(default)]
     pub planned_job_count: Option<u64>,
+    /// **M33-R3.** The coverage check: for each planned job, the gap-free
+    /// sub-ranges the gap policy gives, from the cache's timestamps only (no
+    /// statistic is computed). One entry for `miner scan --dry-run`; one per
+    /// job, in job-graph order, for `miner sweep --dry-run`.
+    /// `#[serde(default)]` keeps older `dry_run` envelopes parseable.
+    #[serde(default)]
+    pub coverage: Vec<JobCoverage>,
+}
+
+/// M33-R3 — what a dry run found for one job's data coverage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageStatus {
+    /// The gap policy lets the job run over `sub_ranges` (possibly empty, when
+    /// gaps cover the whole window).
+    Covered,
+    /// `strict` policy and an open-market gap remains: the run would emit
+    /// `gap_aborted`. `sub_ranges` is empty; `gaps` lists the gaps.
+    GapAborted,
+    /// The reader failed while the gaps were detected; `message` says why.
+    Error,
+}
+
+/// M33-R3 — one job's entry in [`DryRunFinding::coverage`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct JobCoverage {
+    /// Position of the job in the sweep's job graph; `0` for a single scan.
+    pub job_index: u64,
+    #[serde(rename = "scan_id@version")]
+    pub scan_id_at_version: String,
+    /// One entry per leg, parallel to the request's instruments.
+    pub sources: Vec<Source>,
+    /// The requested window, half-open `[start_utc, end_utc)`.
+    pub window: TimeRange,
+    pub gap_policy: String,
+    pub status: CoverageStatus,
+    /// The sub-ranges the run would scan: after the market calendar, the
+    /// timeframe projection and the snap to the timeframe's buckets.
+    pub sub_ranges: Vec<TimeRange>,
+    /// The open-market gaps at the job's timeframe inside the window (the
+    /// joint set of both legs for a two-leg scan): the gaps that split the
+    /// window, or that abort it under `strict`.
+    pub gaps: Vec<TimeRange>,
+    /// The reader error, when `status` is `error`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// Phase 5 (Plan 05-01 / D5-02) — payload for the `sweep_summary` envelope
@@ -682,6 +728,22 @@ mod tests {
             // Plan 05-04: single-shot dry-run leaves planned_job_count None;
             // sweep --dry-run populates it.
             planned_job_count: None,
+            coverage: vec![sample_job_coverage()],
+        }
+    }
+
+    fn sample_job_coverage() -> JobCoverage {
+        let range = sample_data_slice().range;
+        JobCoverage {
+            job_index: 0,
+            scan_id_at_version: "stats.autocorr.ljung_box@1".into(),
+            sources: vec![sample_source()],
+            window: range.clone(),
+            gap_policy: "continuous_only".into(),
+            status: CoverageStatus::Covered,
+            sub_ranges: vec![range],
+            gaps: Vec::new(),
+            message: None,
         }
     }
 
@@ -886,6 +948,34 @@ mod tests {
         let parsed: DryRunFinding =
             serde_json::from_value(legacy).expect("legacy JSON deserialises");
         assert_eq!(parsed.planned_job_count, None);
+        // M33-R3: a `dry_run` line written before the coverage field parses
+        // with no coverage entries.
+        assert!(parsed.coverage.is_empty());
+    }
+
+    /// M33-R3 — a coverage entry serialises its status in snake case, keeps
+    /// the `scan_id@version` key, and omits `message` unless the reader failed.
+    #[test]
+    fn job_coverage_wire_shape() {
+        let covered = serde_json::to_value(sample_job_coverage()).expect("serialise");
+        assert_eq!(covered["status"], "covered");
+        assert_eq!(covered["scan_id@version"], "stats.autocorr.ljung_box@1");
+        assert!(covered.get("message").is_none(), "{covered}");
+
+        let failed = JobCoverage {
+            status: CoverageStatus::Error,
+            sub_ranges: Vec::new(),
+            message: Some("reader: boom".into()),
+            ..sample_job_coverage()
+        };
+        let v = serde_json::to_value(&failed).expect("serialise");
+        assert_eq!(v["status"], "error");
+        assert_eq!(v["message"], "reader: boom");
+        let back: JobCoverage = serde_json::from_value(v).expect("deserialise");
+        assert_eq!(back, failed);
+
+        let aborted = serde_json::to_value(CoverageStatus::GapAborted).expect("serialise");
+        assert_eq!(aborted, "gap_aborted");
     }
 
     /// Test 9 — `dry_run_finding_uses_snake_case_kind`: `Finding::DryRun(_)`

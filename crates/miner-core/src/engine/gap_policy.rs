@@ -617,9 +617,21 @@ pub fn dispatch_at_timeframe(
     tf: Timeframe,
     calendar: &MarketCalendar,
 ) -> GapDispatch {
-    let open_only = without_closed_time(manifest, calendar);
-    let effective = effective_manifest_on_calendar(&open_only, tf, calendar);
+    let effective = open_gaps_at_timeframe(manifest, tf, calendar);
     drop_closed_subranges(dispatch(&effective, requested, policy), requested, calendar)
+}
+
+/// The gaps [`dispatch_at_timeframe`] partitions on: the calendar's closed
+/// minutes removed ([`without_closed_time`]), the rest projected onto `tf`
+/// ([`effective_manifest_on_calendar`]). The M33-R3 dry run reports them.
+#[must_use]
+pub fn open_gaps_at_timeframe(
+    manifest: &GapManifest,
+    tf: Timeframe,
+    calendar: &MarketCalendar,
+) -> GapManifest {
+    let open_only = without_closed_time(manifest, calendar);
+    effective_manifest_on_calendar(&open_only, tf, calendar)
 }
 
 // ---------------------------------------------------------------------------

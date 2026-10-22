@@ -46,8 +46,9 @@ use crate::config::MinerConfig;
 use crate::engine::{RunOutcome, run_one_with_registry};
 use crate::error::{MinerError, ScanErrorCode};
 use crate::findings::{
-    DataSlice, DryRunFinding, FdrFamilySummary, Finding, FindingFdrEntry, FindingSink, RunSummary,
-    ScanErrorFinding, Source, SweepSummaryFinding, SweepTotals, TimeRange, run_id::RunId,
+    DataSlice, DryRunFinding, FdrFamilySummary, Finding, FindingFdrEntry, FindingSink, JobCoverage,
+    RunSummary, ScanErrorFinding, Source, SweepSummaryFinding, SweepTotals, TimeRange,
+    run_id::RunId,
 };
 use crate::scan::ScanRequest;
 use crate::sweep::manifest::{SweepManifest, validate};
@@ -62,8 +63,8 @@ use tradedesk_data::reader::Reader;
 ///
 /// `dry_run` short-circuits the rayon fanout — the executor emits one
 /// `Finding::DryRun` with `planned_job_count == Some(estimated_count)`
-/// and returns `RunOutcome::Ok` without invoking any scan bodies (per
-/// RESEARCH Pattern 5).
+/// and one `coverage` entry per job (M33-R3), and returns `RunOutcome::Ok`
+/// without invoking any scan bodies (per RESEARCH Pattern 5).
 ///
 /// `sleep_after_first_finding_ms` is the SIGINT-race hook used by Plan 05-05's
 /// `sigint_mid_sweep` integration test to make the cancel race deterministic.
@@ -235,7 +236,25 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
     // No scan bodies, no SweepSummary; jump straight to framing-close.
     // -----------------------------------------------------------------------
     if opts.dry_run {
-        let dry_run_finding = build_sweep_dry_run(&manifest, run_id, estimated_count);
+        // M33-R3: the coverage of every job, in job-graph order. Gap
+        // detection reads timestamps only; no scan body runs. A cancel stops
+        // the walk; the jobs not reached are left out.
+        let jobs = crate::sweep::job_graph::expand(&manifest, registry)?;
+        let coverage: Vec<JobCoverage> = jobs
+            .par_iter()
+            .enumerate()
+            .filter_map(|(idx, job)| {
+                if cancel.load(Ordering::Relaxed) {
+                    return None;
+                }
+                Some(crate::engine::coverage::job_coverage(
+                    idx as u64,
+                    &job_to_scan_request(job),
+                    reader,
+                ))
+            })
+            .collect();
+        let dry_run_finding = build_sweep_dry_run(&manifest, run_id, estimated_count, coverage);
         sink.write_envelope(&dry_run_finding)?;
         emit_sweep_run_end(sink, run_id, started, SweepTotals::default())?;
         return Ok(RunOutcome::Ok);
@@ -566,7 +585,12 @@ fn build_sweep_run_start(
 /// Build a `Finding::DryRun` for a sweep dry-run — `planned_job_count`
 /// is populated; `planned_data_slice` is a placeholder (sweep doesn't
 /// have a single contiguous data slice).
-fn build_sweep_dry_run(manifest: &SweepManifest, run_id: RunId, estimated_count: u64) -> Finding {
+fn build_sweep_dry_run(
+    manifest: &SweepManifest,
+    run_id: RunId,
+    estimated_count: u64,
+    coverage: Vec<JobCoverage>,
+) -> Finding {
     use crate::findings::{DataSlice, TimeRange};
     // Use the first job's first window as the placeholder data slice,
     // when present; otherwise an epoch-zero placeholder.
@@ -619,6 +643,7 @@ fn build_sweep_dry_run(manifest: &SweepManifest, run_id: RunId, estimated_count:
         estimated_findings_count: estimated_count,
         // Plan 05-04 / RESEARCH Pattern 5: sweep --dry-run populates this.
         planned_job_count: Some(estimated_count),
+        coverage,
     })
 }
 
