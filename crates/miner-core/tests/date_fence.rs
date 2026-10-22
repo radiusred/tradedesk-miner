@@ -184,14 +184,19 @@ fn sweep_event_between_bar_boundaries_aligns_up() {
 
 /// A post window too long for its end to be represented (past the end of
 /// `DateTime<Utc>`, or past `i64` milliseconds) still reaches the fence:
-/// refused, `--dry-run` too, also with the request window clear of it.
+/// refused, `--dry-run` too, also with the request window clear of it. A
+/// negative event with an overflowing duration does not wrap into 1970.
 #[test]
 fn sweep_refuses_unrepresentable_event_window_end() {
     let event = Utc
         .with_ymd_and_hms(2024, 6, 13, 22, 30, 0)
         .unwrap()
         .timestamp_millis();
-    for post_bars in [1_000_000_000_000_i64, i64::MAX] {
+    for (event, post_bars) in [
+        (event, 1_000_000_000_000_i64),
+        (event, i64::MAX),
+        (i64::MIN, i64::MAX),
+    ] {
         let manifest = format!(
             r#"
             [[jobs]]
