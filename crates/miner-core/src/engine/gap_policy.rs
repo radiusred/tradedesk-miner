@@ -23,7 +23,9 @@
 //! 1. remove the calendar's closed minutes from every gap span
 //!    ([`without_closed_time`]), so a weekend, a holiday or a daily break on the market's
 //!    own clock never splits a window;
-//! 2. project the rest onto the timeframe ([`effective_manifest_for_timeframe`]);
+//! 2. project the rest onto the timeframe ([`effective_manifest_on_calendar`]): a
+//!    bucket is a gap when it has open minutes and none of them has data, also when
+//!    a closure cuts through the bucket;
 //! 3. dispatch ([`dispatch`]);
 //! 4. under `continuous_only`, drop a sub-range that holds no open minute
 //!    ([`drop_closed_subranges`]): closed time between two real gaps is not a result.
@@ -454,9 +456,76 @@ fn sort_spans(gaps: &mut [GapSpan]) {
 ///   the dispatch perspective).
 #[must_use]
 pub fn effective_manifest_for_timeframe(manifest: &GapManifest, tf: Timeframe) -> GapManifest {
+    project_onto_timeframe(manifest, tf, |_| true)
+}
+
+/// Calendar-aware form of [`effective_manifest_for_timeframe`], for a manifest
+/// that [`without_closed_time`] has already cut to open minutes.
+///
+/// A `tf`-bucket is a gap when it holds at least one open minute and every open
+/// minute in it is missing. A bucket with no open minute is never a gap. So a
+/// closure that cuts through a bucket (a daily break from 10:30 in a 1h bucket)
+/// does not hide a bucket whose open minutes have no data.
+#[must_use]
+pub fn effective_manifest_on_calendar(
+    manifest: &GapManifest,
+    tf: Timeframe,
+    calendar: &MarketCalendar,
+) -> GapManifest {
+    project_onto_timeframe(manifest, tf, |ts| calendar.is_open_at(ts))
+}
+
+/// Merge `[start, end)` intervals (sorted or not) into sorted, disjoint runs.
+fn coalesce(mut spans: Vec<(DateTime<Utc>, DateTime<Utc>)>) -> Vec<(DateTime<Utc>, DateTime<Utc>)> {
+    spans.sort_by_key(|(s, _)| *s);
+    let mut out: Vec<(DateTime<Utc>, DateTime<Utc>)> = Vec::with_capacity(spans.len());
+    for (s, e) in spans {
+        match out.last_mut() {
+            Some(prev) if s <= prev.1 => {
+                if e > prev.1 {
+                    prev.1 = e;
+                }
+            }
+            _ => out.push((s, e)),
+        }
+    }
+    out
+}
+
+/// Whether every open minute of the bucket `[start, end)` is in `missing` (sorted,
+/// disjoint runs). Minutes in `missing` are taken as open: the manifest holds only
+/// open minutes. Stops at the first open minute with data.
+fn bucket_has_no_open_data(
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    missing: &[(DateTime<Utc>, DateTime<Utc>)],
+    is_open: &impl Fn(DateTime<Utc>) -> bool,
+) -> bool {
+    let mut idx = missing.partition_point(|&(_, e)| e <= start);
+    let mut ts = start;
+    while ts < end {
+        while idx < missing.len() && missing[idx].1 <= ts {
+            idx += 1;
+        }
+        if idx < missing.len() && missing[idx].0 <= ts {
+            ts = missing[idx].1.min(end);
+        } else if is_open(ts) {
+            return false;
+        } else {
+            ts += chrono::Duration::minutes(1);
+        }
+    }
+    true
+}
+
+/// [`effective_manifest_for_timeframe`] with the open-minute test `is_open`.
+fn project_onto_timeframe(
+    manifest: &GapManifest,
+    tf: Timeframe,
+    is_open: impl Fn(DateTime<Utc>) -> bool,
+) -> GapManifest {
     let mut whole_day: Vec<GapSpan> = Vec::new();
-    let mut intraday: Vec<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> =
-        Vec::new();
+    let mut intraday: Vec<(DateTime<Utc>, DateTime<Utc>)> = Vec::new();
 
     for span in &manifest.gaps {
         match span.reason {
@@ -470,38 +539,48 @@ pub fn effective_manifest_for_timeframe(manifest: &GapManifest, tf: Timeframe) -
     }
 
     // Coalesce contiguous (and adjacent) intra-day spans into half-open runs.
-    intraday.sort_by_key(|(s, _)| *s);
-    let mut coalesced: Vec<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> =
-        Vec::with_capacity(intraday.len());
-    for (s, e) in intraday {
-        match coalesced.last_mut() {
-            Some(prev) if s <= prev.1 => {
-                if e > prev.1 {
-                    prev.1 = e;
+    // `missing` holds every missing minute, whole-day spans included, so a bucket
+    // that a missing file and an intra-day run share is seen as a whole.
+    let coalesced = coalesce(intraday);
+    let missing = coalesce(
+        manifest
+            .gaps
+            .iter()
+            .map(|s| (s.start_utc, s.end_utc))
+            .collect(),
+    );
+
+    // For each bucket that a run touches, retain it when it has no data in open
+    // time. A bucket that the run covers fully needs no check. Adjacent retained
+    // buckets merge into one span.
+    let mut buckets: Vec<(DateTime<Utc>, DateTime<Utc>)> = Vec::new();
+    let mut checked_until: Option<DateTime<Utc>> = None;
+    for (run_start, run_end) in coalesced {
+        let mut b = align_down(run_start, tf);
+        if let Some(until) = checked_until {
+            b = b.max(until);
+        }
+        while b < run_end {
+            let b_end = b + tf.duration();
+            let full = run_start <= b && b_end <= run_end;
+            if full || bucket_has_no_open_data(b, b_end, &missing, &is_open) {
+                match buckets.last_mut() {
+                    Some(prev) if prev.1 == b => prev.1 = b_end,
+                    _ => buckets.push((b, b_end)),
                 }
             }
-            _ => coalesced.push((s, e)),
+            b = b_end;
         }
+        checked_until = Some(b);
     }
 
-    // For each coalesced run, retain only the fully-covered tf-bucket span.
-    let mut effective_intraday: Vec<GapSpan> = Vec::with_capacity(coalesced.len());
-    for (run_start, run_end) in coalesced {
-        let bucket_start = align_up(run_start, tf);
-        let bucket_end = align_down(run_end, tf);
-        if bucket_start >= bucket_end {
-            // Run does not fully cover any tf-bucket — the aggregator will
-            // absorb it. Drop.
-            continue;
-        }
-        let affected_minutes = (bucket_end - bucket_start).num_minutes();
-        let affected_minutes = u32::try_from(affected_minutes).unwrap_or(u32::MAX);
-        effective_intraday.push(GapSpan {
-            start_utc: bucket_start,
-            end_utc: bucket_end,
-            reason: GapReason::IntraDayGap { affected_minutes },
-        });
-    }
+    let effective_intraday = buckets.into_iter().map(|(start, end)| GapSpan {
+        start_utc: start,
+        end_utc: end,
+        reason: GapReason::IntraDayGap {
+            affected_minutes: u32::try_from((end - start).num_minutes()).unwrap_or(u32::MAX),
+        },
+    });
 
     let mut gaps = whole_day;
     gaps.extend(effective_intraday);
@@ -522,7 +601,7 @@ pub fn effective_manifest_for_timeframe(manifest: &GapManifest, tf: Timeframe) -
 
 /// Calendar- and timeframe-aware single-leg dispatch — removes the
 /// calendar's closed minutes ([`without_closed_time`]), projects the rest
-/// through [`effective_manifest_for_timeframe`], delegates to [`dispatch`]
+/// through [`effective_manifest_on_calendar`], delegates to [`dispatch`]
 /// and drops closed-only sub-ranges ([`drop_closed_subranges`]).
 ///
 /// New engine call-sites should prefer this entry point over the raw
@@ -539,7 +618,7 @@ pub fn dispatch_at_timeframe(
     calendar: &MarketCalendar,
 ) -> GapDispatch {
     let open_only = without_closed_time(manifest, calendar);
-    let effective = effective_manifest_for_timeframe(&open_only, tf);
+    let effective = effective_manifest_on_calendar(&open_only, tf, calendar);
     drop_closed_subranges(dispatch(&effective, requested, policy), requested, calendar)
 }
 
@@ -1726,9 +1805,121 @@ mod tests {
         assert_eq!(legacy.len(), 3);
     }
 
+    /// A UTC calendar open Monday to Friday with one daily break `start`-`end`.
+    fn utc_with_break(start: &str, end: &str) -> MarketCalendar {
+        MarketCalendar::try_from(crate::engine::market_calendar::MarketCalendarSpec {
+            time_zone: "UTC".into(),
+            week_open: "mon 00:00".into(),
+            week_close: "sat 00:00".into(),
+            trading_day_start: "00:00".into(),
+            daily_breaks: vec![crate::engine::market_calendar::DailyBreakSpec {
+                start: start.into(),
+                end: end.into(),
+            }],
+            closed_every_year: Vec::new(),
+            closed_dates: Vec::new(),
+        })
+        .unwrap()
+    }
+
+    /// A bucket that a break cuts through, with no data in its open minutes, is a
+    /// gap under both policies (review of PR #11: the 10:00-10:30 open part of a 1h
+    /// bucket with a 10:30-11:00 break was dropped before the projection).
+    #[test]
+    fn bucket_cut_by_a_break_with_no_open_data_is_a_gap() {
+        let cal = utc_with_break("10:30", "11:00");
+        let m = sorted_manifest(minute_gaps(
+            utc(2024, 6, 19, 10, 0),
+            utc(2024, 6, 19, 11, 0),
+        ));
+        let req = requested(utc(2024, 6, 19, 9, 0), utc(2024, 6, 19, 12, 0));
+        let tf = Timeframe::Tf1h;
+        assert!(matches!(
+            dispatch_at_timeframe(&m, req, GapPolicyKind::Strict, tf, &cal),
+            GapDispatch::Aborted(_)
+        ));
+        assert_eq!(
+            sub_ranges(dispatch_at_timeframe(
+                &m,
+                req,
+                GapPolicyKind::ContinuousOnly,
+                tf,
+                &cal
+            )),
+            vec![
+                TimeRange {
+                    start_utc: req.start,
+                    end_utc: utc(2024, 6, 19, 10, 0)
+                },
+                TimeRange {
+                    start_utc: utc(2024, 6, 19, 11, 0),
+                    end_utc: req.end
+                },
+            ]
+        );
+    }
+
+    /// A break not on a bucket boundary (10:05-10:50 at 15m): the two buckets it
+    /// cuts are gaps when their open minutes have no data, the buckets inside it
+    /// are not, and one open minute with data keeps a bucket.
+    #[test]
+    fn non_aligned_break_keeps_only_buckets_without_open_data() {
+        let cal = utc_with_break("10:05", "10:50");
+        let tf = Timeframe::Tf15m;
+        let req = requested(utc(2024, 6, 19, 9, 0), utc(2024, 6, 19, 12, 0));
+        let mut gaps = minute_gaps(utc(2024, 6, 19, 10, 0), utc(2024, 6, 19, 10, 5));
+        gaps.extend(minute_gaps(
+            utc(2024, 6, 19, 10, 50),
+            utc(2024, 6, 19, 11, 0),
+        ));
+        let m = sorted_manifest(gaps);
+        assert!(matches!(
+            dispatch_at_timeframe(&m, req, GapPolicyKind::Strict, tf, &cal),
+            GapDispatch::Aborted(_)
+        ));
+        assert_eq!(
+            sub_ranges(dispatch_at_timeframe(
+                &m,
+                req,
+                GapPolicyKind::ContinuousOnly,
+                tf,
+                &cal
+            )),
+            vec![
+                TimeRange {
+                    start_utc: req.start,
+                    end_utc: utc(2024, 6, 19, 10, 0)
+                },
+                TimeRange {
+                    start_utc: utc(2024, 6, 19, 11, 0),
+                    end_utc: req.end
+                },
+            ],
+            "the closed 10:15-10:45 buckets are not a sub-range"
+        );
+        // 10:04 has data: neither bucket is a gap.
+        let m = sorted_manifest(minute_gaps(
+            utc(2024, 6, 19, 10, 0),
+            utc(2024, 6, 19, 10, 4),
+        ));
+        assert_eq!(
+            sub_ranges(dispatch_at_timeframe(
+                &m,
+                req,
+                GapPolicyKind::Strict,
+                tf,
+                &cal
+            )),
+            vec![TimeRange {
+                start_utc: req.start,
+                end_utc: req.end
+            }]
+        );
+    }
+
     proptest! {
-        /// For random one-minute holes over two weeks, at 5m:
-        /// - no sub-range holds a whole 5m bucket in which the market is open
+        /// For random one-minute holes over two weeks, at 5m and 15m:
+        /// - no sub-range holds a whole bucket in which the market is open
         ///   for at least one minute and every open minute is a hole (a real gap
         ///   at that timeframe);
         /// - every hole in closed time is ignored: the result equals the result
@@ -1737,12 +1928,15 @@ mod tests {
         fn calendar_dispatch_never_hides_an_open_gap_proptest(
             offsets in proptest::collection::vec(0u32..20_160, 0..400),
             runs in proptest::collection::vec((0u32..20_160, 1u32..240), 0..6),
-            cal_idx in 0usize..3,
+            cal_idx in 0usize..4,
+            tf_15m in any::<bool>(),
         ) {
             let cal = match cal_idx {
                 0 => new_york(),
                 1 => fx_utc(),
-                _ => new_york_with_daily_break(),
+                2 => new_york_with_daily_break(),
+                // A break that is not on a 5m or 15m boundary.
+                _ => utc_with_break("10:07", "10:38"),
             };
             let anchor = utc(2024, 3, 4, 0, 0);
             let mut minutes: std::collections::BTreeSet<u32> = offsets.into_iter().collect();
@@ -1759,7 +1953,8 @@ mod tests {
                 .map(|&m| gap(at(m), at(m + 1)))
                 .collect();
             let req = requested(anchor, at(20_160));
-            let tf = Timeframe::Tf5m;
+            let tf = if tf_15m { Timeframe::Tf15m } else { Timeframe::Tf5m };
+            let tf_minutes = u32::try_from(tf.duration().num_minutes()).unwrap();
             let d_all = dispatch_at_timeframe(
                 &manifest_with_gaps(all), req, GapPolicyKind::ContinuousOnly, tf, &cal);
             let d_open = dispatch_at_timeframe(
@@ -1770,7 +1965,7 @@ mod tests {
             for sub in &subs {
                 let mut b = align_up(sub.start_utc, tf);
                 while b + tf.duration() <= sub.end_utc {
-                    let bucket: Vec<u32> = (0..5)
+                    let bucket: Vec<u32> = (0..tf_minutes)
                         .map(|k| u32::try_from((b - anchor).num_minutes()).unwrap() + k)
                         .collect();
                     let open_mins: Vec<u32> =
