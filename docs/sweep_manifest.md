@@ -9,7 +9,7 @@ The sweep runner emits the same locked `Finding` envelopes as `miner scan` — s
 - **Cartesian fanout:** every `[[jobs]]` block expands into one `ResolvedJob` per `(scan x instrument-spec x timeframe x window x param-point)`.
 - **Hygiene + FDR opt-in:** `[hygiene]` and `[fdr]` are optional global blocks; per-`[[jobs]]` `[jobs.hygiene]` overrides shallow-merge over the global block via `merge_hygiene`.
 - **Deterministic seed propagation:** `[sweep].seed` is the master seed; per-job seeds derive via blake3 over the resolved (scan, instrument, timeframe, window, params) tuple. Byte-identical findings across re-runs.
-- **Dry-run support:** `--dry-run` emits a single `Finding::DryRun` envelope carrying the resolved-job graph plus `planned_job_count`; no scan executes.
+- **Dry-run support:** `--dry-run` emits a single `Finding::DryRun` envelope carrying `planned_job_count` and each job's gap-free sub-ranges (`coverage`); no scan executes.
 - **End-of-sweep summary:** a single `Finding::SweepSummary` is emitted before `RunEnd`, carrying `SweepTotals` plus per-family `FdrFamilySummary` entries with Benjamini-Hochberg-adjusted q-values.
 - **Preflight rejection:** a `SweepTooLarge` preflight error fires if the cartesian expansion would exceed `[sweep].max_jobs` (default 100_000); the sweep does not start. The `T-05-04-V5-SIZE` threat-model mitigation.
 
@@ -166,13 +166,13 @@ Both policies count only time when the market is open as a gap. The block's `cal
 
 ## Resolved job graph + planned_job_count
 
-Under `--dry-run`, the sweep runner emits exactly one `Finding::DryRun` envelope carrying the planned `data_slice`, `estimated_findings_count`, and the sweep-specific `planned_job_count` (the count after full cartesian expansion). No scan kernel executes.
+Under `--dry-run`, the sweep runner emits exactly one `Finding::DryRun` envelope carrying the planned `data_slice`, `estimated_findings_count`, the sweep-specific `planned_job_count` (the count after full cartesian expansion) and `coverage`: for each job, in job-graph order, the gap-free sub-ranges the gap policy gives, from the cache's timestamps (see [findings_envelope.md](findings_envelope.md#dryrun-coverage)). No scan kernel executes.
 
 A `miner sweep --dry-run` invocation against the basic-usage manifest above produces:
 
 ```jsonl
 {"kind":"run_start", ...}
-{"kind":"dry_run", "planned_job_count": 4, "planned_data_slice": {...}, ...}
+{"kind":"dry_run", "planned_job_count": 4, "planned_data_slice": {...}, "coverage": [{"job_index": 0, "status": "covered", "sub_ranges": [...], "gaps": [...], ...}, ...], ...}
 {"kind":"run_end", ...}
 ```
 

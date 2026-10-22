@@ -50,6 +50,24 @@ So a multi-year window gives one result unless a real data gap splits it.
 and 3, so no data-quality information is lost. A `GapAborted` carries the manifest after
 steps 2 and 3: the gaps that caused the abort.
 
+## Check the coverage before a run
+
+`--dry-run` on `miner scan` or `miner sweep` takes steps 1 to 4 for each job and runs no
+scan. The `dry_run` envelope's `coverage` array has one entry per job:
+
+- `sub_ranges`: the sub-ranges the run would give the scan, snapped to the timeframe's
+  bars. For a scan that emits one `Result` per sub-range, they are the
+  `data_slice.range` values of the run's `Result` envelopes.
+- `gaps`: the gaps after steps 2 and 3, inside the window (for a two-leg scan, the gaps
+  of either leg).
+- `status`: `covered`; `gap_aborted` (`strict` and a gap remains: no sub-range);
+  or `error` (the reader failed; `message` says why).
+
+The gap detector reads the timestamps in the cache. No bars are aggregated and no
+statistic is computed, so a dry run is a fast check that a multi-year window, or every
+job of a sweep, has the data you expect. [findings_envelope.md](findings_envelope.md)
+has the fields.
+
 ## Before the market calendar
 
 Before the market calendar was added, step 2 did not exist. The detector's fixed UTC
