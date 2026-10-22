@@ -217,13 +217,15 @@ pub fn run_sweep_with_registry<R: Reader + Sync>(
     // Step 2 — preflight (typed Preflight error on rejection).
     // -----------------------------------------------------------------------
     let estimated_count = validate(&manifest, registry)?;
+    // M33-R1: date-fence preflight (closed sweep windows + param spans).
+    crate::sweep::manifest::validate_fence(&manifest, registry, cfg.not_after)?;
 
     // -----------------------------------------------------------------------
     // Step 3 — framing-open (RunStart).
     // -----------------------------------------------------------------------
     let run_id = RunId::new();
     let started = Utc::now();
-    let run_start = build_sweep_run_start(&manifest, run_id, started);
+    let run_start = build_sweep_run_start(&manifest, run_id, started, cfg.not_after);
     sink.write_envelope(&run_start)?;
 
     // -----------------------------------------------------------------------
@@ -512,6 +514,7 @@ fn build_sweep_run_start(
     manifest: &SweepManifest,
     run_id: RunId,
     started: chrono::DateTime<Utc>,
+    not_after: Option<chrono::DateTime<Utc>>,
 ) -> Finding {
     use crate::findings::RunStart;
     let mut request = serde_json::Map::new();
@@ -538,6 +541,10 @@ fn build_sweep_run_start(
         serde_json::Value::Number(serde_json::Number::from(manifest.jobs.len())),
     );
     request.insert("dry_run".to_string(), serde_json::Value::Bool(false));
+    request.insert(
+        "not_after".to_string(),
+        crate::engine::framing::not_after_value(not_after),
+    );
 
     Finding::RunStart(RunStart {
         run_id,

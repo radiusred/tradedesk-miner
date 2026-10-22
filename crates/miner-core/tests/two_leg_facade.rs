@@ -105,6 +105,7 @@ fn two_leg_facade_pair_arity_dispatch_emits_result_envelope() {
         cache_root: cache.cache_root().to_path_buf(),
         bar_cache_root: cache.bar_cache_root().to_path_buf(),
         output: OutputDest::Stdout,
+        not_after: None,
     };
     let reader = DukascopyReader::new(cache.cache_root());
 

@@ -278,6 +278,20 @@ pub fn run_one_with_registry<R: Reader>(
     preflight::validate_hygiene_support(scan, req.bootstrap_method, req.null_method)
         .map_err(MinerError::Preflight)?;
 
+    // M33-R1: date-fence preflight. Refuse a request whose half-open window
+    // or whose param-named spans (event windows) reach `cfg.not_after`,
+    // before RunStart and before the dry-run short-circuit. The engine loads
+    // bars for the window only, so the window check also bounds every
+    // forward return a scan computes.
+    preflight::validate_scan_fence(
+        scan,
+        req.window,
+        req.timeframe,
+        &req.resolved_params,
+        cfg.not_after,
+    )
+    .map_err(MinerError::Preflight)?;
+
     // jsonschema validation of resolved_params against scan.param_schema() is
     // OUT OF SCOPE for Phase 3 (heavyweight dep + duplicated by the per-scan
     // internal checks like LjungBoxScan's lags-range guard). The typed-fallback
@@ -288,7 +302,8 @@ pub fn run_one_with_registry<R: Reader>(
     // -----------------------------------------------------------------------
     let run_id = RunId::new();
     let started = Utc::now();
-    let run_start_finding = framing::build_run_start(req, run_id, started, crate::CODE_REVISION);
+    let run_start_finding =
+        framing::build_run_start(req, run_id, started, crate::CODE_REVISION, cfg.not_after);
     sink.write_envelope(&run_start_finding)?;
 
     // Holds the request Value the dry-run path echoes (extracted from the
@@ -1989,6 +2004,7 @@ mod tests {
             cache_root: tmp.path().join("cache"),
             bar_cache_root: tmp.path().join("bar-cache"),
             output: OutputDest::Stdout,
+            not_after: None,
         }
     }
 
@@ -3072,6 +3088,169 @@ mod tests {
             "stdout must stay empty on preflight rejection (D-06)"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // M33-R1 — date fence
+    // -----------------------------------------------------------------------
+
+    fn fence_reader() -> FakeReader {
+        // Two synthetic days; the second lies past the fence the tests set.
+        let mut reader = FakeReader::new();
+        for (day, seed) in [(2, 1), (3, 2)] {
+            let date = NaiveDate::from_ymd_opt(2024, 1, day).unwrap();
+            reader.insert_day(
+                "EURUSD",
+                Side::Bid,
+                date,
+                build_full_day_1m_bars(date, seed),
+            );
+        }
+        reader
+    }
+
+    fn fenced_config(tmp: &tempfile::TempDir, fence: DateTime<Utc>) -> MinerConfig {
+        MinerConfig {
+            not_after: Some(fence),
+            ..tmp_config(tmp)
+        }
+    }
+
+    /// A window past the fence is refused at preflight: typed `date_fence`
+    /// error, nothing on stdout. The dry-run path is refused the same way.
+    #[test]
+    fn run_one_refuses_window_past_fence() {
+        let fence = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 3, 0, 15, 0).unwrap();
+        for dry_run in [false, true] {
+            let req = sample_request("EURUSD", start, end, GapPolicyKind::ContinuousOnly, dry_run);
+            let tmp = tempfile::TempDir::new().unwrap();
+            let cfg = fenced_config(&tmp, fence);
+            let mut sink = VecSink::new();
+            let res = run_one(
+                &req,
+                &cfg,
+                &fence_reader(),
+                &mut sink,
+                Arc::new(AtomicBool::new(false)),
+            );
+            match res {
+                Err(MinerError::Preflight(w)) => {
+                    assert_eq!(w.code, "date_fence", "dry_run={dry_run}");
+                    assert_eq!(
+                        w.context.get("reached_by"),
+                        Some(&serde_json::json!("window"))
+                    );
+                }
+                other => panic!("dry_run={dry_run}: expected date_fence; got {other:?}"),
+            }
+            assert!(
+                sink.0.is_empty(),
+                "dry_run={dry_run}: no envelope on refusal"
+            );
+        }
+    }
+
+    /// A window that ends on the fence (half-open) runs, and `RunStart`
+    /// states the fence.
+    #[test]
+    fn run_one_accepts_window_ending_on_fence_and_states_it() {
+        let fence = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let req = sample_request("EURUSD", start, fence, GapPolicyKind::ContinuousOnly, false);
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = fenced_config(&tmp, fence);
+        let mut sink = VecSink::new();
+        let outcome = run_one(
+            &req,
+            &cfg,
+            &fence_reader(),
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("window on the fence runs");
+        assert_eq!(outcome, RunOutcome::Ok);
+        let findings = parse_findings(&sink);
+        let Some(Finding::RunStart(rs)) = findings.first() else {
+            panic!("first envelope must be RunStart");
+        };
+        assert_eq!(
+            rs.request.get("not_after"),
+            Some(&serde_json::json!("2024-01-03T00:00:00Z"))
+        );
+        let (_, result_n, _, _, _, _) = count_envelopes(&findings);
+        assert_eq!(result_n, 1);
+    }
+
+    /// Records the latest bar close a scan is handed.
+    struct BarProbeScan(Arc<std::sync::atomic::AtomicI64>);
+    impl crate::scan::Scan for BarProbeScan {
+        fn id(&self) -> &'static str {
+            "test.bar_probe"
+        }
+        fn version(&self) -> u32 {
+            1
+        }
+        fn arity(&self) -> crate::scan::ScanArity {
+            crate::scan::ScanArity::Single
+        }
+        fn param_schema(&self) -> serde_json::Value {
+            serde_json::json!({"type":"object"})
+        }
+        fn finding_fields(&self) -> crate::scan::ScanFindingShape {
+            crate::scan::ScanFindingShape {
+                effect_extra_keys: &[],
+                raw_series_keys: &[],
+            }
+        }
+        fn run(
+            &self,
+            ctx: &crate::scan::ScanCtx<'_>,
+            req: &crate::scan::ScanRequest,
+            _sink: &mut dyn FindingSink,
+        ) -> Result<(), crate::scan::ScanError> {
+            let tf_ms = req.timeframe.duration().num_milliseconds();
+            if let Some(last_open) = ctx.bars.ts_open_utc.iter().max() {
+                self.0
+                    .fetch_max(last_open.timestamp_millis() + tf_ms, Ordering::SeqCst);
+            }
+            Ok(())
+        }
+    }
+
+    /// Forward returns cannot cross the fence: with the reader holding a full
+    /// day past the fence and a window ending on it, no bar a scan receives
+    /// closes after the fence. A forward-looking statistic computed from
+    /// those bars therefore uses data before the fence only.
+    #[test]
+    fn scan_never_receives_bars_past_fence() {
+        let fence = Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        let start = Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let mut req = sample_request("EURUSD", start, fence, GapPolicyKind::ContinuousOnly, false);
+        req.scan_id = "test.bar_probe".into();
+        let seen = Arc::new(std::sync::atomic::AtomicI64::new(i64::MIN));
+        let mut registry = crate::scan::Registry::new();
+        registry.register(Box::new(BarProbeScan(Arc::clone(&seen))));
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = fenced_config(&tmp, fence);
+        let mut sink = VecSink::new();
+        run_one_with_registry(
+            &req,
+            &cfg,
+            &fence_reader(),
+            &mut sink,
+            Arc::new(AtomicBool::new(false)),
+            &registry,
+        )
+        .expect("run ok");
+        let last_close = seen.load(Ordering::SeqCst);
+        assert_ne!(last_close, i64::MIN, "probe saw bars");
+        assert_eq!(
+            last_close,
+            fence.timestamp_millis(),
+            "the last bar closes on the fence, never after it"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3128,6 +3307,7 @@ mod cancellation_tests {
             cache_root: tmp.path().join("cache"),
             bar_cache_root: tmp.path().join("bar-cache"),
             output: OutputDest::Stdout,
+            not_after: None,
         }
     }
 

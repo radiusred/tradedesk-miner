@@ -49,6 +49,7 @@ fn sweep_smoke_two_scans_two_instruments() {
         cache_root: cache.cache_root().to_path_buf(),
         bar_cache_root: cache.bar_cache_root().to_path_buf(),
         output: OutputDest::Stdout,
+        not_after: None,
     };
     let reader = DukascopyReader::new(cache.cache_root());
     let bar_cache = BarCache::new(cache.bar_cache_root());

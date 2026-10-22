@@ -142,6 +142,7 @@ fn wrong_arity_single_leg_against_pair_scan_rejects_at_preflight() {
         cache_root: tmp.path().join("c"),
         bar_cache_root: tmp.path().join("bc"),
         output: OutputDest::Stdout,
+        not_after: None,
     };
     let reader = DukascopyReader::new(&cfg.cache_root);
 
@@ -238,6 +239,7 @@ fn correct_arity_pair_scan_passes_arity_preflight() {
         cache_root: cache.cache_root().to_path_buf(),
         bar_cache_root: cache.bar_cache_root().to_path_buf(),
         output: OutputDest::Stdout,
+        not_after: None,
     };
     let reader = DukascopyReader::new(cache.cache_root());
 

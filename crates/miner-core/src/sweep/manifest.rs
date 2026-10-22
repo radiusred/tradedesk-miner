@@ -42,6 +42,10 @@ use std::path::Path;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use chrono::{DateTime, Utc};
+use tradedesk_data::aggregator::Timeframe;
+
+use crate::engine::preflight;
 use crate::error::{MinerError, PreflightCode, WireError};
 use crate::scan::Registry;
 
@@ -418,6 +422,68 @@ pub fn validate(manifest: &SweepManifest, registry: &Registry) -> Result<u64, Mi
 // ---------------------------------------------------------------------------
 // Hygiene parsing helpers — shared with executor / job_graph
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// validate_fence — date-fence preflight (M33-R1)
+// ---------------------------------------------------------------------------
+
+/// Date-fence preflight for a sweep. Runs after [`validate`] (so the grid
+/// size is already bounded) and before `RunStart`, so a refused sweep writes
+/// nothing to stdout, `--dry-run` included.
+///
+/// - Every `windows` entry is read as closed at both ends
+///   ([`preflight::closed_window_fence_bound`]): a date-only end includes
+///   the whole end day. The per-job engine check reads the same window as
+///   half-open; the closed reading is the stricter of the two, so the fence
+///   holds under both.
+/// - Every param point × timeframe of the block is checked for the spans
+///   its scan's params name ([`crate::scan::Scan::param_spans`]), e.g.
+///   event windows.
+///
+/// No fence → `Ok(())` without inspecting the manifest.
+///
+/// # Errors
+/// [`PreflightCode::DateFence`] on the first window or span that reaches
+/// the fence, with `block` (the `[[jobs]]` index) added to the context;
+/// [`PreflightCode::UnknownScan`] / [`PreflightCode::InvalidParameter`] on
+/// a scan, window or timeframe that does not parse.
+pub fn validate_fence(
+    manifest: &SweepManifest,
+    registry: &Registry,
+    fence: Option<DateTime<Utc>>,
+) -> Result<(), MinerError> {
+    if fence.is_none() {
+        return Ok(());
+    }
+    for (block_idx, block) in manifest.jobs.iter().enumerate() {
+        let in_block = |e: WireError| {
+            MinerError::Preflight(e.with_context(
+                "block",
+                serde_json::Value::Number(serde_json::Number::from(block_idx)),
+            ))
+        };
+        for window in &block.windows {
+            let bound = preflight::closed_window_fence_bound(window).map_err(in_block)?;
+            preflight::check_fence(fence, "window", bound).map_err(|e| {
+                in_block(e.with_context("window", serde_json::Value::String(window.clone())))
+            })?;
+        }
+        let scan = preflight::resolve_scan(&block.scan, registry).map_err(in_block)?;
+        let grid = crate::sweep::job_graph::cartesian_params(&block.params);
+        for tf_str in &block.timeframes {
+            let tf = Timeframe::from_str(tf_str).map_err(|bad| {
+                in_block(WireError::preflight(
+                    PreflightCode::InvalidParameter,
+                    format!("[[jobs[{block_idx}]]] invalid timeframe: {bad:?}"),
+                ))
+            })?;
+            for params in &grid {
+                preflight::validate_param_spans_fence(scan, tf, params, fence).map_err(in_block)?;
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Merge the global `[hygiene]` defaults with an optional per-block
 /// `[[jobs].hygiene]` override. Per-block wins when both set; otherwise

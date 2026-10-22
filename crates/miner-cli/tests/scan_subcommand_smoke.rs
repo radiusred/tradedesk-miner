@@ -372,6 +372,71 @@ fn scan_emits_result_at_5m_and_10m() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// M33-R1 — date fence: `--not-after` refuses a window that reaches it
+// ---------------------------------------------------------------------------
+
+fn wire_error(stderr: &str) -> serde_json::Value {
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with('{'))
+        .unwrap_or_else(|| panic!("stderr WireError line missing; got: {stderr}"));
+    serde_json::from_str(line).expect("WireError parses")
+}
+
+const FENCE_SCAN: [&str; 7] = [
+    "stats.autocorr.ljung_box@1",
+    "--instrument",
+    "EURUSD:bid",
+    "--timeframe",
+    "15m",
+    "--window",
+    "2024-06-12:2024-06-13",
+];
+
+#[test]
+#[serial_test::serial]
+fn not_after_refuses_window_past_fence_exit_1() {
+    let cache = happy_path_cache();
+    let mut args = FENCE_SCAN.to_vec();
+    args.extend(["--not-after", "2024-06-12T12:00:00Z"]);
+    let (stdout, stderr, status) = run_miner(&cache, &args);
+    assert_eq!(status.code(), Some(1), "stderr: {stderr:?}");
+    assert!(
+        stdout.is_empty(),
+        "stdout must be empty on refusal; got: {stdout:?}"
+    );
+    let wire = wire_error(&stderr);
+    assert_eq!(wire["code"], "date_fence", "{wire}");
+    assert_eq!(wire["context"]["not_after"], "2024-06-12T12:00:00Z");
+    assert_eq!(wire["context"]["reached_by"], "window");
+}
+
+#[test]
+#[serial_test::serial]
+fn not_after_on_window_end_runs_and_states_fence() {
+    let cache = happy_path_cache();
+    let mut args = FENCE_SCAN.to_vec();
+    args.extend(["--not-after", "2024-06-13"]);
+    let (stdout, stderr, status) = run_miner(&cache, &args);
+    assert_eq!(status.code(), Some(0), "stderr: {stderr:?}");
+    let lines = parse_stdout_lines(&stdout);
+    assert_eq!(lines[0]["kind"], "run_start");
+    assert_eq!(lines[0]["request"]["not_after"], "2024-06-13T00:00:00Z");
+}
+
+#[test]
+#[serial_test::serial]
+fn not_after_bad_value_is_invalid_config_exit_1() {
+    let cache = happy_path_cache();
+    let mut args = FENCE_SCAN.to_vec();
+    args.extend(["--not-after", "2024-06-13T00:00:00+01:00"]);
+    let (stdout, stderr, status) = run_miner(&cache, &args);
+    assert_eq!(status.code(), Some(1), "stderr: {stderr:?}");
+    assert!(stdout.is_empty());
+    assert_eq!(wire_error(&stderr)["code"], "invalid_config");
+}
+
 #[allow(dead_code)]
 fn _ensure_schema_path(_p: &Path) {
     // Plan 06 keeps the schema path resolver around for future use.

@@ -92,6 +92,7 @@ fn cli_wins_over_env_and_toml() {
             // OutputDest::File covers the variant; the test checks that ANY CLI value
             // for `output` wins over env/TOML for the same field.
             output: Some(OutputDest::File(PathBuf::from("/cli/out.jsonl"))),
+            not_after: None,
         };
 
         let cfg = resolve(Some(Path::new("miner.toml")), cli)

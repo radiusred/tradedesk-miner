@@ -54,6 +54,8 @@ use crate::scan::ScanRequest;
 /// - `gap_policy` — wire form (`"strict"` / `"continuous_only"`)
 /// - `resolved_params` — cloned from the request
 /// - `dry_run` — boolean echo of `req.dry_run` (D3-21 / Blocker 2)
+/// - `not_after` — the date fence (M33-R1): RFC 3339 `Z` string, or `null`
+///   when no fence is set. Always present, like `dry_run`.
 ///
 /// `run_id`, timestamps, `param_hash`, and `sub_range` are deliberately NOT
 /// inside this Value — they live on the typed `RunStart` / per-finding
@@ -64,6 +66,7 @@ pub fn build_run_start(
     run_id: RunId,
     started: DateTime<Utc>,
     code_revision: &str,
+    not_after: Option<DateTime<Utc>>,
 ) -> Finding {
     // Build the request echo Value. Use `serde_json::Map` (BTreeMap-backed via
     // serde_json's default — no `preserve_order`) so iteration / key order is
@@ -123,6 +126,7 @@ pub fn build_run_start(
     // rely on. Do NOT add `skip_serializing_if`; the field appears even when
     // `false`.
     request.insert("dry_run".to_string(), serde_json::Value::Bool(req.dry_run));
+    request.insert("not_after".to_string(), not_after_value(not_after));
 
     Finding::RunStart(RunStart {
         run_id,
@@ -130,6 +134,16 @@ pub fn build_run_start(
         miner_version: env!("CARGO_PKG_VERSION").to_string(),
         code_revision: code_revision.to_string(),
         request: serde_json::Value::Object(request),
+    })
+}
+
+/// The `RunStart.request.not_after` echo (M33-R1): the fence as an RFC 3339
+/// `Z` string, or `null` when no fence is set. Never omitted, so a consumer
+/// can tell "no fence" from "an older miner that had no fence".
+#[must_use]
+pub fn not_after_value(not_after: Option<DateTime<Utc>>) -> serde_json::Value {
+    not_after.map_or(serde_json::Value::Null, |t| {
+        serde_json::Value::String(t.to_rfc3339_opts(SecondsFormat::Secs, true))
     })
 }
 
@@ -209,7 +223,7 @@ mod tests {
         let req = sample_request(false);
         let run_id = RunId::new();
         let started = Utc.with_ymd_and_hms(2026, 5, 18, 12, 0, 0).unwrap();
-        let finding = build_run_start(&req, run_id, started, "abc123");
+        let finding = build_run_start(&req, run_id, started, "abc123", None);
         let Finding::RunStart(rs) = finding else {
             panic!("expected Finding::RunStart");
         };
@@ -332,10 +346,10 @@ mod tests {
         let started1 = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
         let started2 = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
 
-        let Finding::RunStart(rs1) = build_run_start(&req, run_id, started1, "rev") else {
+        let Finding::RunStart(rs1) = build_run_start(&req, run_id, started1, "rev", None) else {
             panic!("expected RunStart");
         };
-        let Finding::RunStart(rs2) = build_run_start(&req, run_id, started2, "rev") else {
+        let Finding::RunStart(rs2) = build_run_start(&req, run_id, started2, "rev", None) else {
             panic!("expected RunStart");
         };
 
@@ -367,7 +381,8 @@ mod tests {
 
         // dry_run = true → field present as Bool(true).
         let req_true = sample_request(true);
-        let Finding::RunStart(rs_true) = build_run_start(&req_true, run_id, started, "rev") else {
+        let Finding::RunStart(rs_true) = build_run_start(&req_true, run_id, started, "rev", None)
+        else {
             panic!("expected RunStart");
         };
         assert_eq!(
@@ -378,7 +393,7 @@ mod tests {
 
         // dry_run = false → field present as Bool(false) (NOT None / omitted).
         let req_false = sample_request(false);
-        let Finding::RunStart(rs_false) = build_run_start(&req_false, run_id, started, "rev")
+        let Finding::RunStart(rs_false) = build_run_start(&req_false, run_id, started, "rev", None)
         else {
             panic!("expected RunStart");
         };
@@ -396,5 +411,27 @@ mod tests {
             s_false.contains("\"dry_run\":false"),
             "request JSON must contain literal \"dry_run\":false; got {s_false}"
         );
+    }
+
+    /// M33-R1 — `RunStart.request.not_after` states the fence; it is `null`
+    /// (present, not omitted) when no fence is set.
+    #[test]
+    fn build_run_start_request_states_not_after() {
+        let req = sample_request(false);
+        let run_id = RunId::new();
+        let started = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let fence = Utc.with_ymd_and_hms(2026, 3, 1, 12, 0, 0).unwrap();
+        let Finding::RunStart(rs) = build_run_start(&req, run_id, started, "rev", Some(fence))
+        else {
+            panic!("expected RunStart");
+        };
+        assert_eq!(
+            rs.request.get("not_after"),
+            Some(&serde_json::json!("2026-03-01T12:00:00Z"))
+        );
+        let Finding::RunStart(rs) = build_run_start(&req, run_id, started, "rev", None) else {
+            panic!("expected RunStart");
+        };
+        assert_eq!(rs.request.get("not_after"), Some(&serde_json::Value::Null));
     }
 }
