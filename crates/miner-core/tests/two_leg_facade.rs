@@ -139,6 +139,7 @@ fn two_leg_facade_pair_arity_dispatch_emits_result_envelope() {
             end_utc: end,
         },
         gap_policy: GapPolicyKind::ContinuousOnly,
+        calendar: miner_core::engine::MarketCalendar::default(),
         resolved_params: resolved,
         param_hash,
         dry_run: false,

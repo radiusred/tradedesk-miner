@@ -52,6 +52,7 @@ use crate::scan::ScanRequest;
 /// - `timeframe` — wire form ("15m" / "1h" / "1d")
 /// - `window` — object with RFC 3339 `start` / `end` strings (Z suffix)
 /// - `gap_policy` — wire form (`"strict"` / `"continuous_only"`)
+/// - `calendar` — the market calendar table in force (M33-R2)
 /// - `resolved_params` — cloned from the request
 /// - `dry_run` — boolean echo of `req.dry_run` (D3-21 / Blocker 2)
 /// - `not_after` — the date fence (M33-R1): RFC 3339 `Z` string, or `null`
@@ -119,6 +120,12 @@ pub fn build_run_start(
     request.insert(
         "gap_policy".to_string(),
         serde_json::Value::String(req.gap_policy.as_str().to_string()),
+    );
+    // M33-R2: the market calendar in force, as its full table (a preset
+    // echoes its fields, so the record does not depend on the preset list).
+    request.insert(
+        "calendar".to_string(),
+        serde_json::to_value(&req.calendar).unwrap_or_default(),
     );
     request.insert("resolved_params".to_string(), req.resolved_params.clone());
     // Blocker 2 / D3-21: `dry_run` is ALWAYS present — never omitted. This is
@@ -202,6 +209,7 @@ mod tests {
                 end_utc: end,
             },
             gap_policy: GapPolicyKind::ContinuousOnly,
+            calendar: crate::engine::MarketCalendar::default(),
             resolved_params: serde_json::json!({"lags": 20}),
             param_hash: blake3_hex_zero(),
             dry_run,

@@ -436,6 +436,7 @@ mod tests {
                 end_utc: end,
             },
             gap_policy: GapPolicyKind::ContinuousOnly,
+            calendar: crate::engine::MarketCalendar::default(),
             resolved_params: params,
             param_hash: blake3_hex_zero(),
             dry_run: false,

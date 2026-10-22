@@ -95,6 +95,7 @@ fn scan_ljung_box_squared_happy_path() {
             end_utc: window_end,
         },
         gap_policy: GapPolicyKind::ContinuousOnly,
+        calendar: miner_core::engine::MarketCalendar::default(),
         resolved_params,
         param_hash,
         dry_run: false,

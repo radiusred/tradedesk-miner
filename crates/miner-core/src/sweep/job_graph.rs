@@ -27,6 +27,7 @@
 use std::collections::BTreeMap;
 
 use crate::engine::gap_policy::GapPolicyKind;
+use crate::engine::market_calendar::MarketCalendar;
 use crate::engine::param_hash::param_hash as compute_param_hash;
 use crate::error::{MinerError, PreflightCode, WireError};
 use crate::scan::hygiene::seed::derive_job_seed;
@@ -56,6 +57,7 @@ pub struct ResolvedJob {
     pub timeframe: Timeframe,
     pub window: ClosedRangeUtc,
     pub gap_policy: GapPolicyKind,
+    pub calendar: MarketCalendar,
     pub resolved_params: serde_json::Value,
     pub param_hash: Blake3Hex,
     pub job_seed: u64,
@@ -158,6 +160,9 @@ pub fn expand(
             })?,
         };
 
+        // Step 4b: market calendar (M33-R2) — block, else [sweep], else default.
+        let calendar = crate::sweep::manifest::resolve_calendar(manifest, block_idx)?;
+
         // Step 5: cartesian fanout — instruments → timeframes → windows → params alphabetical.
         for instruments in &instruments_grid {
             for tf_str in &block.timeframes {
@@ -193,6 +198,7 @@ pub fn expand(
                             timeframe: tf,
                             window,
                             gap_policy,
+                            calendar: calendar.clone(),
                             resolved_params: params,
                             param_hash,
                             job_seed,

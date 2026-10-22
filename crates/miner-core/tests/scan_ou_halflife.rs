@@ -90,6 +90,7 @@ fn request(params: serde_json::Value) -> ScanRequest {
             end_utc: window_end,
         },
         gap_policy: GapPolicyKind::ContinuousOnly,
+        calendar: miner_core::engine::MarketCalendar::default(),
         resolved_params: params,
         param_hash,
         dry_run: false,
