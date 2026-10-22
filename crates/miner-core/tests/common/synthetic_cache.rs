@@ -180,6 +180,36 @@ impl SyntheticCache {
         write_csv_zst_day(&self.cache_root, symbol, date, side, &csv);
         self
     }
+
+    /// Same rows as [`Self::with_day_multi_holed`] (the same minutes omitted),
+    /// but every OHLC field holds `price` and the volume field holds `volume`,
+    /// as literal text. With `"NOT_A_PRICE"` / `"NOT_A_VOLUME"` the rows are
+    /// unreadable as bars but their timestamps are valid (M33-R3).
+    pub fn with_day_multi_holed_fields(
+        self,
+        symbol: &str,
+        side: Side,
+        date: NaiveDate,
+        hole_ranges: &[std::ops::Range<i64>],
+        price: &str,
+        volume: &str,
+    ) -> Self {
+        let day_start: DateTime<Utc> = date.and_hms_opt(0, 0, 0).expect("00:00:00").and_utc();
+        let mut csv = String::with_capacity(1440 * 64 + 32);
+        csv.push_str("timestamp,open,high,low,close,volume\n");
+        for i in 0..1440_i64 {
+            if hole_ranges.iter().any(|r| r.contains(&i)) {
+                continue;
+            }
+            let ts = day_start + Duration::minutes(i);
+            csv.push_str(&format!(
+                "{},{price},{price},{price},{price},{volume}\n",
+                ts.format("%Y-%m-%d %H:%M:%S%:z"),
+            ));
+        }
+        write_csv_zst_day(&self.cache_root, symbol, date, side, &csv);
+        self
+    }
 }
 
 impl Default for SyntheticCache {

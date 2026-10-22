@@ -9,6 +9,7 @@
 //! - `unknown_scan_emits_wireerror_exit_1` (OP-08 / SC-2b)
 //! - `invalid_params_emits_wireerror_exit_1` (OP-08 / SC-2c)
 //! - `dry_run_emits_dry_run_finding_only` (OP-05 / SC-4)
+//! - `dry_run_coverage_reads_timestamps_only` (M33-R3)
 //! - `exit_code_routing_zero_one_two` (D3-24)
 
 #![allow(clippy::cast_possible_wrap)]
@@ -254,6 +255,59 @@ fn dry_run_emits_dry_run_finding_only() {
             .expect("schema JSON");
     let validator = jsonschema::validator_for(&schema).expect("valid schema");
     assert!(validator.is_valid(&lines[1]), "dry_run line: {}", lines[1]);
+}
+
+// ---------------------------------------------------------------------------
+// Test 4b — M33-R3: the dry-run coverage reads timestamps only
+//
+// The QA probe on radiusred/tradedesk-miner#9: the same 1,440 minute
+// timestamps with unparseable OHLC and volume fields, then with numeric
+// fields. The coverage entry must be the same: one sub-range over the day,
+// no gaps.
+// ---------------------------------------------------------------------------
+
+#[test]
+#[serial_test::serial]
+fn dry_run_coverage_reads_timestamps_only() {
+    let day = NaiveDate::from_ymd_opt(2024, 1, 8).unwrap();
+    let coverage = |price: &str, volume: &str| {
+        let cache = SyntheticCache::new().with_day_fields("AAA", Side::Bid, day, price, volume);
+        let (stdout, stderr, status) = run_miner(
+            &cache,
+            &[
+                "seas.bucket.hour_of_day@1",
+                "--instrument",
+                "AAA:bid",
+                "--timeframe",
+                "15m",
+                "--window",
+                "2024-01-08:2024-01-09",
+                "--dry-run",
+            ],
+        );
+        assert_eq!(status.code(), Some(0), "dry-run exit 0; stderr: {stderr}");
+        let lines = parse_stdout_lines(&stdout);
+        assert_eq!(lines.len(), 3, "stdout: {stdout}");
+        assert_eq!(lines[1]["kind"], "dry_run");
+        let coverage = lines[1]["coverage"].as_array().expect("coverage array");
+        assert_eq!(coverage.len(), 1, "coverage: {coverage:?}");
+        coverage[0].clone()
+    };
+
+    let unparseable = coverage("NOT_A_PRICE", "NOT_A_VOLUME");
+    let numeric = coverage("1.0", "1");
+
+    assert_eq!(unparseable["status"], "covered", "{unparseable}");
+    assert_eq!(
+        unparseable["sub_ranges"],
+        serde_json::json!([{
+            "start_utc": "2024-01-08T00:00:00Z",
+            "end_utc": "2024-01-09T00:00:00Z"
+        }]),
+        "{unparseable}"
+    );
+    assert_eq!(unparseable["gaps"], serde_json::json!([]), "{unparseable}");
+    assert_eq!(unparseable, numeric);
 }
 
 // ---------------------------------------------------------------------------
