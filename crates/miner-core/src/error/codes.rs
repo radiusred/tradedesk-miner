@@ -48,6 +48,12 @@ pub enum PreflightCode {
     /// positioned between `SweepTooLarge` (the other Phase 5+ variant) and
     /// `InternalError` (the catch-all) per PATTERNS Pattern G.
     HygieneNotSupported,
+    /// The request reaches the configured date fence (`--not-after` /
+    /// `not_after`): its window, a forward return or an event window can use
+    /// a timestamp at or after the fence. Emitted by
+    /// `engine::preflight::check_fence` before `RunStart`. Wire-form `code`
+    /// string: `"date_fence"`.
+    DateFence,
     /// Catastrophic failure unrelated to inputs.
     InternalError,
 }
@@ -65,6 +71,7 @@ impl PreflightCode {
             PreflightCode::InvalidConfig => "invalid_config",
             PreflightCode::SweepTooLarge => "sweep_too_large",
             PreflightCode::HygieneNotSupported => "hygiene_not_supported",
+            PreflightCode::DateFence => "date_fence",
             PreflightCode::InternalError => "internal_error",
         }
     }
@@ -177,6 +184,7 @@ mod tests {
             // do not implement bootstrap / null hygiene under
             // `supports_bootstrap()` / `supports_null_method()`.
             (PreflightCode::HygieneNotSupported, "hygiene_not_supported"),
+            (PreflightCode::DateFence, "date_fence"),
             (PreflightCode::InternalError, "internal_error"),
         ];
         for (code, expected) in cases {

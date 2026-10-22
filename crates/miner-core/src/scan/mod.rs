@@ -306,6 +306,36 @@ pub trait Scan: Send + Sync {
     fn coalesce_subranges(&self) -> bool {
         false
     }
+
+    /// M33-R1 — the time spans a request's params name explicitly, for the
+    /// date-fence preflight (`engine::preflight::check_fence`).
+    ///
+    /// The engine loads bars for the request window only, so a statistic
+    /// computed from those bars (a forward return included) cannot read past
+    /// the window end; the window check bounds it. A scan whose params name
+    /// absolute timestamps (an event list) overrides this to return the
+    /// exclusive end of each span those params reach, so the fence can
+    /// refuse them even when they lie outside the window.
+    ///
+    /// Default: no spans. Malformed params return no spans here; the scan's
+    /// own validation reports them, and the window check still holds.
+    fn param_spans(
+        &self,
+        _resolved_params: &serde_json::Value,
+        _timeframe: Timeframe,
+    ) -> Vec<ParamSpan> {
+        Vec::new()
+    }
+}
+
+/// One time span a scan's params reach (see [`Scan::param_spans`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParamSpan {
+    /// What the span is, for the `date_fence` error context
+    /// (e.g. `"event_window"`).
+    pub kind: &'static str,
+    /// Exclusive end of the span: the span uses timestamps before it.
+    pub end_exclusive: DateTime<Utc>,
 }
 
 // ---------------------------------------------------------------------------
