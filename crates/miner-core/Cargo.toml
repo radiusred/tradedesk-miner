@@ -79,6 +79,9 @@ realfft.workspace       = true
 # cache and the Dukascopy cache-layout reader. Sync only (no async runtime), so the
 # FOUND-04 invariant holds through it.
 tradedesk-data.workspace = true
+# IANA time zones for `engine::market_calendar` (a weekly close at 17:00 New York moves
+# against UTC twice a year). Sync only.
+chrono-tz.workspace      = true
 
 [dev-dependencies]
 jsonschema.workspace = true

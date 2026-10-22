@@ -42,6 +42,9 @@ serde              = { version = "1", features = ["derive"] }
 serde_json         = "1"  # NO features list — see determinism note above
 schemars           = { version = "1", features = ["chrono04"] }
 chrono             = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+# IANA time zones for the market calendar (gap policy, M33-R2). Default features off: no
+# `TZ` environment lookup, no case-insensitive parsing.
+chrono-tz          = { version = "0.10", default-features = false, features = ["std"] }
 thiserror          = "1"
 anyhow             = "1"
 tracing            = "0.1"
