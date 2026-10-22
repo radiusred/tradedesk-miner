@@ -51,7 +51,8 @@ pub struct Cli {
 
     /// Date fence: refuse at preflight any window, forward return or event
     /// window that can use data at or after this instant (CLI > env > TOML
-    /// key `not_after`). `YYYY-MM-DD` (00:00 UTC) or `YYYY-MM-DDTHH:MM:SSZ`.
+    /// key `not_after`). `YYYY-MM-DD` (00:00 UTC) or `YYYY-MM-DDTHH:MM:SSZ`
+    /// (whole seconds).
     /// Stated in `RunStart.request.not_after`.
     #[arg(long, global = true, env = "MINER_NOT_AFTER", value_name = "TIMESTAMP")]
     pub not_after: Option<String>,
