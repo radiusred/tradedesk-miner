@@ -437,6 +437,48 @@ fn not_after_bad_value_is_invalid_config_exit_1() {
     assert_eq!(wire_error(&stderr)["code"], "invalid_config");
 }
 
+/// An event post window too long for its end to be represented still
+/// reaches the fence: refused before any output, `--dry-run` too, with the
+/// request window clear of the fence. Event 2024-06-13 22:30 UTC.
+#[test]
+#[serial_test::serial]
+fn not_after_refuses_unrepresentable_event_window_end_exit_1() {
+    let cache = happy_path_cache();
+    for post_bars in ["1000000000000", "9223372036854775807"] {
+        for dry_run in [false, true] {
+            let events = "event_timestamps=[1718317800000]".to_string();
+            let post = format!("post_window_bars={post_bars}");
+            let mut args = vec![
+                "seas.event.pre_post_window@1",
+                "--instrument",
+                "EURUSD:bid",
+                "--timeframe",
+                "1h",
+                "--window",
+                "2024-06-12:2024-06-13",
+                "--params",
+                &events,
+                "--params",
+                &post,
+                "--not-after",
+                "2024-06-14",
+            ];
+            if dry_run {
+                args.push("--dry-run");
+            }
+            let (stdout, stderr, status) = run_miner(&cache, &args);
+            assert_eq!(status.code(), Some(1), "stderr: {stderr:?}");
+            assert!(
+                stdout.is_empty(),
+                "stdout must be empty on refusal; got: {stdout:?}"
+            );
+            let wire = wire_error(&stderr);
+            assert_eq!(wire["code"], "date_fence", "{wire}");
+            assert_eq!(wire["context"]["reached_by"], "event_window");
+        }
+    }
+}
+
 #[allow(dead_code)]
 fn _ensure_schema_path(_p: &Path) {
     // Plan 06 keeps the schema path resolver around for future use.
