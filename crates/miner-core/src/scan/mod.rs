@@ -657,13 +657,6 @@ impl ScanRequest {
         }
     }
 
-    /// Chained setter for the cfg-gated `sleep_after_first_finding_ms` hook
-    /// (Plan 03-02 / Pitfall 8). Forwards the value into `ScanRequest`; the
-    /// method itself is `#[cfg]`-gated so the call site in Plan 03-05's
-    /// `ScanArgs::to_scan_request` must also be cfg-gated when invoking it.
-    ///
-    /// NEVER reachable in release production builds — the cfg gate matches the
-    /// matching field gate (`#[cfg(any(test, feature = "test-internal"))]`).
     /// Set the market calendar the gap policy uses (M33-R2).
     #[must_use]
     pub fn with_calendar(mut self, calendar: MarketCalendar) -> Self {
@@ -671,6 +664,13 @@ impl ScanRequest {
         self
     }
 
+    /// Chained setter for the cfg-gated `sleep_after_first_finding_ms` hook
+    /// (Plan 03-02 / Pitfall 8). Forwards the value into `ScanRequest`; the
+    /// method itself is `#[cfg]`-gated so the call site in Plan 03-05's
+    /// `ScanArgs::to_scan_request` must also be cfg-gated when invoking it.
+    ///
+    /// NEVER reachable in release production builds — the cfg gate matches the
+    /// matching field gate (`#[cfg(any(test, feature = "test-internal"))]`).
     #[cfg(any(test, feature = "test-internal"))]
     #[must_use]
     pub fn with_sleep_after_first_finding_ms(mut self, value: Option<u64>) -> Self {
