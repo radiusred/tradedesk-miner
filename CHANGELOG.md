@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Date fence: `--not-after <TIMESTAMP>`** (global flag; env `MINER_NOT_AFTER`; config key `not_after`). Preflight refuses, with the new preflight code `date_fence` and before `RunStart`, any request that can use data at or after the fence: a `scan --window` (half-open) whose end is after it, a sweep window (read as closed at both ends, a date-only end including its whole day) whose end reaches it, or an event window named in the params that ends after it. The engine loads bars for the window only, so the window check also bounds every forward return. `RunStart.request.not_after` states the fence (`null` when none is set) for `miner scan` and `miner sweep`. New `Scan::param_spans` trait method (default: none) lets a scan report the spans its params reach; `seas.event.pre_post_window` reports each event's post window. `MinerConfig` and `CliOverrides` gain a `not_after` field. Documented in `docs/agent_integration.md#date-fence`. (#7)
+
 ### Changed
 
 - **The data layer comes from `tradedesk-data`.** The miner reads market data through the [`tradedesk-data`](https://github.com/radiusred/tradedesk/tree/main/crates/tradedesk-data) crate from `radiusred/tradedesk`, a git dependency pinned to commit `2a4dcf9` (the merge of tradedesk PR 174), instead of its own copies. `miner-core` loses `reader`, `aggregator`, `gap`, `calendar` and `cache` and their root re-exports; callers name those types through `tradedesk_data`. `findings::TimeRange` is `tradedesk_data::TimeRange`, re-exported. The derived-bar cache's location, Arrow schema and sidecar are unchanged; its `code_revision` metadata now records the `tradedesk-data` revision, and cache log lines carry the `tradedesk_data::cache` target. The `TimeRange` description in `schemas/findings-v1.schema.json` is now `tradedesk-data`'s doc comment; the schema's shape is unchanged. (#4)

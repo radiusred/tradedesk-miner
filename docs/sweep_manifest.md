@@ -85,7 +85,7 @@ Each `[[jobs]]` block (`JobBlock` at line 141) declares one fanout axis-set. Req
   - **Single-arity** (ANOM / SEAS): flat array of strings — `["EURUSD:bid", "GBPUSD:bid"]` declares two single-leg jobs.
   - **Pair-arity** (CROSS): nested 2-array — `[["EURUSD:bid", "GBPUSD:bid"]]` declares one two-leg job. Each inner array MUST be exactly length 2.
 - `timeframes: Vec<String>` — list of `"5m"` / `"10m"` / `"15m"` / `"1h"` / `"1d"`. Each becomes a fanout axis.
-- `windows: Vec<String>` — list of ISO-date ranges in `"YYYY-MM-DD:YYYY-MM-DD"` form (closed-closed UTC). Each becomes a fanout axis.
+- `windows: Vec<String>` — list of ISO-date ranges in `"YYYY-MM-DD:YYYY-MM-DD"` form (closed-closed UTC). Each becomes a fanout axis. Under a date fence (`--not-after`), each end is read as included: see [Date fence](#date-fence-preflight-rejection).
 
 Optional keys:
 
@@ -196,6 +196,15 @@ Example: a manifest with `max_jobs = 4` declaring 2 instruments x 2 timeframes x
 
 `max_jobs` is a tunable knob — bump it explicitly when a real workload needs more. The default 100_000 ceiling is the `T-05-04-V5-SIZE` DOS mitigation; it is NOT a hard architectural limit.
 
+## Date fence preflight rejection
+
+When a date fence is set (`--not-after`, `MINER_NOT_AFTER` or `not_after`), the sweep checks it after the other preflight gates and before `RunStart`, so a refused sweep — `--dry-run` included — writes nothing to stdout and exits 1 with one `date_fence` `WireError` on stderr.
+
+- Each `windows` entry is closed at both ends. A date-only end includes that whole day: with the fence at `2030-01-01`, `"2029-12-01:2029-12-31"` is accepted and `"2029-12-01:2030-01-01"` is refused. A datetime end is refused when it is at or after the fence.
+- Each param point and timeframe of a block is checked for the spans its scan's params name (for `seas.event.pre_post_window`, each event's post window).
+
+The context carries `not_after`, `reached_by`, `bound`, `bound_kind` and `block` (the `[[jobs]]` index), plus `window` when a window reached the fence. `RunStart.request.not_after` states the fence on an accepted sweep.
+
 ## TOML parse and validation errors
 
 Two failure paths produce a single `WireError` on stderr (no `RunStart` on stdout, exit code 1):
@@ -209,6 +218,7 @@ Two failure paths produce a single `WireError` on stderr (no `RunStart` on stdou
    - `invalid_parameter` — arity mismatch (Single-arity scan with nested `instruments`, or Pair-arity scan with flat `instruments`), out-of-range `[fdr].alpha`, or NaN alpha.
    - `hygiene_not_supported` — the merged per-block hygiene requested a method the scan rejects.
    - `sweep_too_large` — cartesian expansion exceeds `[sweep].max_jobs`.
+   - `date_fence` — a window or a param-named span reaches the date fence.
 
 Every preflight diagnostic carries structured context keys (e.g. `block_index`, `scan_id`, `estimated_job_count`, `max_jobs`) so consumers can route errors without parsing the message string.
 

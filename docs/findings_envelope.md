@@ -83,7 +83,7 @@ The first and last lines of every run are framing records. They identify the run
 - `started_at_utc` — RFC 3339 UTC timestamp.
 - `miner_version` — semver string from the crate's `Cargo.toml`.
 - `code_revision` — same `git describe`-style string injected by `build.rs` as on result-bearing envelopes.
-- `request` — the fully-resolved invocation (`scan_id@version`, instrument(s), side, timeframe, window, params with defaults applied, `gap_policy`, `dry_run` flag). `serde_json::Value` shape; the structure mirrors the engine's `ScanRequest`.
+- `request` — the fully-resolved invocation (`scan_id@version`, instrument(s), side, timeframe, window, params with defaults applied, `gap_policy`, `dry_run` flag, and `not_after` — the date fence as an RFC 3339 `Z` string, or `null` when none is set; always present). `serde_json::Value` shape; the structure mirrors the engine's `ScanRequest`.
 
 `RunEnd` (lines 294-300) carries:
 
@@ -184,7 +184,7 @@ Two finding kinds carry typed error vocabularies.
 
 Preflight failures are NOT mid-stream `ScanError` envelopes. They are emitted as a single `WireError` on stderr (with the run's `RunStart` already on stdout if framing started) and the process exits with code 1. The `PreflightCode` vocabulary (`crates/miner-core/src/error/codes.rs`) covers:
 
-- `invalid_parameter`, `unknown_scan`, `unknown_instrument`, `wrong_instrument_arity`, `missing_required_config`, `invalid_config`, `sweep_too_large`, `hygiene_not_supported`, `internal_error`.
+- `invalid_parameter`, `unknown_scan`, `unknown_instrument`, `wrong_instrument_arity`, `missing_required_config`, `invalid_config`, `sweep_too_large`, `hygiene_not_supported`, `date_fence`, `internal_error`.
 
 `GapAborted` is a separate kind, NOT a `ScanError`. It is emitted exactly once per scan run under `--gap-policy=strict` when the gap manifest disallows the requested window (D-08). The `gap_manifest` field carries the full Phase 2 manifest (tuples of `(start, end, reason)` for missing daily files, corrupt files, intra-day holes against the trading calendar).
 
