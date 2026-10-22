@@ -3467,7 +3467,7 @@ dependencies = [
 [[package]]
 name = "tradedesk-data"
 version = "0.1.0"
-source = "git+https://github.com/radiusred/tradedesk?rev=2a4dcf9f83f3be77570761ba836e437597ff96dd#2a4dcf9f83f3be77570761ba836e437597ff96dd"
+source = "git+https://github.com/radiusred/tradedesk?rev=d63c7e28adc1f4a2cfa9839a13e84153da919210#d63c7e28adc1f4a2cfa9839a13e84153da919210"
 dependencies = [
  "arrow",
  "blake3",

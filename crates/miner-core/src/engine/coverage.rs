@@ -2,7 +2,10 @@
 //!
 //! [`job_coverage`] answers "which sub-ranges would this job scan?" without
 //! running the scan. It detects the gaps of each leg from the cache's
-//! timestamps (`GapDetector::detect`), then takes the same gap-policy steps
+//! timestamps only (`GapDetector::detect`, which reads through
+//! `Reader::read_1m_timestamps`: no OHLC or volume field is parsed, so a day
+//! whose timestamps are valid gives the same coverage whatever its price
+//! fields hold), then takes the same gap-policy steps
 //! the run takes ([`gap_policy::open_gaps_at_timeframe`], [`gap_policy::dispatch`],
 //! [`gap_policy::drop_closed_subranges`], [`gap_policy::snap_subranges_to_timeframe`]).
 //! No bars are aggregated and no statistic is computed.
