@@ -121,10 +121,11 @@ impl Scan for EventWindowScan {
     /// the window therefore uses bars that open up to
     /// `ceil_tf(event) + (post_window_bars - 1) * tf`, so its exclusive end is
     /// `ceil_tf(event) + post_window_bars * tf`. A gap only moves bars later,
-    /// and the window check bounds those. An end that `i64` milliseconds or
-    /// `DateTime<Utc>` cannot hold saturates (to `DateTime::<Utc>::MAX_UTC`
-    /// going forward), so a huge post window still reaches the fence and is
-    /// refused, never dropped. Malformed params give no spans.
+    /// and the window check bounds those. The end is computed exactly in
+    /// `i128`; an end that `i64` milliseconds or `DateTime<Utc>` cannot hold
+    /// clamps (to `DateTime::<Utc>::MAX_UTC` going forward), so a huge post
+    /// window still reaches the fence and is refused, never dropped, also
+    /// from a negative event. Malformed params give no spans.
     fn param_spans(
         &self,
         resolved_params: &serde_json::Value,
@@ -149,15 +150,22 @@ impl Scan for EventWindowScan {
             .filter_map(serde_json::Value::as_i64)
             .map(|event_ms| {
                 // First bar open at or after the event (ceil to the timeframe).
-                // Saturating arithmetic only moves the end later (or to the
-                // i64 bound), so the fence check stays fail-closed.
-                let first_open_ms = event_ms
-                    .div_euclid(tf_ms)
-                    .saturating_add(i64::from(event_ms.rem_euclid(tf_ms) != 0))
-                    .saturating_mul(tf_ms);
-                let end_ms = first_open_ms.saturating_add(post_bars.saturating_mul(tf_ms));
-                let end_exclusive =
-                    DateTime::<Utc>::from_timestamp_millis(end_ms).unwrap_or(if end_ms < 0 {
+                // The whole span is computed in i128, which holds every
+                // i64 event and i64 bar count exactly, and is clamped only
+                // once at the end: a signed overflow can never wrap the end
+                // back before the fence.
+                let (event, tf, post) = (
+                    i128::from(event_ms),
+                    i128::from(tf_ms),
+                    i128::from(post_bars),
+                );
+                let first_open =
+                    (event.div_euclid(tf) + i128::from(event.rem_euclid(tf) != 0)) * tf;
+                let end = first_open + post * tf;
+                let end_exclusive = i64::try_from(end)
+                    .ok()
+                    .and_then(DateTime::<Utc>::from_timestamp_millis)
+                    .unwrap_or(if end < 0 {
                         DateTime::<Utc>::MIN_UTC
                     } else {
                         DateTime::<Utc>::MAX_UTC

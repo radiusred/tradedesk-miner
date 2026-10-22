@@ -439,14 +439,19 @@ fn not_after_bad_value_is_invalid_config_exit_1() {
 
 /// An event post window too long for its end to be represented still
 /// reaches the fence: refused before any output, `--dry-run` too, with the
-/// request window clear of the fence. Event 2024-06-13 22:30 UTC.
+/// request window clear of the fence. Event 2024-06-13 22:30 UTC, and the
+/// most negative event with an overflowing duration (no wrap into 1970).
 #[test]
 #[serial_test::serial]
 fn not_after_refuses_unrepresentable_event_window_end_exit_1() {
     let cache = happy_path_cache();
-    for post_bars in ["1000000000000", "9223372036854775807"] {
+    for (event, post_bars) in [
+        ("1718317800000", "1000000000000"),
+        ("1718317800000", "9223372036854775807"),
+        ("-9223372036854775808", "9223372036854775807"),
+    ] {
         for dry_run in [false, true] {
-            let events = "event_timestamps=[1718317800000]".to_string();
+            let events = format!("event_timestamps=[{event}]");
             let post = format!("post_window_bars={post_bars}");
             let mut args = vec![
                 "seas.event.pre_post_window@1",

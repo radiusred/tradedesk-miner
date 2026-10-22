@@ -1179,6 +1179,21 @@ mod tests {
         // An event timestamp past the end of DateTime<Utc> is refused too.
         let far = serde_json::json!({ "event_timestamps": [i64::MAX], "post_window_bars": 1 });
         assert!(validate_scan_fence(scan, window, Timeframe::Tf1h, &far, Some(f)).is_err());
+        // A negative event with an overflowing duration: the exact end is far
+        // past the fence, so a saturated duration must not wrap it into 1970.
+        for event in [i64::MIN, -1, -3_600_000] {
+            let params = serde_json::json!({
+                "event_timestamps": [event],
+                "post_window_bars": i64::MAX
+            });
+            assert!(
+                validate_scan_fence(scan, window, Timeframe::Tf1h, &params, Some(f)).is_err(),
+                "event={event}"
+            );
+        }
+        // A negative event whose exact end is before the fence is accepted.
+        let early = serde_json::json!({ "event_timestamps": [i64::MIN], "post_window_bars": 1 });
+        assert!(validate_scan_fence(scan, window, Timeframe::Tf1h, &early, Some(f)).is_ok());
     }
 
     /// A scan with no param spans (the default) is checked on its window only.
