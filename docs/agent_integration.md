@@ -10,7 +10,7 @@ The contract narrated here is locked. `schema_version = 1` is permanent for v1; 
 - `miner sweep <manifest.toml>` — fan out a cartesian (scan x instrument x timeframe x window x params) grid; stream findings plus a closing `SweepSummary` envelope.
 - `miner scans` — JSONL catalogue introspection; one envelope per registered scan with its parameter schema, `arity`, and finding fields.
 - `miner emit-fixture` — emit the Phase 1 smoke fixture (one `RunStart` + one `RunEnd`); reserved for golden re-generation and CI smoke tests.
-- `--dry-run` — on `scan` or `sweep`, emit a single `DryRunFinding` carrying the resolved request + planned `data_slice` + `estimated_findings_count` (plus `planned_job_count` for sweeps); no scan kernel executes.
+- `--dry-run` — on `scan` or `sweep`, emit a single `DryRunFinding` carrying the resolved request + planned `data_slice` + `estimated_findings_count` (plus `planned_job_count` for sweeps) + `coverage`, the gap-free sub-ranges of each job from the cache's timestamps; no scan kernel executes.
 - Stdout = findings NDJSON. Stderr = structured `tracing` logs + (preflight only) a single `WireError` envelope. Never mixed (D-15 / D-19; CI-enforced).
 
 ## Spawning miner from your agent

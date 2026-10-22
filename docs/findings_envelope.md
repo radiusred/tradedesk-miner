@@ -12,7 +12,7 @@ Every line in a miner run is one of seven `Finding::*` arms (`crates/miner-core/
 - `Result` — the headline payload. One envelope per `(scan x instrument(s) x timeframe x window x param-point)`. Carries all locked envelope fields plus the per-scan `effect` block.
 - `ScanError` — mid-run scan failure. Preflight passed but `Scan::run` errored, the kernel rejected inputs, or computation produced an unrecoverable result. The run continues; only the offending job is lost.
 - `GapAborted` — strict gap policy fired and aborted before any `Result` was emitted on this slice; carries the full gap manifest so consumers can see what was missing.
-- `DryRun` — emitted only under `--dry-run`. Carries the planned `data_slice` plus `estimated_findings_count` and (for `miner sweep --dry-run`) the `planned_job_count`.
+- `DryRun` — emitted only under `--dry-run`. Carries the planned `data_slice` plus `estimated_findings_count`, (for `miner sweep --dry-run`) the `planned_job_count`, and `coverage`: the gap-free sub-ranges of each job (see [DryRun coverage](#dryrun-coverage)).
 - `SweepSummary` — last data line of a `miner sweep` invocation, emitted immediately before `RunEnd`. Carries `SweepTotals` plus per-family `FdrFamilySummary` entries with Benjamini-Hochberg-adjusted q-values.
 - `RunEnd` — final line of every run. Carries `ended_at_utc`, `wall_clock_ms`, and the aggregate `RunSummary { results_emitted, scan_errors, gap_aborted, per_scan }`.
 
@@ -30,6 +30,19 @@ The order of finding kinds within a single run is contractual:
 `DryRun` envelopes are emitted between `RunStart` and `RunEnd` and never co-occur with result-bearing envelopes — a dry-run never executes a scan kernel. See `crates/miner-core/src/findings/mod.rs` test `dry_run_does_not_increment_results_emitted` for the type-level invariant pin: a `DryRun` envelope MUST NOT touch `RunSummary.results_emitted`.
 
 Consumers MUST NOT assume the absence of `SweepSummary` for a `miner scan` invocation indicates a failure — single-shot scans never emit it.
+
+## DryRun coverage
+
+`DryRun.coverage` is an array with one entry per job: one for `miner scan --dry-run`, one per job in job-graph order for `miner sweep --dry-run`. A dry run reads the cache's timestamps (gap detection) and applies the gap policy and the market calendar; it aggregates no bars and computes no statistic. Each entry has:
+
+- `job_index` — the job's position in the sweep's job graph; `0` for a scan.
+- `scan_id@version`, `sources` (one per leg: `source_id`, `symbol`, `side`, `timeframe`), `window` (half-open), `gap_policy`.
+- `status` — `covered`, `gap_aborted` (`strict` policy and an open-market gap remains) or `error` (the reader failed).
+- `sub_ranges` — the sub-ranges the run would scan, snapped to the timeframe's bars. Empty for `gap_aborted` and `error`, and when gaps cover the whole window.
+- `gaps` — the open-market gaps at the job's timeframe inside the window (for a two-leg scan, the gaps of either leg).
+- `message` — the reader error; present only when `status` is `error`.
+
+A reader error in a dry run is an `error` entry, not a `ScanError` envelope: a dry run leaves every `RunSummary` counter at zero. `coverage` is `#[serde(default)]`, so a `dry_run` line written before it parses with an empty array. [gap_policy.md](gap_policy.md#check-the-coverage-before-a-run) explains how the sub-ranges are found.
 
 ## Common envelope fields
 
