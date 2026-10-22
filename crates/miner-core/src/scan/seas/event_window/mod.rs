@@ -114,10 +114,13 @@ impl Scan for EventWindowScan {
         true
     }
 
-    /// M33-R1 — each event names a post window that runs from the event's bar
-    /// (the last bar opening at or before the event) for `post_window_bars`
-    /// bars. With no gap that window ends at
-    /// `floor_tf(event) + post_window_bars * tf`; a gap only moves bars later,
+    /// M33-R1 — each event names a post window of `post_window_bars` returns.
+    /// The kernel aligns an event to the first return timestamp at or after
+    /// it (`partition_point(|&t| t < event)` over `ts_open_utc.skip(1)`), and
+    /// the return at timestamp `t` uses the bar that opens at `t`. With no gap
+    /// the window therefore uses bars that open up to
+    /// `ceil_tf(event) + (post_window_bars - 1) * tf`, so its exclusive end is
+    /// `ceil_tf(event) + post_window_bars * tf`. A gap only moves bars later,
     /// and the window check bounds those. Malformed params give no spans.
     fn param_spans(
         &self,
@@ -142,10 +145,14 @@ impl Scan for EventWindowScan {
             .iter()
             .filter_map(serde_json::Value::as_i64)
             .filter_map(|event_ms| {
-                let bar_open_ms = event_ms.div_euclid(tf_ms).checked_mul(tf_ms)?;
+                // First bar open at or after the event (ceil to the timeframe).
+                let first_open_ms = event_ms
+                    .div_euclid(tf_ms)
+                    .checked_add(i64::from(event_ms.rem_euclid(tf_ms) != 0))?
+                    .checked_mul(tf_ms)?;
                 let end_ms = post_bars
                     .checked_mul(tf_ms)
-                    .and_then(|w| bar_open_ms.checked_add(w))?;
+                    .and_then(|w| first_open_ms.checked_add(w))?;
                 Some(ParamSpan {
                     kind: "event_window",
                     end_exclusive: DateTime::<Utc>::from_timestamp_millis(end_ms)?,

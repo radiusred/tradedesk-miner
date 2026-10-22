@@ -245,7 +245,7 @@ Preflight refuses, with `date_fence` and before `RunStart` (so `--dry-run` is re
 
 - **`miner scan --window S:E`** is half-open, `[S, E)`: refused when `E` is after the fence. `E` equal to the fence is accepted — the run uses data strictly before it.
 - **Sweep `windows`** are documented closed at both ends, so the sweep reads each end as included: a date-only end `D` includes all of day `D` (refused when `D + 1 day` is after the fence); a datetime end is refused when it is at or after the fence. This is the stricter of the two readings, so the fence holds whichever one a consumer assumes.
-- **Event windows** — a scan whose params name absolute timestamps reports the span each one reaches (`Scan::param_spans`). For `seas.event.pre_post_window` that is, for each event, the event's bar plus `post_window_bars` bars: refused when it ends after the fence, even if the request window is clear of it.
+- **Event windows** — a scan whose params name absolute timestamps reports the span each one reaches (`Scan::param_spans`). For `seas.event.pre_post_window` that is, for each event, `post_window_bars` bars from the first bar that opens at or after the event (the kernel's alignment, so an event between bar boundaries aligns up): refused when it ends after the fence, even if the request window is clear of it.
 - **Forward returns** — the engine loads bars for the request window only, so a forward-looking statistic (a forward return, a gap-fill look-ahead) computed inside a run cannot read past the window end. The window check bounds every forward return.
 
 `RunStart.request.not_after` states the fence (RFC 3339, `Z`) on every run, `null` when none is set — for `miner scan` and `miner sweep` alike.

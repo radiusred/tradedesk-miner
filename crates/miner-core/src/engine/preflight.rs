@@ -1100,15 +1100,38 @@ mod tests {
         let window = parse_iso_utc_window("2029-11-01:2029-12-01").unwrap();
         let ms = |t: DateTime<Utc>| t.timestamp_millis();
 
-        // Event at 2029-12-31 21:30, 1h bars, 2 post bars: bar opens 21:00,
-        // post window ends 23:00 — before the fence.
+        // Event at 2029-12-31 21:30, 1h bars, 2 post bars: the kernel aligns
+        // it to the 22:00 return, so the post window uses the bars that open
+        // at 22:00 and 23:00 and ends 2030-01-01 00:00 — on the fence, not
+        // past it.
         let ok = serde_json::json!({
             "event_timestamps": [ms(utc(2029, 12, 31, 21, 30))],
             "post_window_bars": 2
         });
         assert!(validate_scan_fence(scan, window, Timeframe::Tf1h, &ok, Some(f)).is_ok());
 
-        // Same event, 4 post bars: ends 2030-01-01 01:00 — refused.
+        // An event between bar boundaries aligns up, not down: 22:30 with 2
+        // post bars uses the bars at 23:00 and 2030-01-01 00:00 (on the
+        // fence) — refused, also with the request window clear of it.
+        let between = serde_json::json!({
+            "event_timestamps": [ms(utc(2029, 12, 31, 22, 30))],
+            "post_window_bars": 2
+        });
+        let err = validate_scan_fence(scan, window, Timeframe::Tf1h, &between, Some(f))
+            .expect_err("between-boundary event span reaches the fence");
+        assert_eq!(
+            err.context.get("bound"),
+            Some(&serde_json::json!("2030-01-01T01:00:00Z"))
+        );
+
+        // The same event on a bar boundary (22:00) uses 22:00 and 23:00 — ok.
+        let aligned = serde_json::json!({
+            "event_timestamps": [ms(utc(2029, 12, 31, 22, 0))],
+            "post_window_bars": 2
+        });
+        assert!(validate_scan_fence(scan, window, Timeframe::Tf1h, &aligned, Some(f)).is_ok());
+
+        // 21:30 with 4 post bars: ends 2030-01-01 02:00 — refused.
         let bad = serde_json::json!({
             "event_timestamps": [ms(utc(2029, 12, 31, 21, 30))],
             "post_window_bars": 4
@@ -1122,7 +1145,7 @@ mod tests {
         );
         assert_eq!(
             err.context.get("bound"),
-            Some(&serde_json::json!("2030-01-01T01:00:00Z"))
+            Some(&serde_json::json!("2030-01-01T02:00:00Z"))
         );
 
         // Default post_window_bars (5) on 1d bars: an event 3 days before the
