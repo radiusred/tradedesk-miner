@@ -106,6 +106,11 @@ cargo run -p miner-cli -- scan seas.bucket.hour_of_day@1 \
     --window 2024-01-01:2024-01-31
 ```
 
+To keep a run clear of data at or after a cut-off, add a date fence with the
+global flag `--not-after <TIMESTAMP>` (env `MINER_NOT_AFTER`, TOML key
+`not_after`). Preflight then refuses any window or event window that reaches
+it; see [Date fence](docs/agent_integration.md#date-fence).
+
 Truncated `Result` envelope:
 
 ```json

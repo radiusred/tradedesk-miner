@@ -152,3 +152,32 @@ fn sweep_refuses_event_window_past_fence() {
     let (res, sink) = run(&manifest, false);
     assert_refused(res, &sink, "event_window");
 }
+
+/// An event between bar boundaries aligns to the next bar open, as the
+/// kernel does. 2024-06-13 22:30 with 1h bars and 2 post bars uses the bars
+/// at 23:00 and 2024-06-14 00:00 (on the fence): refused, `--dry-run` too.
+/// The same event on the boundary (22:00) uses 22:00 and 23:00: accepted.
+#[test]
+fn sweep_event_between_bar_boundaries_aligns_up() {
+    let manifest = |event: DateTime<Utc>| {
+        format!(
+            r#"
+            [[jobs]]
+            scan = "seas.event.pre_post_window@1"
+            instruments = ["EURUSD:bid"]
+            timeframes = ["1h"]
+            windows = ["2024-06-12:2024-06-13"]
+            params = {{ event_timestamps = [[{e}]], post_window_bars = 2 }}
+            "#,
+            e = event.timestamp_millis(),
+        )
+    };
+    let between = Utc.with_ymd_and_hms(2024, 6, 13, 22, 30, 0).unwrap();
+    for dry_run in [false, true] {
+        let (res, sink) = run(&manifest(between), dry_run);
+        assert_refused(res, &sink, "event_window");
+    }
+    let aligned = Utc.with_ymd_and_hms(2024, 6, 13, 22, 0, 0).unwrap();
+    let (res, _sink) = run(&manifest(aligned), true);
+    assert_eq!(res.expect("accepted"), RunOutcome::Ok);
+}
