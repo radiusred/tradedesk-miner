@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc eee53e58911e9e4f895adbe66cdb06baf2822fa9b4f3ffd292cf48b55a06a7e9 # shrinks to offsets = [], req_start_h = 4, req_end_offset = 20
+cc 7ff41e72ac09e15d14899b39a32c6047d04f9d5b2a8d96b7608fe9f0623c7bda # shrinks to offsets = [], runs = [(14809, 198)], cal_idx = 3, tf_15m = false

@@ -36,7 +36,10 @@ The **market calendar** says when the market is closed. Set it with `--calendar`
    closed.
 3. The rest is projected onto the timeframe: a hole that does not empty a whole bar at
    the requested timeframe is not a gap at that timeframe. (A `1d` bar can be built from
-   the bars that are present.)
+   the bars that are present.) A bar is a gap when it has open minutes and none of them
+   has data. This is also true when a closure cuts through the bar: with a daily break
+   from 10:30 to 11:00, a `1h` bar from 10:00 with no data from 10:00 to 10:30 is a gap.
+   A bar with no open minute is never a gap.
 4. The policy applies. Under `continuous_only`, a sub-range that holds no open minute
    (closed time between two real gaps) is dropped: it has no bars, so it is not a
    result.
