@@ -239,7 +239,7 @@ Agents that drive miner across many users / project roots should prefer explicit
 
 ## Date fence
 
-`--not-after <TIMESTAMP>` (global flag; env `MINER_NOT_AFTER`; TOML key `not_after`) sets a date fence: an instant the run must not use data at or after. It takes the `--window` forms: `YYYY-MM-DD` (00:00 UTC) or `YYYY-MM-DDTHH:MM:SSZ`; any other offset is `invalid_config`. With no fence set, nothing changes.
+`--not-after <TIMESTAMP>` (global flag; env `MINER_NOT_AFTER`; TOML key `not_after`) sets a date fence: an instant the run must not use data at or after. It takes the `--window` forms: `YYYY-MM-DD` (00:00 UTC) or `YYYY-MM-DDTHH:MM:SSZ`; any other offset, and a fractional second, is `invalid_config`. With no fence set, nothing changes.
 
 Preflight refuses, with `date_fence` and before `RunStart` (so `--dry-run` is refused too), any request that reaches the fence:
 

@@ -374,11 +374,21 @@ fn parse_iso_utc(s: &str) -> Result<DateTime<Utc>, String> {
 /// (00:00 UTC) or `YYYY-MM-DDTHH:MM:SSZ`. Used for the `--not-after` date
 /// fence so a fence and a window are written the same way.
 ///
+/// Fractional seconds are refused: the fence is stated in whole seconds
+/// (`RunStart.request.not_after`, config, error context), so an accepted
+/// fence always round-trips to the instant preflight compares.
+///
 /// # Errors
-/// Returns a human-readable message when the value is in neither form or
-/// carries a non-`Z` offset (A3).
+/// Returns a human-readable message when the value is in neither form,
+/// carries a non-`Z` offset (A3) or carries fractional seconds.
 pub fn parse_iso_utc_instant(s: &str) -> Result<DateTime<Utc>, String> {
-    parse_iso_utc(s)
+    let t = parse_iso_utc(s)?;
+    if t.timestamp_subsec_nanos() != 0 {
+        return Err(format!(
+            "datetime must be whole seconds (YYYY-MM-DDTHH:MM:SSZ), no fractional part: {s:?}"
+        ));
+    }
+    Ok(t)
 }
 
 // ---------------------------------------------------------------------------
@@ -1016,6 +1026,36 @@ mod tests {
         let f = utc(2030, 1, 1, 0, 0);
         assert!(!FenceBound::Inclusive(f - chrono::Duration::seconds(1)).reaches(f));
         assert!(FenceBound::Inclusive(f).reaches(f));
+    }
+
+    /// The fence is whole seconds: a fractional fence is refused, so the
+    /// recorded fence never differs from the compared one.
+    #[test]
+    fn parse_iso_utc_instant_refuses_fractional_seconds() {
+        for bad in ["2030-01-01T00:00:00.500Z", "2030-01-01T00:00:00.000000001Z"] {
+            let err = parse_iso_utc_instant(bad).expect_err(bad);
+            assert!(err.contains("whole seconds"), "{bad}: {err}");
+        }
+    }
+
+    /// Every accepted fence states the exact instant preflight compares, in
+    /// `RunStart.request.not_after` (scan and sweep share `not_after_value`)
+    /// and in the `date_fence` error context.
+    #[test]
+    fn accepted_fence_round_trips_through_its_recorded_form() {
+        for (raw, recorded) in [
+            ("2030-01-01", "2030-01-01T00:00:00Z"),
+            ("2030-01-01T06:30:15Z", "2030-01-01T06:30:15Z"),
+            ("2030-01-01T06:30:15.000Z", "2030-01-01T06:30:15Z"),
+        ] {
+            let fence = parse_iso_utc_instant(raw).unwrap();
+            let value = crate::engine::framing::not_after_value(Some(fence));
+            assert_eq!(value, serde_json::json!(recorded), "{raw}");
+            assert_eq!(parse_iso_utc_instant(recorded).unwrap(), fence, "{raw}");
+            let err = check_fence(Some(fence), "window", FenceBound::Inclusive(fence))
+                .expect_err("on the fence");
+            assert_eq!(err.context.get("not_after"), Some(&value), "{raw}");
+        }
     }
 
     #[test]

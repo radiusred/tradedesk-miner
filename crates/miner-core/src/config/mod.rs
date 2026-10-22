@@ -541,7 +541,12 @@ mod tests {
     #[test]
     fn not_after_bad_value_is_refused() {
         use figment::error::Kind;
-        for bad in ["2030-01-01T00:00:00+02:00", "not-a-date", "2030-13-01"] {
+        for bad in [
+            "2030-01-01T00:00:00+02:00",
+            "not-a-date",
+            "2030-13-01",
+            "2030-01-01T00:00:00.500Z",
+        ] {
             Jail::expect_with(|jail| {
                 jail.set_env("MINER_CACHE_ROOT", "/c");
                 jail.set_env("MINER_BAR_CACHE_ROOT", "/b");
@@ -561,5 +566,22 @@ mod tests {
                 Ok(())
             });
         }
+    }
+    /// M33-R1 — a resolved fence serializes to a form that deserializes to
+    /// the same instant (config round trip; no precision is lost).
+    #[test]
+    fn not_after_config_round_trips() {
+        Jail::expect_with(|jail| {
+            jail.set_env("MINER_CACHE_ROOT", "/c");
+            jail.set_env("MINER_BAR_CACHE_ROOT", "/b");
+            jail.set_env("MINER_OUTPUT", "stdout");
+            jail.set_env("MINER_NOT_AFTER", "2030-02-01T06:30:15Z");
+            let cfg = MinerConfig::resolve(None, CliOverrides::default()).expect("resolve");
+            let json = serde_json::to_value(&cfg).expect("serialize");
+            assert_eq!(json["not_after"], serde_json::json!("2030-02-01T06:30:15Z"));
+            let back: MinerConfig = serde_json::from_value(json).expect("deserialize");
+            assert_eq!(back.not_after, cfg.not_after);
+            Ok(())
+        });
     }
 }
