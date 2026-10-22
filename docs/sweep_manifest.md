@@ -74,7 +74,9 @@ The top-level `[sweep]` block (`SweepConfig` in `crates/miner-core/src/sweep/man
 - `seed: Option<u64>` — master seed; propagates to every `ResolvedJob`'s `ReproEnvelope.master_seed`. Hex literals accepted (`seed = 0xDEADBEEF`). `None` allows a per-run randomly-drawn seed (engine determines).
 - `max_jobs: u64` — cardinality ceiling (default `100_000`). The cartesian expansion is rejected with `PreflightCode::SweepTooLarge` if `estimated_job_count > max_jobs`. This is the `T-05-04-V5-SIZE` DOS mitigation: a manifest declaring 10^9 jobs MUST NOT materialise `Vec<ResolvedJob>`.
 
-When the `[sweep]` table is omitted entirely, `SweepConfig::default()` provides `seed = None` and `max_jobs = 100_000`.
+- `calendar: Option<CalendarSpec>` — the market calendar for every `[[jobs]]` block that sets none: a preset name (`"fx_new_york"`, `"fx_utc"`) or a table. Default `fx_new_york`. A hole in the data while the market is closed is not a gap; see [gap_policy.md](gap_policy.md).
+
+When the `[sweep]` table is omitted entirely, `SweepConfig::default()` provides `seed = None`, `max_jobs = 100_000` and no calendar (so `fx_new_york`).
 
 ## [[jobs]] block
 
@@ -90,6 +92,7 @@ Each `[[jobs]]` block (`JobBlock` at line 141) declares one fanout axis-set. Req
 Optional keys:
 
 - `gap_policy: Option<String>` — `"strict"` or `"continuous_only"`; overrides the run-level default.
+- `calendar: Option<CalendarSpec>` — the market calendar for this block (a preset name or a table, as `[sweep].calendar`); overrides `[sweep].calendar`. See [gap_policy.md](gap_policy.md).
 - `params: BTreeMap<String, serde_json::Value>` — inline-table `{ key = value, ... }` or expanded `[jobs.params]` block. Each TOML array param becomes a fanout axis (e.g. `params = { lags = [5, 10, 20] }` triples the job count for this block).
 - `hygiene: Option<HygieneBlock>` — per-job override of the global `[hygiene]` block.
 
@@ -158,6 +161,8 @@ The optional `gap_policy: Option<String>` field on `[[jobs]]` lets a single bloc
 - `"continuous_only"` — partition the requested window into maximal gap-free sub-ranges; emit one `Result` per sub-range with the inline `gap_manifest` carried on `data_slice.gap_manifest`.
 
 Omitting `gap_policy` on a block falls through to the run-level default (set by `--gap-policy` on the CLI). Mixing policies across blocks within a sweep is supported — useful when some scans require continuous data and others tolerate gaps.
+
+Both policies count only time when the market is open as a gap. The block's `calendar` (else `[sweep].calendar`, else `fx_new_york`) says when that is; [gap_policy.md](gap_policy.md) has the details.
 
 ## Resolved job graph + planned_job_count
 
@@ -232,6 +237,7 @@ The statistical hygiene and FDR machinery `miner sweep` exposes draws on three p
 
 ## See Also
 
+- [gap_policy.md](gap_policy.md) — the gap policies and the market calendar
 - [findings_envelope.md](findings_envelope.md) — the `Finding::SweepSummary` + `DryRunFinding` shapes
 - [scan_catalogue.md](scan_catalogue.md) — valid `scan_id@version` strings + per-scan params
 - [architecture.md](architecture.md) — sweep runner in the data-flow context

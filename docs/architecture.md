@@ -57,6 +57,7 @@
   - Schema-additive discipline only; ground truth is `schemas/findings-v1.schema.json` regenerated from the schemars derive on the Rust types.
 - Gap-policy enforcement. No silent scans over gapped data.
   - Callers pick `strict` (abort + emit the gap manifest as a structured error, zero findings) or `continuous_only` (partition into maximal gap-free sub-ranges, one finding per sub-range, gap manifest attached).
+  - A market calendar (`engine::market_calendar`, `--calendar`) says when the market is closed; a hole in closed time is not a gap. See [gap_policy.md](gap_policy.md).
 - Reproducibility envelope.
   - `master_seed` propagates through every `ResolvedJob`.
   - `derive_job_seed` (blake3) makes each scan's RNG state deterministic and byte-identical across re-runs.

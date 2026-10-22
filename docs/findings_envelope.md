@@ -83,7 +83,7 @@ The first and last lines of every run are framing records. They identify the run
 - `started_at_utc` — RFC 3339 UTC timestamp.
 - `miner_version` — semver string from the crate's `Cargo.toml`.
 - `code_revision` — same `git describe`-style string injected by `build.rs` as on result-bearing envelopes.
-- `request` — the fully-resolved invocation (`scan_id@version`, instrument(s), side, timeframe, window, params with defaults applied, `gap_policy`, `dry_run` flag, and `not_after` — the date fence as an RFC 3339 `Z` string, or `null` when none is set; always present). `serde_json::Value` shape; the structure mirrors the engine's `ScanRequest`.
+- `request` — the fully-resolved invocation (`scan_id@version`, instrument(s), side, timeframe, window, params with defaults applied, `gap_policy`, `calendar` (the market calendar in force, as its full table; see [gap_policy.md](gap_policy.md)), `dry_run` flag, and `not_after` — the date fence as an RFC 3339 `Z` string, or `null` when none is set; always present). `serde_json::Value` shape; the structure mirrors the engine's `ScanRequest`.
 
 `RunEnd` (lines 294-300) carries:
 

@@ -134,8 +134,10 @@ non-obvious conventions matter for interpreting findings:
 - Months are **00-indexed** on disk (`2024/00/` = January, `2024/11/` = December).
 - The `volume` column is a **tick count**, not lot volume.
 - Bid and ask sides are processed independently; spread reconstruction is out of scope.
-- Weekend and exchange-holiday gaps are intentional, not missing data; the
-  `gap_policy` flag controls how scans treat them.
+- Weekend and exchange-holiday gaps are intentional, not missing data. The
+  market calendar (`--calendar`, default `fx_new_york`) says when the market is
+  closed, so they are not gaps; the `gap_policy` flag controls how scans treat
+  real gaps. See [docs/gap_policy.md](docs/gap_policy.md).
 
 See [docs/data_sources.md](docs/data_sources.md) for the full reference, including
 the data licensing posture.
