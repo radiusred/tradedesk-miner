@@ -14,6 +14,8 @@
 //! - A two-leg job's gaps are the union of both legs' gaps.
 //! - A sweep dry run lists every job in job-graph order with its own coverage,
 //!   and emits no `result`.
+//! - Coverage reads the timestamps only: unparseable OHLC and volume fields
+//!   give the same coverage as numeric fields.
 
 mod common;
 
@@ -44,9 +46,21 @@ const HOLE: std::ops::Range<i64> = 600..720;
 /// 21:00 UTC to Friday 21:00 UTC, no Saturday file. `hole` adds a hole on
 /// Wednesday 2024-06-19.
 fn add_summer_weeks(
-    mut cache: SyntheticCache,
+    cache: SyntheticCache,
     symbol: &str,
     hole: Option<&std::ops::Range<i64>>,
+) -> SyntheticCache {
+    add_summer_weeks_with(cache, hole, |cache, date, seed, holes| {
+        cache.with_day_multi_holed(symbol, Side::Bid, date, seed, holes)
+    })
+}
+
+/// [`add_summer_weeks`] with a caller-supplied day writer, which names the
+/// symbol.
+fn add_summer_weeks_with(
+    mut cache: SyntheticCache,
+    hole: Option<&std::ops::Range<i64>>,
+    write_day: impl Fn(SyntheticCache, NaiveDate, u32, &[std::ops::Range<i64>]) -> SyntheticCache,
 ) -> SyntheticCache {
     let mut date = NaiveDate::from_ymd_opt(2024, 6, 9).unwrap();
     let last = NaiveDate::from_ymd_opt(2024, 6, 21).unwrap();
@@ -64,7 +78,7 @@ fn add_summer_weeks(
         if date == NaiveDate::from_ymd_opt(2024, 6, 19).unwrap() {
             holes.extend(hole.cloned());
         }
-        cache = cache.with_day_multi_holed(symbol, Side::Bid, date, seed, &holes);
+        cache = write_day(cache, date, seed, &holes);
         seed = seed.wrapping_add(7);
         date = date.succ_opt().unwrap();
     }
@@ -338,4 +352,49 @@ fn sweep_dry_run_lists_every_job_in_order() {
         findings.iter().all(|f| !matches!(f, Finding::Result(_))),
         "stream:\n{stream}"
     );
+}
+
+#[test]
+#[serial_test::serial]
+fn coverage_reads_timestamps_only() {
+    // The same minutes (weekends, the Friday close and a real hole omitted),
+    // once with unparseable price and volume text, once with numeric fields.
+    let text = |price: &'static str, volume: &'static str| {
+        add_summer_weeks_with(
+            SyntheticCache::new(),
+            Some(&HOLE),
+            move |cache, date, _seed, holes| {
+                cache.with_day_multi_holed_fields("EURUSD", Side::Bid, date, holes, price, volume)
+            },
+        )
+    };
+    let unparseable = text("NOT_A_PRICE", "NOT_A_VOLUME");
+    let numeric = text("1.0", "1");
+    let req = request(&["EURUSD"], GapPolicyKind::ContinuousOnly, true);
+
+    let a = job_coverage(0, &req, &DukascopyReader::new(unparseable.cache_root()));
+    let b = job_coverage(0, &req, &DukascopyReader::new(numeric.cache_root()));
+
+    assert_eq!(a.status, CoverageStatus::Covered, "{a:?}");
+    assert_eq!(
+        a.gaps,
+        vec![TimeRange {
+            start_utc: utc(19, 10),
+            end_utc: utc(19, 12),
+        }]
+    );
+    assert_eq!(
+        a.sub_ranges,
+        vec![
+            TimeRange {
+                start_utc: window().start,
+                end_utc: utc(19, 10),
+            },
+            TimeRange {
+                start_utc: utc(19, 12),
+                end_utc: window().end,
+            },
+        ]
+    );
+    assert_eq!(a, b);
 }

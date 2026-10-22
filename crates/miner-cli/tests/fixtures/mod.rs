@@ -96,6 +96,32 @@ impl SyntheticCache {
         write_csv_zst_day(&self.cache_root, symbol, date, side, &csv);
         self
     }
+
+    /// Write a full UTC day (1440 rows) with valid minute timestamps and the
+    /// given literal text in every OHLC field and in the volume field. With
+    /// `"NOT_A_PRICE"` / `"NOT_A_VOLUME"` the rows are unreadable as bars but
+    /// their timestamps are valid (M33-R3: coverage reads timestamps only).
+    pub fn with_day_fields(
+        self,
+        symbol: &str,
+        side: Side,
+        date: NaiveDate,
+        price: &str,
+        volume: &str,
+    ) -> Self {
+        let day_start: DateTime<Utc> = date.and_hms_opt(0, 0, 0).expect("00:00:00 valid").and_utc();
+        let mut csv = String::with_capacity(1440 * 64 + 32);
+        csv.push_str("timestamp,open,high,low,close,volume\n");
+        for i in 0..1440_i64 {
+            let ts = day_start + Duration::minutes(i);
+            csv.push_str(&format!(
+                "{},{price},{price},{price},{price},{volume}\n",
+                ts.format("%Y-%m-%d %H:%M:%S%:z"),
+            ));
+        }
+        write_csv_zst_day(&self.cache_root, symbol, date, side, &csv);
+        self
+    }
 }
 
 impl Default for SyntheticCache {
