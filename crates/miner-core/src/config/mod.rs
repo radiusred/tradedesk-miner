@@ -22,6 +22,7 @@
 //! - `MINER_CACHE_ROOT` → field `cache_root`
 //! - `MINER_BAR_CACHE_ROOT` → field `bar_cache_root`
 //! - `MINER_OUTPUT` → field `output`
+//! - `MINER_NOT_AFTER` → field `not_after` (optional date fence)
 //!
 //! Future nested config (e.g. `MinerConfig.telemetry.enabled`) maps via
 //! `MINER_TELEMETRY__ENABLED` (the double underscore splits the path).
@@ -43,6 +44,7 @@
 
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
 use figment::{
     Figment,
     providers::{Env, Format, Serialized, Toml},
@@ -63,9 +65,10 @@ pub enum OutputDest {
 
 /// Top-level miner configuration (D-16).
 ///
-/// All three fields are NON-optional — `figment.extract()` must produce an error if
-/// any field is missing from the merged config sources. This is the Plan 05
-/// precedence contract verified by the Plan 01-02 spike.
+/// The three path / output fields are NON-optional — `figment.extract()` must
+/// produce an error if any of them is missing from the merged config sources.
+/// This is the Plan 05 precedence contract verified by the Plan 01-02 spike.
+/// `not_after` is the one optional key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct MinerConfig {
     /// Root of the `tradedesk-dukascopy` cache (read-only consumer; Phase 2+).
@@ -73,6 +76,40 @@ pub struct MinerConfig {
     /// Root of the derived bar cache (the only writable state miner owns).
     pub bar_cache_root: PathBuf,
     pub output: OutputDest,
+    /// Date fence (`--not-after` / `MINER_NOT_AFTER` / `not_after`). When set,
+    /// preflight refuses any request that can use a timestamp at or after
+    /// this instant (see `engine::preflight::check_fence`). Accepts the
+    /// `--window` forms: `YYYY-MM-DD` (00:00 UTC) or `YYYY-MM-DDTHH:MM:SSZ`.
+    #[serde(default, with = "not_after_serde")]
+    #[schemars(with = "Option<String>")]
+    pub not_after: Option<DateTime<Utc>>,
+}
+
+/// Serde adapter for [`MinerConfig::not_after`]: the strict-UTC string forms
+/// `--window` accepts, so a fence and a window are written the same way.
+mod not_after_serde {
+    use chrono::{DateTime, SecondsFormat, Utc};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    #[allow(
+        clippy::ref_option,
+        reason = "serde `with` adapters receive the field by reference"
+    )]
+    pub fn serialize<S: Serializer>(v: &Option<DateTime<Utc>>, s: S) -> Result<S::Ok, S::Error> {
+        match v {
+            Some(t) => s.serialize_some(&t.to_rfc3339_opts(SecondsFormat::Secs, true)),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<DateTime<Utc>>, D::Error> {
+        let raw: Option<String> = Option::deserialize(d)?;
+        raw.map(|s| {
+            crate::engine::preflight::parse_iso_utc_instant(&s)
+                .map_err(|msg| serde::de::Error::custom(format!("not_after: {msg}")))
+        })
+        .transpose()
+    }
 }
 
 impl MinerConfig {
@@ -118,6 +155,10 @@ pub struct CliOverrides {
     pub bar_cache_root: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<OutputDest>,
+    /// Raw `--not-after` value; parsed by [`MinerConfig::not_after`]'s
+    /// deserializer so every layer is validated the same way.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_after: Option<String>,
 }
 
 /// Construct the figment with the LOCKED merge order (FOUND-05).
@@ -172,6 +213,7 @@ mod tests {
             cache_root: PathBuf::from("/cache"),
             bar_cache_root: PathBuf::from("/bar-cache"),
             output: OutputDest::Stdout,
+            not_after: None,
         };
         let json = serde_json::to_string(&cfg).expect("serialise");
         let parsed: MinerConfig = serde_json::from_str(&json).expect("deserialise");
@@ -182,6 +224,9 @@ mod tests {
             cache_root: PathBuf::from("/c"),
             bar_cache_root: PathBuf::from("/b"),
             output: OutputDest::File(PathBuf::from("/tmp/out.jsonl")),
+            not_after: Some(
+                chrono::TimeZone::with_ymd_and_hms(&Utc, 2024, 3, 1, 12, 0, 0).unwrap(),
+            ),
         };
         let json2 = serde_json::to_string(&cfg2).expect("serialise");
         let parsed2: MinerConfig = serde_json::from_str(&json2).expect("deserialise");
@@ -207,6 +252,7 @@ mod tests {
                 cache_root: Some(PathBuf::from("/cli/cache")),
                 bar_cache_root: None,
                 output: None,
+                not_after: None,
             };
             let cfg = MinerConfig::resolve(Some(Path::new("config-fixture.toml")), cli)
                 .expect("resolve must succeed with all layers");
@@ -428,5 +474,92 @@ mod tests {
             );
             Ok(())
         });
+    }
+
+    /// M33-R1 — `not_after` is optional: absent from every layer, it resolves
+    /// to `None` (no fence) and the required-field contract is unchanged.
+    #[test]
+    fn not_after_absent_is_none() {
+        Jail::expect_with(|jail| {
+            jail.set_env("MINER_CACHE_ROOT", "/c");
+            jail.set_env("MINER_BAR_CACHE_ROOT", "/b");
+            jail.set_env("MINER_OUTPUT", "stdout");
+            let cfg = MinerConfig::resolve(None, CliOverrides::default()).expect("resolve");
+            assert_eq!(cfg.not_after, None);
+            Ok(())
+        });
+    }
+
+    /// M33-R1 — the fence resolves CLI > env > TOML, like every other key, and
+    /// takes both `--window` forms (date-only = 00:00 UTC; full datetime with Z).
+    #[test]
+    fn not_after_layers_and_forms() {
+        use chrono::TimeZone;
+        Jail::expect_with(|jail| {
+            jail.create_file(
+                "fence.toml",
+                r#"
+                cache_root = "/file/cache"
+                bar_cache_root = "/file/bar"
+                output = "stdout"
+                not_after = "2030-01-01"
+                "#,
+            )?;
+            let toml = MinerConfig::resolve(Some(Path::new("fence.toml")), CliOverrides::default())
+                .expect("toml resolve");
+            assert_eq!(
+                toml.not_after,
+                Some(Utc.with_ymd_and_hms(2030, 1, 1, 0, 0, 0).unwrap()),
+                "date-only form is 00:00 UTC"
+            );
+
+            jail.set_env("MINER_NOT_AFTER", "2030-02-01T06:30:00Z");
+            let env = MinerConfig::resolve(Some(Path::new("fence.toml")), CliOverrides::default())
+                .expect("env resolve");
+            assert_eq!(
+                env.not_after,
+                Some(Utc.with_ymd_and_hms(2030, 2, 1, 6, 30, 0).unwrap()),
+                "env wins over TOML"
+            );
+
+            let cli = CliOverrides {
+                not_after: Some("2030-03-01T00:00:00Z".to_string()),
+                ..CliOverrides::default()
+            };
+            let cli_cfg = MinerConfig::resolve(Some(Path::new("fence.toml")), cli).expect("cli");
+            assert_eq!(
+                cli_cfg.not_after,
+                Some(Utc.with_ymd_and_hms(2030, 3, 1, 0, 0, 0).unwrap()),
+                "CLI wins over env and TOML"
+            );
+            Ok(())
+        });
+    }
+
+    /// M33-R1 — a fence that is not strict UTC is a config error, never a
+    /// silently ignored fence. Non-`Z` offsets are refused like in `--window`.
+    #[test]
+    fn not_after_bad_value_is_refused() {
+        use figment::error::Kind;
+        for bad in ["2030-01-01T00:00:00+02:00", "not-a-date", "2030-13-01"] {
+            Jail::expect_with(|jail| {
+                jail.set_env("MINER_CACHE_ROOT", "/c");
+                jail.set_env("MINER_BAR_CACHE_ROOT", "/b");
+                jail.set_env("MINER_OUTPUT", "stdout");
+                let cli = CliOverrides {
+                    not_after: Some(bad.to_string()),
+                    ..CliOverrides::default()
+                };
+                let err = MinerConfig::resolve(None, cli).expect_err("bad fence must not resolve");
+                assert!(err.to_string().contains("not_after"), "{bad}: {err}");
+                let first = err.into_iter().next().expect("one error");
+                assert!(
+                    !matches!(first.kind, Kind::MissingField(_)),
+                    "{bad}: must classify as invalid_config, got {:?}",
+                    first.kind
+                );
+                Ok(())
+            });
+        }
     }
 }

@@ -181,6 +181,7 @@ fn scan_ols_rolling_happy_path_via_engine_facade() {
         cache_root: cache.cache_root().to_path_buf(),
         bar_cache_root: cache.bar_cache_root().to_path_buf(),
         output: OutputDest::Stdout,
+        not_after: None,
     };
     let reader = DukascopyReader::new(cache.cache_root());
     let mut registry = Registry::new();

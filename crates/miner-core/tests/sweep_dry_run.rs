@@ -45,6 +45,7 @@ fn sweep_dry_run_emits_one_dry_run_finding_no_results() {
         cache_root: cache.cache_root().to_path_buf(),
         bar_cache_root: cache.bar_cache_root().to_path_buf(),
         output: OutputDest::Stdout,
+        not_after: None,
     };
     let reader = DukascopyReader::new(cache.cache_root());
     let bar_cache = BarCache::new(cache.bar_cache_root());
