@@ -64,7 +64,7 @@ base64             = "0.22"
 arrow              = "58"
 parquet            = "58"
 csv                = "1.4"
-zstd               = "0.13"
+zstd               = "0.14"
 walkdir            = "2.5"
 tempfile           = "3"
 serial_test        = "3"
@@ -132,8 +132,9 @@ dhat               = "0.3"
 # detection, the Arrow bar cache and the Dukascopy cache-layout reader), shared with the
 # tradedesk backtester. A git dependency pinned to a commit on radiusred/tradedesk `main`
 # (crates.io publication is a later milestone); a task bumps `rev` when the miner needs a
-# newer data layer. This rev is the merge of radiusred/tradedesk PR 208.
-tradedesk-data     = { git = "https://github.com/radiusred/tradedesk", rev = "d63c7e28adc1f4a2cfa9839a13e84153da919210" }
+# newer data layer. This rev is the release commit of radiusred/tradedesk v1.7.1, whose
+# zstd 0.14 matches the workspace zstd below.
+tradedesk-data     = { git = "https://github.com/radiusred/tradedesk", rev = "51d14e22b6afe5564ca3117540b836ddbc30d7ed" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
